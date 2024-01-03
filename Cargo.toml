@@ -1,5 +1,6 @@
 [package]
-name = "rust-nix-project-template"
+name = "container_image_dist_ref"
+description = "A library for parsing and validating container image distribution references."
 version = "0.1.0"
 edition = "2021"
 

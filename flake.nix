@@ -1,7 +1,7 @@
 {
-  description = ""; # FIXME: add a description
+  description = "A library for parsing and validating container image distribution references.";
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable"; # TODO: pin
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-23.11";
     flake-utils.url = "github:numtide/flake-utils"; # TODO: pin
     rust-overlay = {
       url = "github:oxalica/rust-overlay"; # TODO: pin;

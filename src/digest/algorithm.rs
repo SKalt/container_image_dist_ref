@@ -18,97 +18,100 @@
 //! [ref]: https://github.com/distribution/reference/blob/v0.5.0/reference.go#L21-L23
 //!
 
-use crate::parse::{as_result, Compliance, Parse};
+use crate::U;
+
+use super::{Compliance, Error};
+
 /// match a single separator character: matching the regular expression /[+._-]/
-fn is_separator(c: char) -> bool {
+fn is_separator(c: u8) -> bool {
     match c {
-        '+' | '.' | '_' | '-' => true,
+        b'+' | b'.' | b'_' | b'-' => true,
         _ => false,
     }
 }
 
 /// match an algorithm component and return the length of the match, along
 /// with what standard(s) the component is compliant with.
-fn component(src: &str) -> Parse {
+fn component(src: &str, compliance: Compliance) -> Result<(U, Compliance), Error> {
     use Compliance::*;
-    assert!(src.len() <= 256, "algorithm component too long"); // HACK: arbitrary limit
-    let mut len = 0u8;
-    let mut compliance = Universal;
-    if let Some(first) = src.chars().next() {
-        match first {
-            '0'..='9' => {
-                // acceptable according to OCI spec, but not distribution/reference
-                //  but not the OCI image spec
-                compliance = Oci;
-            }
-            _ => {}
-        }
-    } else {
-        return Parse { len, compliance };
+    if src.len() == 0 {
+        return Err(Error::NoMatch(0));
     }
-
-    for c in src.chars() {
+    assert!(src.len() <= 256, "algorithm component too long"); // HACK: arbitrary limit
+    let compliance = match src.bytes().next().unwrap() {
+        b'a'..=b'z' => Ok(compliance), // universally compatible first character
+        b'0'..=b'9' => {
+            // acceptable according to OCI spec, but not distribution/reference
+            //  but not the OCI image spec
+            if compliance == Distribution {
+                // this is not a valid OCI algorithm
+                Err(Error::AlgorithmCase(0))
+            } else {
+                Ok(Oci)
+            }
+        }
+        b'A'..=b'Z' => {
+            // acceptable according to distribution/reference
+            // but not the OCI image spec
+            if compliance == Oci {
+                // this is not a valid OCI algorithm
+                Err(Error::AlgorithmCase(1))
+            } else {
+                Ok(Distribution)
+            }
+        }
+        _ => Err(Error::AlgorithmComponentInvalidChar(0)),
+    }?;
+    let mut len = 0;
+    for c in src.bytes() {
+        len += 1;
         match c {
-            'a'..='z' | '0'..='9' => len += 1,
-            'A'..='Z' => {
+            b'a'..=b'z' | b'0'..=b'9' => {} // ok
+            b'A'..=b'Z' => {
                 // acceptable according to distribution/reference
                 // but not the OCI image spec
                 if compliance == Oci {
                     // this is not a valid OCI algorithm
-                    compliance = Uncompliant;
-                    return Parse { len, compliance };
+                    return Err(Error::AlgorithmCase(len.try_into().unwrap()));
                 }
-                len += 1;
             }
-            _ => return Parse { len, compliance },
+            _ => break,
         }
     }
-    Parse { len, compliance }
+    Ok((len, compliance))
 }
 
-fn algo(src: &str) -> Parse {
+fn algo(src: &str) -> Result<(U, Compliance), Error> {
     use Compliance::*;
-    let mut result = component(src);
-    if result.len == 0 {
-        return result;
-    }
-    let mut len = result.len;
-    let mut compliance = result.compliance;
-    while len as usize <= src.len() {
-        if let Some(sep) = src[len as usize..].chars().next() {
-            if is_separator(sep) {
-                len += 1;
-                result = component(&src[len as usize..]);
-                len += result.len;
-                if result.compliance == Uncompliant {
-                    compliance = Uncompliant;
-                    break;
-                }
-            } else {
-                break;
-            }
-        } else {
+    let initial_compliance = Universal;
+    let (mut len, mut compliance) = component(src, initial_compliance)?;
+    while let Some(next) = src[len as usize..].bytes().next() {
+        if !is_separator(next) {
             break;
         }
+        len += 1; // consume the separator
+        let (component_len, component_compliance) = component(&src[len as usize..], compliance)?;
+        len += component_len;
+        compliance = component_compliance; // narrow compliance from Universal -> (Oci | Distribution)
     }
-    Parse { len, compliance }
+    Ok((len, compliance))
 }
 
-fn parse_prefix(src: &str) -> Result<Parse, Parse> {
-    as_result(algo(src))
+fn parse_prefix(src: &str) -> Result<(U, Compliance), Error> {
+    algo(src)
 }
 
-fn parse_exact_match(src: &str) -> Result<Parse, Parse> {
-    let parsed = parse_prefix(src)?;
-    if parsed.len as usize == src.len() {
-        Ok(parsed)
+fn parse_exact_match(src: &str) -> Result<(U, Compliance), Error> {
+    let (len, compliance) = parse_prefix(src)?;
+    if len as usize == src.len() {
+        Ok((len, compliance))
     } else {
-        Err(parsed)
+        Err(Error::NoMatch(len))
     }
 }
 
 fn parts(valid_algo: &str) -> impl Iterator<Item = &str> {
-    valid_algo.split(is_separator)
+    valid_algo.split(|c| is_separator(c as u8))
 }
 
 pub struct Algorithm<'src> {
@@ -118,26 +121,32 @@ impl<'src> Algorithm<'src> {
     pub fn len(&self) -> usize {
         self.src.len()
     }
-    pub(super) fn new_unchecked(src: &'src str) -> Self {
-        Self { src }
-    }
     /// extract an algorithm from the **start** of a string slice
-    pub fn from_prefix(src: &'src str) -> Result<Self, Parse> {
-        let prefix = parse_prefix(src)?;
-        Ok(Self {
-            src: &src[..prefix.len as usize],
-        })
+    pub fn from_prefix(src: &'src str) -> Result<(Self, Compliance), Error> {
+        let (len, compliance) = parse_prefix(src)?;
+        Ok((
+            Self {
+                src: &src[..len as usize],
+            },
+            compliance,
+        ))
     }
-    pub fn from_exact_match(src: &'src str) -> Result<Self, Parse> {
-        let exact = parse_exact_match(src)?;
-        Ok(Self {
-            src: &src[..exact.len as usize],
-        })
+    pub fn from_exact_match(src: &'src str) -> Result<(Self, Compliance), Error> {
+        let (len, compliance) = parse_exact_match(src)?;
+        Ok((
+            Self {
+                src: &src[..len as usize],
+            },
+            compliance,
+        ))
     }
     pub fn parts(&self) -> impl Iterator<Item = &str> {
         parts(&self.src)
     }
-    pub fn compliance(&self) -> Compliance {
-        algo(&self.src).compliance
+    /// prefer hanging on to the compliance value from initial parsing via `from_prefix`
+    /// or `from_exact_match` rather than re-parsing
+    pub fn compliance(&self) -> Result<Compliance, Error> {
+        let (_, compliance) = algo(&self.src)?;
+        Ok(compliance)
     }
 }

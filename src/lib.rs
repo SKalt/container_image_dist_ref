@@ -98,8 +98,24 @@ impl<'src> RefSpan<'src> {
                     ))
                 }
                 None => {
-                    let path = first_bit.host_or_path.try_into()?;
-                    let tag = first_bit.optional_port_or_tag.try_into()?;
+                    // use ambiguous::host_or_path::{AmbiguousErrorKind, Error as AmbiguousError};
+                    let path = first_bit
+                        .host_or_path
+                        .try_into()
+                        .map_err(|e: Error| match e.0 {
+                            err::Kind::PathInvalidChar => Error(
+                                err::Kind::PathInvalidChar,
+                                // find the offending underscore
+                                src[..first_bit.host_or_path.len()]
+                                    .bytes()
+                                    .find(|b| b == &b'_')
+                                    .unwrap()
+                                    .try_into()
+                                    .unwrap(),
+                            ),
+                            _ => e,
+                        })?; // <- TODO: find offending char on InvalidChar failure
+                    let tag = first_bit.optional_port_or_tag.into();
                     Ok((
                         Self {
                             optional_domain: OptionalDomainSpan::none(),
@@ -118,5 +134,23 @@ impl<'src> RefSpan<'src> {
             let _domain: OptionalDomainSpan<'src> = first_bit.try_into()?;
             unreachable!()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    fn should_parse(src: &str) {
+        let result = super::RefSpan::new(src);
+        if let Err(e) = result {
+            panic!("failed to parse {:?}: {:?}", src, e);
+        }
+    }
+
+    #[test]
+    fn basic_corpus() {
+        include_str!("../tests/fixtures/references/valid/inputs.txt")
+            .lines()
+            .filter(|line| !line.is_empty())
+            .for_each(|line| should_parse(line));
     }
 }

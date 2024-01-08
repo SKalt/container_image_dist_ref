@@ -1,3 +1,22 @@
+// > name                            := [domain '/'] remote-name
+// > domain                          := host [':' port-number]
+// > port-number                     := /[0-9]+/
+// > host                            := domain-name | IPv4address | \[ IPv6address \] ; rfc3986 appendix-A
+// > domain-name                     := domain-component ['.' domain-component]*
+// > domain-component                := alpha-numeric [ ( alpha-numeric | '-' )* alpha-numeric ]
+// > path-component                  := alpha-numeric [separator alpha-numeric]*
+// > path (or "remote-name")         := path-component ['/' path-component]*
+// > alpha-numeric                   := /[a-z0-9]+/
+// > separator                       := /[_.]|__|[-]*/
+//
+// Note that domain components conflict with path components:
+// | class | domain-component | path-component |
+// | ----- | ---------------- | -------------- |
+// | upper | yes              | no             |
+// | -     | inner            | inner          |
+// | _     | no               | inner          |
+// | .     | yes              | yes            |
+
 use crate::{
     ambiguous::{
         host_or_path::{Error as HostOrPathError, Kind as HostOrPathKind, OptionalHostOrPath},
@@ -88,7 +107,20 @@ impl<'src> DomainOrRef<'src> {
             Some(b':') => OptionalPortOrTag::new(&src[host_or_path.len()..], PortOrTagKind::Either)
                 .map_err(|e| e.into()),
             Some(b'/') => {
-                host_or_path = host_or_path.narrow(HostOrPathKind::Host)?;
+                host_or_path =
+                    host_or_path
+                        .narrow(HostOrPathKind::Host)
+                        .map_err(|e| match e.kind() {
+                            super::host_or_path::AmbiguousErrorKind::InvalidChar => {
+                                let offending_char = src
+                                    .find(|c| char::is_ascii_uppercase(&c))
+                                    .unwrap() // safe since this .narrow(Host) only throws this error if there was an uppercase letter
+                                    .try_into()
+                                    .unwrap();// safe since host_or_path.len() is a valid short index into src
+                                Error(ErrKind::LeftInvalidChar, offending_char)
+                            }
+                            _ => e.into(),
+                        })?;
                 OptionalPortOrTag::new(src, PortOrTagKind::Port).map_err(|e| e.into())
             }
             Some(_) => Err(Error(ErrKind::RightInvalidChar, host_or_path.short_len())),
@@ -100,5 +132,4 @@ impl<'src> DomainOrRef<'src> {
             optional_port_or_tag: port_or_tag,
         })
     }
-    // pub(crate) fn narrow(is_) // TODO: implement narrow(self, ???) -> ???
 }

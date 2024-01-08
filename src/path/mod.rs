@@ -99,6 +99,8 @@ impl<'src> TryFrom<OptionalHostOrPath<'src>> for PathSpan<'src> {
     type Error = Error;
     fn try_from(ambiguous: OptionalHostOrPath) -> Result<Self, Error> {
         use PathKind::*;
+        // since 0-length OptionalHostOrPath will always have type Either, we can
+        // safely downcast to the more specific PathSpan
         match ambiguous.kind() {
             Either | Path => Ok(if ambiguous.is_some() {
                 Self(OptionalSpan::new(ambiguous.short_len()))
@@ -106,7 +108,6 @@ impl<'src> TryFrom<OptionalHostOrPath<'src>> for PathSpan<'src> {
                 Self::none()
             }),
             Host => Err(Error(ErrorKind::PathInvalidChar, ambiguous.short_len())),
-            // FIXME: find the underscore(s) in the path ^^^^
             IpV6 => Ok(Self(OptionalSpan::new(ambiguous.short_len()))),
         }
     }

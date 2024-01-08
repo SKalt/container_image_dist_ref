@@ -17,17 +17,10 @@ impl<'src> IntoOption for OptionalTagSpan<'src> {
         Self(OptionalSpan::new(0))
     }
 }
-impl<'src> TryFrom<OptionalPortOrTag<'src>> for OptionalTagSpan<'src> {
-    type Error = Error;
-    fn try_from(optional_port_or_tag: OptionalPortOrTag<'src>) -> Result<Self, Error> {
-        match optional_port_or_tag.kind() {
-            TagKind::Either | TagKind::Tag => Ok(if optional_port_or_tag.is_some() {
-                Self(optional_port_or_tag.span())
-            } else {
-                Self::none()
-            }),
-            TagKind::Port => Err(Error(ErrorKind::TagInvalidChar, 0)), // FIXME: identify the invalid character
-        }
+
+impl<'src> From<OptionalPortOrTag<'src>> for OptionalTagSpan<'src> {
+    fn from(optional_port_or_tag: OptionalPortOrTag<'src>) -> Self {
+        Self(optional_port_or_tag.span())
     }
 }
 impl<'src> OptionalTagSpan<'src> {

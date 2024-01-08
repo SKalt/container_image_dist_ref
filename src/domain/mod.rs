@@ -48,7 +48,6 @@ impl<'src> IntoOption for OptionalDomainSpan<'src> {
 }
 impl<'src> OptionalDomainSpan<'src> {
     pub(crate) fn from_domain(domain: DomainSpan<'src>) -> Self {
-        // TODO: impl From<DomainSpan> for MaybeDomainSpan
         Self(domain)
     }
     #[inline(always)]
@@ -129,6 +128,12 @@ impl<'src> DomainSpan<'src> {
     }
     pub fn port(&self) -> OptionalPortSpan {
         self.optional_port
+    }
+}
+
+impl<'src> From<DomainSpan<'src>> for OptionalDomainSpan<'src> {
+    fn from(domain: DomainSpan<'src>) -> Self {
+        Self::from_domain(domain)
     }
 }
 pub struct DomainStr<'src> {

@@ -1,31 +1,9 @@
-// > name                            := [domain '/'] remote-name
-// > domain                          := host [':' port-number]
-// > port-number                     := /[0-9]+/
-// > host                            := domain-name | IPv4address | \[ IPv6address \] ; rfc3986 appendix-A
-// > domain-name                     := domain-component ['.' domain-component]*
-// > domain-component                := alpha-numeric [ ( alpha-numeric | '-' )* alpha-numeric ]
-// > path-component                  := alpha-numeric [separator alpha-numeric]*
-// > path (or "remote-name")         := path-component ['/' path-component]*
-// > alpha-numeric                   := /[a-z0-9]+/
-// > separator                       := /[_.]|__|[-]*/
-// >
-// > tag                             := /[\w][\w.-]{0,127}/
-//
-// Note that domain components conflict with path components:
-// | class | domain-component | path-component |
-// | ----- | ---------------- | -------------- |
-// | upper | yes              | no             |
-// | -     | inner            | inner          |
-// | _     | no               | inner          |
-// | .     | yes              | yes            |
-
-// use crate::;
 use crate::{
     ambiguous::host_or_path::{Error as HostOrPathError, Kind as HostKind, OptionalHostOrPath},
-    err::{Error, Kind as ErrorKind},
+    err::Error,
     span::{impl_span_methods_on_tuple, IntoOption, OptionalSpan, U},
 };
-enum EKind {
+enum ErrorKind {
     NoMatch,
     ComponentInvalidEnd,
     InvalidChar,
@@ -39,28 +17,29 @@ enum EKind {
     Ipv6TooFewGroups,
     Ipv6MissingClosingBracket,
 }
-pub(super) struct HostError(EKind, U);
+pub(super) struct HostError(ErrorKind, U);
 impl From<HostOrPathError> for HostError {
     fn from(err: HostOrPathError) -> Self {
-        use crate::ambiguous::host_or_path::AmbiguousErrorKind as A; // FIXME: rename
+        use crate::ambiguous::host_or_path::AmbiguousErrorKind as Src;
+        use ErrorKind as Dest;
         match err.kind() {
-            A::NoMatch => HostError(EKind::NoMatch, err.len()),
-            A::TooLong => HostError(EKind::TooLong, err.len()),
-            A::InvalidChar => HostError(EKind::InvalidChar, err.len()),
-            A::Ipv6NoMatch => HostError(EKind::Ipv6NoMatch, err.len()),
-            A::Ipv6TooLong => HostError(EKind::Ipv6TooLong, err.len()),
-            A::Ipv6BadColon => HostError(EKind::Ipv6BadColon, err.len()),
-            A::Ipv6TooManyHexDigits => HostError(EKind::Ipv6TooManyHexDigits, err.len()),
-            A::Ipv6TooManyGroups => HostError(EKind::Ipv6TooManyGroups, err.len()),
-            A::Ipv6TooFewGroups => HostError(EKind::Ipv6TooFewGroups, err.len()),
-            A::Ipv6MissingClosingBracket => HostError(EKind::Ipv6MissingClosingBracket, err.len()),
+            Src::NoMatch => HostError(Dest::NoMatch, err.len()),
+            Src::TooLong => HostError(Dest::TooLong, err.len()),
+            Src::InvalidChar => HostError(Dest::InvalidChar, err.len()),
+            Src::Ipv6NoMatch => HostError(Dest::Ipv6NoMatch, err.len()),
+            Src::Ipv6TooLong => HostError(Dest::Ipv6TooLong, err.len()),
+            Src::Ipv6BadColon => HostError(Dest::Ipv6BadColon, err.len()),
+            Src::Ipv6TooManyHexDigits => HostError(Dest::Ipv6TooManyHexDigits, err.len()),
+            Src::Ipv6TooManyGroups => HostError(Dest::Ipv6TooManyGroups, err.len()),
+            Src::Ipv6TooFewGroups => HostError(Dest::Ipv6TooFewGroups, err.len()),
+            Src::Ipv6MissingClosingBracket => HostError(Dest::Ipv6MissingClosingBracket, err.len()),
         }
     }
 }
 impl From<HostError> for Error {
     fn from(err: HostError) -> Error {
-        use EKind as Src;
-        use ErrorKind as Dest;
+        use crate::err::Kind as Dest;
+        use ErrorKind as Src;
         let (kind, len) = (err.0, err.1);
         let kind = match kind {
             Src::NoMatch => Dest::HostNoMatch,
@@ -100,14 +79,14 @@ impl<'src> TryFrom<OptionalHostOrPath<'src>> for OptionalHostSpan<'_> {
     fn try_from(ambiguous: OptionalHostOrPath) -> Result<Self, Error> {
         match ambiguous.into_option() {
             None => Ok(OptionalHostSpan::none()),
-            Some(a) => {
+            Some(_) => {
                 use HostKind::*;
                 match ambiguous.kind() {
                     Either | Host => {
                         Ok(Self(OptionalSpan::new(ambiguous.short_len()), Kind::Domain))
                     }
-                    Path => Err(Error(ErrorKind::HostInvalidChar, 0)), // FIXME: find the underscore(s) in the path
                     IpV6 => Ok(Self(OptionalSpan::new(ambiguous.short_len()), Kind::Ipv6)),
+                    Path => Err(Error(crate::err::Kind::HostInvalidChar, 0)), // <- needs the source str to find the index of the first underscore
                 }
             }
         }
@@ -120,6 +99,16 @@ impl<'src> TryFrom<&'src str> for OptionalHostSpan<'src> {
         OptionalHostOrPath::new(src, HostKind::Either)
             .map_err(|e| Into::<HostError>::into(e))?
             .try_into()
+            .map_err(|e: Error| match e.0 {
+                crate::err::Kind::HostInvalidChar => Error(
+                    // this error only occurs if there was an underscore in the source str,
+                    // it doesn't carry the location of the offending character.
+                    // Here, we find the index of the first underscore using the source str.
+                    crate::err::Kind::HostInvalidChar,
+                    src.find('_').unwrap().try_into().unwrap(),
+                ),
+                _ => e,
+            })
     }
 }
 
@@ -164,6 +153,9 @@ impl<'src> HostStr<'src> {
     fn len(&self) -> usize {
         self.src().len()
     }
+    fn short_len(&self) -> U {
+        self.len().try_into().unwrap() // this is safe since the length of a HostStr is always <= U::MAX
+    }
     pub(super) fn from_span_of(
         src: &'src str,
         OptionalHostSpan(span, kind): OptionalHostSpan<'src>,
@@ -177,12 +169,13 @@ impl<'src> HostStr<'src> {
     pub fn from_exact_match(src: &'src str) -> Result<Self, Error> {
         let result = HostStr::from_prefix(src)?;
         if result.len() != src.len() {
-            return Err(Error(
-                ErrorKind::HostNoMatch,
-                result.len().try_into().unwrap(),
-            ));
-            // FIXME: avoid panic
+            return Err(Error(crate::err::Kind::HostNoMatch, result.short_len()));
         }
         Ok(result)
     }
+}
+
+#[cfg(test)]
+mod tests {
+    //
 }

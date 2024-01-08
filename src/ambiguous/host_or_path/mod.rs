@@ -3,7 +3,7 @@ use crate::{
     span::{impl_span_methods_on_tuple, IntoOption, OptionalSpan, U},
 };
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum AmbiguousErrorKind {
     // could apply to host or path ---------------------------------------------
     NoMatch,
@@ -18,6 +18,7 @@ pub(crate) enum AmbiguousErrorKind {
     Ipv6TooFewGroups,
     Ipv6MissingClosingBracket,
 }
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Error(AmbiguousErrorKind, U);
 impl std::ops::Add<U> for Error {
     type Output = Self;
@@ -34,7 +35,7 @@ impl Error {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub(crate) enum Kind {
     /// could be either a host or a path
@@ -72,14 +73,11 @@ impl Scan {
     /// the number of underscores
     const UNDERSCORE_COUNT: u8 = 0b0011; //     0b00000011;
     const HAS_UNDERSCORE: u8 = 1 << 2; //       0b00000100;
-    const LAST_WAS_UNDERSCORE: u8 = 1 << 3; //  0b00001000;
-    const HAS_UPPERCASE: u8 = 1 << 4; //        0b00010000;
-    const LAST_WAS_DOT: u8 = 1 << 5; //         0b00100000;
-    const LAST_WAS_DASH: u8 = 1 << 6; //        0b01000000;
-    const INVALID: u8 = 1 << 7; //              0b10000000;
-    fn new() -> Self {
-        Self(0)
-    }
+    const HAS_UPPERCASE: u8 = 1 << 3; //        0b00001000;
+    const LAST_WAS_DOT: u8 = 1 << 4; //         0b00010000;
+    const LAST_WAS_DASH: u8 = 1 << 5; //        0b00100000;
+    const INVALID: u8 = 1 << 6; //              0b01000000;
+
     // setters -----------------------------------------------------------------
     // all of which are fallible
     fn set_dot(&mut self) -> Result<(), Error> {
@@ -99,29 +97,31 @@ impl Scan {
     }
 
     fn set_upper(&mut self) -> Result<(), Error> {
-        if self.caps_valid() {
+        if self.has_underscore() {
+            Err(Error(AmbiguousErrorKind::InvalidChar, 0))
+        } else {
             self.reset();
             Ok(self.0 |= Self::HAS_UPPERCASE)
-        } else {
+        }
+    }
+    fn set_underscore_count(&mut self, count: u8) -> Result<(), Error> {
+        if count > 2 {
             Err(Error(AmbiguousErrorKind::InvalidChar, 0))
+        } else {
+            self.unset_dash();
+            self.unset_dot();
+            Ok(self.0 |= count)
         }
     }
     fn add_underscore(&mut self) -> Result<(), Error> {
         if self.has_upper() {
             Err(Error(AmbiguousErrorKind::InvalidChar, 0))
         } else if self.last_was_dash() || self.last_was_dot() {
-            // TODO: more error types
+            // TODO: use more specific error kind?
             Err(Error(AmbiguousErrorKind::InvalidChar, 0))
         } else {
             self.0 |= Self::HAS_UNDERSCORE;
-            let mut underscore_count = self.underscore_count() + 1;
-            if underscore_count > 2 {
-                Err(Error(AmbiguousErrorKind::InvalidChar, 0))
-            } else {
-                self.unset_dash();
-                self.unset_dot();
-                Ok(self.0 |= underscore_count)
-            }
+            self.set_underscore_count(self.underscore_count() + 1)
         }
     }
 
@@ -140,7 +140,7 @@ impl Scan {
     }
 
     fn reset_underscore(&mut self) {
-        self.0 &= !Self::UNDERSCORE_COUNT;
+        self.set_underscore_count(0).unwrap()
     }
 
     // getters -----------------------------------------------------------------
@@ -158,30 +158,6 @@ impl Scan {
     }
     fn has_underscore(&self) -> bool {
         self.0 & Self::HAS_UNDERSCORE == Self::HAS_UNDERSCORE
-    }
-    fn is_invalid(&self) -> bool {
-        self.0 & Self::INVALID == Self::INVALID
-    }
-    // validity checks ---------------------------------------------------------
-    fn underscore_valid(&self) -> bool {
-        !self.has_upper() && self.valid_component_end()
-    }
-    fn caps_valid(&self) -> bool {
-        !self.has_underscore()
-    }
-
-    pub(crate) fn valid_completed_path(&self) -> bool {
-        !self.has_upper() && self.valid_component_end()
-    }
-    pub(crate) fn valid_completed_domain(&self) -> bool {
-        !self.has_underscore() && self.valid_component_end()
-    }
-    pub(crate) fn valid_component_end(&self) -> bool {
-        !self.last_was_dash() && !self.last_was_dot() && self.underscore_count() == 0
-    }
-    #[inline(always)]
-    fn separator_valid(&self) -> bool {
-        self.valid_component_end()
     }
 }
 
@@ -201,6 +177,7 @@ impl<'src> IntoOption for OptionalHostOrPath<'src> {
 }
 impl OptionalHostOrPath<'_> {
     pub(super) fn narrow(self, kind: Kind) -> Result<Self, Error> {
+        // TODO: consider moving this fn into DomainOrRef
         use Kind::*;
         match (self.kind(), kind) {
             (_, Either) => panic!("cannot narrow to Either"),
@@ -216,16 +193,17 @@ impl OptionalHostOrPath<'_> {
         self.1
     }
     fn from_ipv6(src: &str) -> Result<Self, Error> {
-        use crate::err; // FIXME: rename
-        use AmbiguousErrorKind as A;
+        use crate::err;
         let span = ipv6::Ipv6Span::new(src.as_bytes()).map_err(|e| match e.0 {
-            err::Kind::Ipv6BadColon => Error(A::Ipv6BadColon, e.1),
-            err::Kind::Ipv6NoMatch => Error(A::Ipv6NoMatch, e.1),
-            err::Kind::Ipv6TooLong => Error(A::Ipv6TooLong, e.1),
-            err::Kind::Ipv6TooManyHexDigits => Error(A::Ipv6TooManyHexDigits, e.1),
-            err::Kind::Ipv6TooManyGroups => Error(A::Ipv6TooManyGroups, e.1),
-            err::Kind::Ipv6TooFewGroups => Error(A::Ipv6TooFewGroups, e.1),
-            err::Kind::Ipv6MissingClosingBracket => Error(A::Ipv6MissingClosingBracket, e.1),
+            err::Kind::Ipv6BadColon => Error(AmbiguousErrorKind::Ipv6BadColon, e.1),
+            err::Kind::Ipv6NoMatch => Error(AmbiguousErrorKind::Ipv6NoMatch, e.1),
+            err::Kind::Ipv6TooLong => Error(AmbiguousErrorKind::Ipv6TooLong, e.1),
+            err::Kind::Ipv6TooManyHexDigits => Error(AmbiguousErrorKind::Ipv6TooManyHexDigits, e.1),
+            err::Kind::Ipv6TooManyGroups => Error(AmbiguousErrorKind::Ipv6TooManyGroups, e.1),
+            err::Kind::Ipv6TooFewGroups => Error(AmbiguousErrorKind::Ipv6TooFewGroups, e.1),
+            err::Kind::Ipv6MissingClosingBracket => {
+                Error(AmbiguousErrorKind::Ipv6MissingClosingBracket, e.1)
+            }
             _ => unreachable!(),
         })?;
         Ok(Self(span.span().into(), Kind::IpV6))
@@ -250,8 +228,12 @@ impl OptionalHostOrPath<'_> {
         let mut len = 1;
 
         for c in ascii {
+            #[cfg(test)]
+            let _ch: char = c as char;
             if len == U::MAX {
                 Err(Error(AmbiguousErrorKind::TooLong, len))?;
+            } else {
+                len += 1;
             }
             match c {
                 b'a'..=b'z' | b'0'..=b'9' => Ok(scan.reset()),
@@ -264,6 +246,60 @@ impl OptionalHostOrPath<'_> {
             }
             .map_err(|e| e + len)?
         }
-        Ok(Self(OptionalSpan::new(len), kind))
+        if scan.last_was_dash() || scan.last_was_dot() || scan.underscore_count() > 0 {
+            Err(Error(AmbiguousErrorKind::InvalidChar, len))?;
+        }
+        Ok(Self(OptionalSpan::new(len), scan.into()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::span::SpanMethods;
+    fn should_parse_as(src: &str, expected: &str, kind: super::Kind) {
+        let span = should_parse(src);
+        assert_eq!(span.of(src), expected);
+        assert_eq!(span.kind(), kind, "incorrectly typed {src:?}");
+    }
+    fn should_parse(src: &str) -> super::OptionalHostOrPath<'_> {
+        super::OptionalHostOrPath::new(src, super::Kind::Either)
+            .map_err(|e| {
+                assert!(
+                    false,
+                    "failed to parse {:?}: {:?} @ {}",
+                    src,
+                    e.kind(),
+                    e.len()
+                );
+            })
+            .unwrap()
+    }
+    fn should_fail_with(src: &str, err_kind: super::AmbiguousErrorKind) {
+        let err = super::OptionalHostOrPath::new(src, super::Kind::Either)
+            .map(|e| {
+                assert!(
+                    false,
+                    "should have failed to parse {:?}: {:?} @ {}",
+                    src,
+                    e.kind(),
+                    e.len()
+                );
+            })
+            .unwrap_err();
+        assert_eq!(err.kind(), err_kind, "incorrect error kind");
+    }
+    #[test]
+    fn test_valid() {
+        should_parse_as("example.com", "example.com", super::Kind::Either);
+        should_parse_as("127.0.0.1", "127.0.0.1", super::Kind::Either);
+        should_parse_as("123.456.789.101", "123.456.789.101", super::Kind::Either);
+        should_parse_as("0.0", "0.0", super::Kind::Either);
+        should_parse_as("1.2.3.4.5", "1.2.3.4.5", super::Kind::Either);
+
+        should_parse_as("sub_domain.ex.com", "sub_domain.ex.com", super::Kind::Path);
+    }
+    #[test]
+    fn test_invalid() {
+        should_fail_with("google.com.", super::AmbiguousErrorKind::InvalidChar);
     }
 }

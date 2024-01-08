@@ -11,9 +11,15 @@
 /// > -- https://github.com/opencontainers/image-spec/blob/v1.0.2/descriptor.md#digests
 pub mod algorithm;
 pub mod encoded;
-use crate::U;
+use crate::{
+    err::{self, Error},
+    span::{IntoOption, SpanMethods, U},
+};
 
-use self::{algorithm::Algorithm, encoded::Encoded};
+use self::{
+    algorithm::{AlgorithmSpan, AlgorithmStr},
+    encoded::{EncodedSpan, EncodedStr},
+};
 
 pub enum Standard {
     /// Though distribution/reference isn't officially a standard or specification
@@ -34,8 +40,7 @@ pub enum Compliance {
     Distribution,
     /// Compliant with both distribution/reference and OCI image spec.
     Universal,
-    // /// Not compliant with either distribution/reference or OCI image spec.
-    // Uncompliant,
+    // non-compliance will always result in an error, so we don't need a variant
 }
 
 impl Compliance {
@@ -49,52 +54,64 @@ impl Compliance {
     }
 }
 
-pub enum Error {
-    /// At least one algorithm component starts with a number, which is allowed
-    /// by the OCI image spec but not distribution/reference. Then, the algorithm
-    /// includes uppercase letters, which is allowed by distribution/reference
-    /// but not the OCI image spec.
-    AlgorithmCase(U),
-    AlgorithmComponentInvalidChar(U),
-    EncodingTooShort(U),
-    EncodingInvalidChar(U),
-    OciRegisteredAlgorithmTooManyParts(U),
-    OciRegisteredAlgorithmWrongLength(U),
-    OciRegisteredAlgorithmNonLowerHexChar(U),
-    /// the
-    EncodingCompliance(U),
-    NoMatch(U),
+// Note: DigestSpan doesn't own a leading '@'; that's only implied when DigestSpan
+// is part of a larger ReferenceSpan.
+#[derive(Clone, Copy)]
+pub(crate) struct OptionalDigestSpan<'src> {
+    algorithm: AlgorithmSpan<'src>,
+    encoded: EncodedSpan<'src>,
 }
+impl<'src> OptionalDigestSpan<'src> {
+    pub(crate) fn short_len(&self) -> U {
+        self.algorithm
+            .into_option()
+            .map(|present| present.short_len() + 1 + self.encoded.short_len())
+            .unwrap_or(0)
+    }
+    pub(crate) fn len(&self) -> usize {
+        self.short_len() as usize
+    }
+    pub(crate) fn new(src: &'src str) -> Result<(Self, Compliance), Error> {
+        let (algorithm, compliance) = AlgorithmSpan::new(src)?;
+        let mut len = match src[algorithm.len()..].bytes().next() {
+            Some(b':') => Ok(algorithm.len() + 1),
+            None => Err(Error(err::Kind::AlgorithmNoMatch, algorithm.short_len())),
+            _ => Err(Error(
+                err::Kind::AlgorithmInvalidChar,
+                algorithm.short_len(),
+            )),
+        }?;
+        let (encoded, compliance) = EncodedSpan::new(src, compliance)?;
 
-pub struct Digest<'src> {
-    pub algorithm: Algorithm<'src>,
-    pub encoded: Encoded<'src>,
-}
+        {
+            let encoded = EncodedStr::from_span(&src[len..], encoded);
+            let algorithm = AlgorithmStr::from_span(&src[..algorithm.len()], algorithm);
+            encoded.validate_algorithm(&algorithm, compliance)?;
+        }
 
-impl<'src> Digest<'src> {
-    pub fn from_parts(
-        algorithm: &'src str,
-        encoded: &'src str,
-    ) -> Result<(Self, Compliance), Error> {
-        let (algorithm, compliance) = Algorithm::from_exact_match(algorithm)?;
-        let encoded = Encoded::from_exact_match(encoded, compliance)?;
         Ok((Self { algorithm, encoded }, compliance))
     }
-    pub fn new(digest: &'src str) -> Result<(Self, Compliance), Error> {
-        let mut src = digest;
-        let (algorithm, compliance) = Algorithm::from_prefix(src)?;
-        src = &src[algorithm.len()..];
-        match src.bytes().next() {
-            Some(b':') => src = &src[1..],
-            None => return Err(Error::NoMatch(algorithm.len().try_into().unwrap())),
-            _ => {
-                return Err(Error::AlgorithmComponentInvalidChar(
-                    algorithm.len().try_into().unwrap(),
-                ))
-            }
+}
+impl IntoOption for OptionalDigestSpan<'_> {
+    fn is_some(&self) -> bool {
+        self.short_len() == 0
+    }
+
+    fn none() -> Self {
+        Self {
+            algorithm: AlgorithmSpan::none(),
+            encoded: EncodedSpan::none(),
         }
-        let encoded = Encoded::from_exact_match(src, compliance)?;
-        encoded.validate_algorithm(&algorithm, compliance)?;
-        Ok((Self { algorithm, encoded }, compliance))
+    }
+}
+pub struct DigestStr<'src> {
+    pub src: &'src str,
+    span: OptionalDigestSpan<'src>,
+}
+
+impl<'src> DigestStr<'src> {
+    pub fn new(src: &'src str) -> Result<(Self, Compliance), Error> {
+        let (span, compliance) = OptionalDigestSpan::new(src)?;
+        Ok((Self { src, span }, compliance))
     }
 }

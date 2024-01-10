@@ -1,6 +1,6 @@
 use crate::{
     ambiguous::port_or_tag::{Kind as PortKind, OptionalPortOrTag},
-    err::{Error, Kind as ErrorKind},
+    err::{self, Error},
     span::{impl_span_methods_on_tuple, IntoOption, OptionalSpan, U},
 };
 
@@ -10,12 +10,13 @@ use crate::{
 pub(crate) struct OptionalPortSpan<'src>(OptionalSpan<'src>);
 impl_span_methods_on_tuple!(OptionalPortSpan);
 
-fn convert_err(e: crate::ambiguous::port_or_tag::Error) -> Error {
-    use crate::ambiguous::port_or_tag::Error as E;
-    match e {
-        E::TooLong(len) => Error(ErrorKind::PortTooLong, len),
-        E::InvalidChar(len) => Error(ErrorKind::PortInvalidChar, len),
-    }
+fn disambiguate_err(e: Error) -> Error {
+    let kind = match e.kind() {
+        err::Kind::PortOrTagTooLong => err::Kind::PortTooLong,
+        err::Kind::PortOrTagInvalidChar => err::Kind::PortInvalidChar,
+        _ => e.kind(),
+    };
+    Error(kind, e.index())
 }
 impl<'src> IntoOption for OptionalPortSpan<'src> {
     fn is_some(&self) -> bool {
@@ -25,35 +26,34 @@ impl<'src> IntoOption for OptionalPortSpan<'src> {
         Self(OptionalSpan::new(0))
     }
 }
-impl<'src> TryFrom<OptionalPortOrTag<'src>> for OptionalPortSpan<'src> {
-    type Error = Error;
-    fn try_from(optional_port_or_tag: OptionalPortOrTag<'src>) -> Result<Self, Error> {
-        match optional_port_or_tag.kind() {
-            PortKind::Either | PortKind::Port => Ok(if optional_port_or_tag.is_some() {
-                Self(optional_port_or_tag.span())
+
+impl<'src> OptionalPortSpan<'src> {
+    pub(super) fn new(src: &'src str) -> Result<Self, Error> {
+        let span = OptionalPortOrTag::new(src, PortKind::Port).map_err(disambiguate_err)?;
+        match span.into_option() {
+            None => Ok(Self::none()),
+            Some(_) => Ok(Self(span.span())),
+        }
+    }
+    pub(super) fn from_ambiguous(
+        ambiguous: OptionalPortOrTag<'src>,
+        context: &'src str,
+    ) -> Result<Self, Error> {
+        match ambiguous.kind() {
+            PortKind::Either | PortKind::Port => Ok(if ambiguous.is_some() {
+                Self(ambiguous.into_span())
             } else {
                 Self::none()
             }),
-            PortKind::Tag => Err(Error(ErrorKind::PortInvalidChar, 0)), // FIXME: identify the invalid character
+            PortKind::Tag => Err(Error(
+                err::Kind::PortInvalidChar,
+                ambiguous.span_of(context)
+                    .bytes()
+                    .find(|b| !b.is_ascii_digit())
+                    .unwrap() // safe since ambiguous.kind == Tag, which means there must be a non-digit char
+                    .try_into()
+                    .unwrap(), // safe since ambiguous.span_of(context) must be short
+            )),
         }
-    }
-}
-impl<'src> TryFrom<&'src str> for OptionalPortSpan<'src> {
-    type Error = Error;
-    fn try_from(src: &'src str) -> Result<Self, Error> {
-        OptionalPortOrTag::new(src, PortKind::Either)
-            .map_err(convert_err)?
-            .try_into()
-    }
-}
-
-impl OptionalPortSpan<'_> {
-    pub(crate) fn none() -> Self {
-        Self(OptionalSpan::new(0))
-    }
-    pub(super) fn new(src: &str) -> Result<Self, Error> {
-        OptionalPortOrTag::new(src, PortKind::Port)
-            .map_err(convert_err)?
-            .try_into()
     }
 }

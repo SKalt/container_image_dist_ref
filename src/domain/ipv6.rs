@@ -163,7 +163,7 @@ impl<'src> Ipv6Span<'src> {
                 }
             }
             7 => Ok(Self(Span::new(len))),
-            _ => unreachable!(), // enforced by checks on state.increment_group()
+            _ => unreachable!("group_count <= 7 enforced by checks on state.increment_group()"),
         }
     }
     pub(crate) fn span(&self) -> Span<'src> {

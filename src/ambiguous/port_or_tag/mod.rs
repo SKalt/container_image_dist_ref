@@ -1,27 +1,12 @@
 //! > tag  := ":" [\w][\w.-]{0,127}
 //! > port := ":" [0-9]+
 
-use crate::span::{impl_span_methods_on_tuple, IntoOption, OptionalSpan, U};
+use crate::{
+    err::{self, Error},
+    span::{impl_span_methods_on_tuple, IntoOption, OptionalSpan, U},
+};
 
-#[derive(Debug)]
-pub enum Error {
-    // while length within a tag is limited to 127, the total length in an error
-    // might be longer, so we can't pack the entire error into a single bit.
-    TooLong(U),
-    InvalidChar(U),
-}
-impl std::ops::Add<U> for Error {
-    type Output = Self;
-    fn add(self, rhs: U) -> Self {
-        match self {
-            Self::TooLong(len) => Self::TooLong(len + rhs),
-            Self::InvalidChar(len) => Self::InvalidChar(len + rhs),
-        }
-    }
-}
-
-#[cfg_attr(test, derive(Debug))]
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Kind {
     Either,
     /// a colon-prefixed span of digits
@@ -57,13 +42,13 @@ impl<'src> OptionalPortOrTag<'src> {
         let mut index: U = match ascii.iter().next() {
             Some(b':') => Ok(0), // consume the starting colon
             Some(b'/') | None => return Ok(Self(OptionalSpan::new(0), kind)),
-            _ => Err(Error::InvalidChar(0)),
+            _ => Err(Error(err::Kind::PortOrTagInvalidChar, 0)),
         }?;
 
         let mut kind = kind;
         loop {
             index = if index >= 127 {
-                Err(Error::TooLong(index))
+                Err(Error(err::Kind::PortOrTagTooLong, index))
             } else if index as usize == src.len() - 1 {
                 break; // end of string
             } else {
@@ -73,7 +58,7 @@ impl<'src> OptionalPortOrTag<'src> {
             kind = match c {
                 b'a'..=b'z' | b'A'..=b'Z' | b'.' | b'-' => match kind {
                     Kind::Tag | Kind::Either => Ok(Kind::Tag),
-                    Kind::Port => Err(Error::InvalidChar(index + 1)),
+                    Kind::Port => Err(Error(err::Kind::PortInvalidChar, index + 1)),
                 },
                 b'0'..=b'9' => match kind {
                     Kind::Tag | Kind::Port => Ok(kind),
@@ -83,11 +68,29 @@ impl<'src> OptionalPortOrTag<'src> {
                     index -= 1; // don't consume the slash
                     break;
                 }
-                _ => return Err(Error::InvalidChar(index + 1)),
+                _ => return Err(Error(err::Kind::PortOrTagInvalidChar, index + 1)),
             }?;
         }
         let len = index + 1;
         Ok(Self(OptionalSpan::new(len), kind))
+    }
+    pub(super) fn narrow(self, target: Kind, context: &'src str) -> Result<Self, Error> {
+        match (self.kind(), target) {
+            (_, Kind::Either) => Ok(Self(self.span(), Kind::Either)),
+            (Kind::Either, _) => Ok(Self(self.span(), target)),
+            (Kind::Port, Kind::Port) | (Kind::Tag, Kind::Tag) => Ok(self),
+
+            (Kind::Port, Kind::Tag) => Ok(Self(self.span(), Kind::Tag)), // all ports are valid tags
+            (Kind::Tag, Kind::Port) => Err(Error(
+                err::Kind::PortInvalidChar,
+                self.span_of(context)
+                    .bytes()
+                    .find(|b| !b.is_ascii_digit())
+                    .unwrap() // safe since self.kind == Tag, which means there must be a non-digit char
+                    .try_into()
+                    .unwrap(), // safe since self.span_of(context) must be short
+            )),
+        }
     }
 }
 

@@ -1,63 +1,17 @@
 use crate::{
-    ambiguous::host_or_path::{Error as HostOrPathError, Kind as HostKind, OptionalHostOrPath},
-    err::Error,
+    ambiguous::host_or_path::{Kind as HostKind, OptionalHostOrPath},
+    err::{self, Error},
     span::{impl_span_methods_on_tuple, IntoOption, OptionalSpan, U},
 };
-enum ErrorKind {
-    NoMatch,
-    ComponentInvalidEnd,
-    InvalidChar,
-    TooLong,
 
-    Ipv6NoMatch,
-    Ipv6TooLong,
-    Ipv6BadColon,
-    Ipv6TooManyHexDigits,
-    Ipv6TooManyGroups,
-    Ipv6TooFewGroups,
-    Ipv6MissingClosingBracket,
-}
-pub(super) struct HostError(ErrorKind, U);
-impl From<HostOrPathError> for HostError {
-    fn from(err: HostOrPathError) -> Self {
-        use crate::ambiguous::host_or_path::AmbiguousErrorKind as Src;
-        use ErrorKind as Dest;
-        match err.kind() {
-            Src::NoMatch => HostError(Dest::NoMatch, err.index()),
-            Src::TooLong => HostError(Dest::TooLong, err.index()),
-            Src::InvalidChar => HostError(Dest::InvalidChar, err.index()),
-            Src::Ipv6NoMatch => HostError(Dest::Ipv6NoMatch, err.index()),
-            Src::Ipv6TooLong => HostError(Dest::Ipv6TooLong, err.index()),
-            Src::Ipv6BadColon => HostError(Dest::Ipv6BadColon, err.index()),
-            Src::Ipv6TooManyHexDigits => HostError(Dest::Ipv6TooManyHexDigits, err.index()),
-            Src::Ipv6TooManyGroups => HostError(Dest::Ipv6TooManyGroups, err.index()),
-            Src::Ipv6TooFewGroups => HostError(Dest::Ipv6TooFewGroups, err.index()),
-            Src::Ipv6MissingClosingBracket => {
-                HostError(Dest::Ipv6MissingClosingBracket, err.index())
-            }
-        }
-    }
-}
-impl From<HostError> for Error {
-    fn from(err: HostError) -> Error {
-        use crate::err::Kind as Dest;
-        use ErrorKind as Src;
-        let (kind, len) = (err.0, err.1);
-        let kind = match kind {
-            Src::NoMatch => Dest::HostNoMatch,
-            Src::ComponentInvalidEnd => Dest::HostComponentInvalidEnd,
-            Src::InvalidChar => Dest::HostInvalidChar,
-            Src::TooLong => Dest::HostTooLong,
-            Src::Ipv6NoMatch => Dest::Ipv6NoMatch,
-            Src::Ipv6TooLong => Dest::Ipv6TooLong,
-            Src::Ipv6BadColon => Dest::Ipv6BadColon,
-            Src::Ipv6TooManyHexDigits => Dest::Ipv6TooManyHexDigits,
-            Src::Ipv6TooManyGroups => Dest::Ipv6TooManyGroups,
-            Src::Ipv6TooFewGroups => Dest::Ipv6TooFewGroups,
-            Src::Ipv6MissingClosingBracket => Dest::Ipv6MissingClosingBracket,
-        };
-        Error(kind, len)
-    }
+fn disambiguate_err(e: Error) -> Error {
+    let kind = match e.kind() {
+        err::Kind::HostOrPathInvalidChar => err::Kind::HostInvalidChar,
+        err::Kind::HostOrPathTooLong => err::Kind::HostTooLong,
+        err::Kind::HostOrPathNoMatch => err::Kind::HostNoMatch,
+        _ => e.kind(),
+    };
+    Error(kind, e.index())
 }
 
 use super::ipv6::Ipv6Span;
@@ -99,7 +53,7 @@ impl<'src> TryFrom<&'src str> for OptionalHostSpan<'src> {
     type Error = Error;
     fn try_from(src: &'src str) -> Result<Self, Error> {
         OptionalHostOrPath::new(src, HostKind::Either)
-            .map_err(|e| Into::<HostError>::into(e))?
+            .map_err(disambiguate_err)?
             .try_into()
             .map_err(|e: Error| match e.0 {
                 crate::err::Kind::HostInvalidChar => Error(
@@ -121,8 +75,27 @@ impl<'src> OptionalHostSpan<'src> {
     pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
         // handle bracketed ipv6 addresses
         OptionalHostOrPath::new(src, HostKind::Either)
-            .map_err(|e| Into::<HostError>::into(e))?
+            .map_err(disambiguate_err)?
             .try_into()
+    }
+    pub(crate) fn from_ambiguous(
+        ambiguous: OptionalHostOrPath<'src>,
+        context: &'src str,
+    ) -> Result<Self, Error> {
+        match ambiguous.kind() {
+            HostKind::Host | HostKind::Either => Ok(Self(ambiguous.into_span(), Kind::Domain)),
+            HostKind::IpV6 => Ok(Self(ambiguous.into_span(), Kind::Ipv6)),
+            HostKind::Path => Err(Error(
+                err::Kind::HostInvalidChar,
+                ambiguous
+                    .span_of(context)
+                    .bytes()
+                    .find(|b| b == &b'_')
+                    .unwrap() // safe since a Path must have at least one underscore
+                    .try_into()
+                    .unwrap(), // safe since ambiguous.span_of(context) must be short
+            )),
+        }
     }
 }
 impl<'src> From<Ipv6Span<'src>> for OptionalHostSpan<'src> {
@@ -135,10 +108,7 @@ impl<'src> IntoOption for OptionalHostSpan<'src> {
     fn is_some(&self) -> bool {
         self.short_len() > 0
     }
-    fn none() -> Self
-    where
-        Self: Sized,
-    {
+    fn none() -> Self {
         Self(OptionalSpan::new(0), Kind::Empty)
     }
 }
@@ -179,5 +149,5 @@ impl<'src> HostStr<'src> {
 
 #[cfg(test)]
 mod tests {
-    //
+    //TODO: tests
 }

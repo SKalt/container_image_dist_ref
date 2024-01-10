@@ -24,78 +24,27 @@
 //! > -- https://github.com/opencontainers/distribution-spec/commit/efe2de09470d7f182d2fbd83ac4462fbdc462455
 
 use crate::{
-    ambiguous::host_or_path::{Error as HostOrPathError, Kind as PathKind, OptionalHostOrPath},
-    err::{Error, Kind as ErrorKind},
-    span::{impl_span_methods_on_tuple, IntoOption, OptionalSpan, Span, U},
+    ambiguous::host_or_path::{Kind as PathKind, OptionalHostOrPath},
+    err::{self, Error},
+    span::{impl_span_methods_on_tuple, IntoOption, OptionalSpan, U},
 };
 
-pub(super) enum EKind {
-    NoMatch,
-    ComponentInvalidEnd,
-    InvalidChar,
-    TooLong,
-
-    Ipv6NoMatch,
-    Ipv6TooLong,
-    Ipv6BadColon,
-    Ipv6TooManyHexDigits,
-    Ipv6TooManyGroups,
-    Ipv6TooFewGroups,
-    Ipv6MissingClosingBracket,
-}
-pub(super) struct _Error(EKind, U);
-impl From<HostOrPathError> for _Error {
-    fn from(err: HostOrPathError) -> Self {
-        use crate::ambiguous::host_or_path::AmbiguousErrorKind as A;
-        match err.kind() {
-            A::NoMatch => _Error(EKind::NoMatch, err.index()),
-            A::TooLong => _Error(EKind::TooLong, err.index()),
-            A::InvalidChar => _Error(EKind::InvalidChar, err.index()),
-            _ => unreachable!("ipv6 errors should never be raised in this call path"),
-            // A::Ipv6NoMatch => _Error(EKind::Ipv6NoMatch, err.len()),
-            // A::Ipv6TooLong => _Error(EKind::Ipv6TooLong, err.len()),
-            // A::Ipv6BadColon => _Error(EKind::Ipv6BadColon, err.len()),
-            // A::Ipv6TooManyHexDigits => _Error(EKind::Ipv6TooManyHexDigits, err.len()),
-            // A::Ipv6TooManyGroups => _Error(EKind::Ipv6TooManyGroups, err.len()),
-            // A::Ipv6TooFewGroups => _Error(EKind::Ipv6TooFewGroups, err.len()),
-            // A::Ipv6MissingClosingBracket => _Error(EKind::Ipv6MissingClosingBracket, err.len()),
-        }
-    }
-}
-impl From<_Error> for Error {
-    fn from(err: _Error) -> Error {
-        use EKind as Src;
-        use ErrorKind as Dest;
-        let (kind, len) = (err.0, err.1);
-        let kind = match kind {
-            Src::NoMatch => Dest::PathNoMatch,
-            Src::ComponentInvalidEnd => Dest::PathComponentInvalidEnd,
-            Src::InvalidChar => Dest::PathInvalidChar,
-            Src::TooLong => Dest::PathTooLong,
-            Src::Ipv6NoMatch => Dest::Ipv6NoMatch,
-            Src::Ipv6TooLong => Dest::Ipv6TooLong,
-            Src::Ipv6BadColon => Dest::Ipv6BadColon,
-            Src::Ipv6TooManyHexDigits => Dest::Ipv6TooManyHexDigits,
-            Src::Ipv6TooManyGroups => Dest::Ipv6TooManyGroups,
-            Src::Ipv6TooFewGroups => Dest::Ipv6TooFewGroups,
-            Src::Ipv6MissingClosingBracket => Dest::Ipv6MissingClosingBracket,
-        };
-        Error(kind, len)
-    }
-}
-
-impl core::ops::Add<U> for _Error {
-    type Output = Self;
-    fn add(self, rhs: U) -> Self {
-        Self(self.0, self.1 + rhs)
-    }
+fn adapt_error(e: Error) -> Error {
+    let kind = match e.kind() {
+        err::Kind::HostOrPathNoMatch => err::Kind::PathNoMatch,
+        // err::Kind::HostOrPathInvalidChar => err::Kind::PathComponentInvalidEnd,
+        err::Kind::HostOrPathInvalidChar => err::Kind::PathInvalidChar,
+        err::Kind::HostOrPathTooLong => err::Kind::PathTooLong,
+        _ => e.kind(),
+    };
+    Error(kind, e.index())
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct PathSpan<'src>(OptionalSpan<'src>);
-impl_span_methods_on_tuple!(PathSpan);
+pub(crate) struct OptionalPathSpan<'src>(OptionalSpan<'src>);
+impl_span_methods_on_tuple!(OptionalPathSpan);
 
-impl<'src> TryFrom<OptionalHostOrPath<'src>> for PathSpan<'src> {
+impl<'src> TryFrom<OptionalHostOrPath<'src>> for OptionalPathSpan<'src> {
     type Error = Error;
     fn try_from(ambiguous: OptionalHostOrPath) -> Result<Self, Error> {
         use PathKind::*;
@@ -107,12 +56,12 @@ impl<'src> TryFrom<OptionalHostOrPath<'src>> for PathSpan<'src> {
             } else {
                 Self::none()
             }),
-            Host => Err(Error(ErrorKind::PathInvalidChar, ambiguous.short_len())),
+            Host => Err(Error(err::Kind::PathInvalidChar, ambiguous.short_len())),
             IpV6 => Ok(Self(OptionalSpan::new(ambiguous.short_len()))),
         }
     }
 }
-impl IntoOption for PathSpan<'_> {
+impl IntoOption for OptionalPathSpan<'_> {
     fn is_some(&self) -> bool {
         self.short_len() > 0
     }
@@ -120,39 +69,23 @@ impl IntoOption for PathSpan<'_> {
         Self(OptionalSpan::new(0))
     }
 }
-impl<'src> PathSpan<'src> {
+impl<'src> OptionalPathSpan<'src> {
     fn none() -> Self {
         Self(OptionalSpan::new(0))
     }
     fn parse_component(src: &'src str) -> Result<Self, Error> {
         OptionalHostOrPath::new(src, PathKind::Path)
-            .map_err(|e| Into::<_Error>::into(e))?
+            .map_err(adapt_error)?
             .try_into()
     }
-    /// parse an interior path-component starting from an '/' character at the given index
-    /// in the source string
-    // pub(crate) fn proceed_from(index: U, src: &'src str) -> Result<Self, Error> {
-    //     let mut index = index;
-    //     let rest = &src[index as usize..];
-    //     match rest.bytes().next() {
-    //         None => return Ok(Self::none()),
-    //         Some(b'/') => index += 1,
-    //         Some(_) => return Err(Error(ErrorKind::PathInvalidChar, index)),
-    //     }
-
-    //     // TODO: watch out for an infinite loop
-    //     Self::parse_component(&rest[index as usize..])
-    //         .map(|p| PathSpan(OptionalSpan::new(p.short_len() + index)))
-    //         .map_err(|e| e + index)
-    // }
-    pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
-        let mut index = Self::parse_component(src)?.short_len();
+    pub(crate) fn parse_from_slash(src: &'src str) -> Result<Self, Error> {
+        let mut index: U = 0;
         loop {
             let next = src[index as usize..].bytes().next();
             index = match next {
                 None | Some(b':') => break,
                 Some(b'/') => Ok(index + 1),
-                Some(_) => Err(Error(ErrorKind::PathInvalidChar, index + 1)),
+                Some(_) => Err(Error(err::Kind::PathInvalidChar, index + 1)),
             }?;
             let rest = &src[index as usize..];
             let section = Self::parse_component(rest).map_err(|e| e + index)?;
@@ -163,6 +96,34 @@ impl<'src> PathSpan<'src> {
         }
         Ok(Self(OptionalSpan::new(index)))
     }
+    pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
+        let index = Self::parse_component(src)?.short_len();
+        Self::parse_from_slash(&src[index as usize..])
+            .map(|p| Self(OptionalSpan::new(p.short_len() + index)))
+            .map_err(|e| e + index)
+    }
+    pub(crate) fn from_ambiguous(
+        ambiguous: OptionalHostOrPath<'src>,
+        context: &'src str,
+    ) -> Result<Self, Error> {
+        match ambiguous.kind() {
+            PathKind::Either | PathKind::Path => Ok(if ambiguous.is_some() {
+                Self(ambiguous.into_span())
+            } else {
+                Self::none()
+            }),
+            PathKind::Host => Err(Error(
+                err::Kind::PathInvalidChar,
+                ambiguous.span_of(context)
+                    .bytes()
+                    .find(|b| b.is_ascii_uppercase())
+                    .unwrap() // safe since ambiguous.kind == Host, which means there must be an uppercase letter
+                    .try_into()
+                    .unwrap(), // safe since ambiguous.span_of(context) must be short
+            )),
+            PathKind::IpV6 => Ok(Self(ambiguous.into_span())),
+        }
+    }
 }
 
 pub struct PathStr<'src>(&'src str);
@@ -170,16 +131,16 @@ impl<'src> PathStr<'src> {
     pub(crate) fn src(&self) -> &'src str {
         self.0
     }
-    fn from_span(src: &'src str, span: PathSpan<'src>) -> Self {
+    fn from_span(src: &'src str, span: OptionalPathSpan<'src>) -> Self {
         Self(span.span_of(src))
     }
     pub fn from_prefix(src: &'src str) -> Result<Self, Error> {
-        Ok(PathStr::from_span(src, PathSpan::new(src)?))
+        Ok(PathStr::from_span(src, OptionalPathSpan::new(src)?))
     }
     pub fn from_exact_match(src: &'src str) -> Result<Self, Error> {
-        let span = PathSpan::new(src)?;
+        let span = OptionalPathSpan::new(src)?;
         if span.len() != src.len() {
-            return Err(Error(ErrorKind::PathNoMatch, span.short_len()));
+            return Err(Error(err::Kind::PathNoMatch, span.short_len()));
         }
         Ok(PathStr::from_span(src, span))
     }
@@ -199,7 +160,7 @@ mod tests {
     fn test_this() {
         use super::*;
         let src = "test.com/path:tag";
-        let span = PathSpan::new(src).unwrap();
+        let span = OptionalPathSpan::new(src).unwrap();
         assert_eq!(span.span_of(src), "test.com/path");
     }
 }

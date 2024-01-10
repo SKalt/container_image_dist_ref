@@ -20,7 +20,7 @@
 //!
 
 use crate::{
-    err::{Error, Kind as ErrorKind},
+    err::{self, Error},
     span::{impl_span_methods_on_tuple, IntoOption, OptionalSpan, U},
 };
 
@@ -28,7 +28,7 @@ use super::Compliance;
 #[derive(Clone, Copy)]
 pub(super) struct AlgorithmSpan<'src>(OptionalSpan<'src>);
 impl_span_methods_on_tuple!(AlgorithmSpan);
-use ErrorKind::{
+use err::Kind::{
     AlgorithmInvalidChar, AlgorithmInvalidNumericPrefix, AlgorithmNoMatch, InvalidOciAlgorithm,
 };
 impl<'src> AlgorithmSpan<'src> {

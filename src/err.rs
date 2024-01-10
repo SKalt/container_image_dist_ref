@@ -1,9 +1,7 @@
-use std::fmt::Display;
-
 use crate::span::U;
 
 // since ErrorKind can fit 256 unique errors, use it for all non-ambiguous cases
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Kind {
     // ambiguous::host_or_path ---------------------------------
     HostOrPathNoMatch,
@@ -30,6 +28,8 @@ pub enum Kind {
     Port,
     PortInvalidChar,
     PortTooLong,
+    /// an empty port was observed (like "host:/", or "host:" at the end of the string)
+    PortMissing,
     // path ----------------------------------------------------
     PathNoMatch,
     PathComponentInvalidEnd,
@@ -65,6 +65,14 @@ pub enum Kind {
 
 #[derive(Debug, Clone, Copy)]
 pub struct Error(pub(crate) Kind, pub(crate) U);
+impl Error {
+    pub(crate) fn kind(&self) -> Kind {
+        self.0
+    }
+    pub(crate) fn index(&self) -> U {
+        self.1
+    }
+}
 impl std::ops::Add<U> for Error {
     type Output = Self;
     fn add(self, rhs: U) -> Self {

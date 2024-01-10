@@ -39,112 +39,92 @@ mod tag;
 
 // FIXME: distinguish between offsets and lengths
 
-use ambiguous::domain_or_tagged_ref::DomainOrRefSpan;
-use domain::OptionalDomainSpan;
-use span::{SpanMethods, MAX_USIZE};
-use tag::OptionalTagSpan;
-
 use self::{
-    ambiguous::port_or_tag::OptionalPortOrTag,
+    ambiguous::{domain_or_tagged_ref::DomainOrRefSpan, port_or_tag::OptionalPortOrTag},
     digest::{Compliance, OptionalDigestSpan},
-    domain::DomainSpan,
+    domain::OptionalDomainSpan,
     err::Error,
-    path::PathSpan,
-    span::{IntoOption, Span, U},
+    path::OptionalPathSpan,
+    span::{IntoOption, Span, SpanMethods, MAX_USIZE, U},
+    tag::OptionalTagSpan,
 };
 
 pub struct Reference<'src> {
     src: &'src str,
     // pub name: NameStr<'src>,
-    optional_domain: DomainSpan<'src>,
-    path: PathSpan<'src>,
+    optional_domain: OptionalDomainSpan<'src>,
+    path: OptionalPathSpan<'src>,
     pub tag: OptionalPortOrTag<'src>,
     pub digest: OptionalDigestSpan<'src>,
 }
 
 struct RefSpan<'src> {
-    optional_domain: OptionalDomainSpan<'src>,
-    path: PathSpan<'src>,
-    optional_tag: OptionalTagSpan<'src>,
-    optional_digest: OptionalDigestSpan<'src>,
+    domain: OptionalDomainSpan<'src>,
+    path: OptionalPathSpan<'src>,
+    tag: OptionalTagSpan<'src>,
+    digest: OptionalDigestSpan<'src>,
+    digest_compliance: Compliance,
 }
 
 impl<'src> RefSpan<'src> {
-    pub fn new(src: &'src str) -> Result<(Self, Compliance), Error> {
+    pub fn new(src: &'src str) -> Result<Self, Error> {
         match src.len() {
             1..=MAX_USIZE => Ok(()), // check length addressable by integer size
             0 => Err(Error(err::Kind::RefNoMatch, 0)),
             _ => Err(Error(err::Kind::RefTooLong, U::MAX)),
         }?;
-        // !!!!!
-        let first_bit = DomainOrRefSpan::new(src);
-        if let Ok(first_bit) = first_bit {
-            debug_assert!(
-                first_bit.len() <= src.len(),
-                "first_bit.len() = {}, src.len = {}",
-                first_bit.len(),
-                src.len()
-            );
-            let rest = &src[first_bit.len()..];
-            match rest.bytes().next() {
-                Some(b'/') => {
-                    let domain: OptionalDomainSpan<'src> = first_bit.try_into()?;
-                    // consume the separator slash
-                    let mut len = domain.len();
-                    let path = PathSpan::new(&src[len..])?;
-                    len += path.len();
-                    let optional_tag = OptionalTagSpan::new(&src[len..])?;
-                    len += optional_tag.len();
-                    // FIXME: handling missing digest
-
-                    let (optional_digest, compliance) = OptionalDigestSpan::new(&src[len..])?;
-                    Ok((
-                        Self {
-                            optional_domain: domain,
-                            path,
-                            optional_tag,
-                            optional_digest,
-                        },
-                        compliance,
-                    ))
-                }
-                None => {
-                    // use ambiguous::host_or_path::{AmbiguousErrorKind, Error as AmbiguousError};
-                    let path = first_bit
-                        .host_or_path
-                        .try_into()
-                        .map_err(|e: Error| match e.0 {
-                            err::Kind::PathInvalidChar => Error(
-                                err::Kind::PathInvalidChar,
-                                // find the offending underscore
-                                src[..first_bit.host_or_path.len()]
-                                    .bytes()
-                                    .find(|b| b == &b'_')
-                                    .unwrap()
-                                    .try_into()
-                                    .unwrap(),
-                            ),
-                            _ => e,
-                        })?; // <- TODO: find offending char on InvalidChar failure
-                    let tag = first_bit.optional_port_or_tag.into();
-                    Ok((
-                        Self {
-                            optional_domain: OptionalDomainSpan::none(),
-                            path,
-                            optional_tag: tag,
-                            optional_digest: OptionalDigestSpan::none(),
-                        },
-                        Compliance::Universal,
-                    ))
-                }
-                _ => Err(Error(err::Kind::RefNoMatch, first_bit.short_len())),
-            }
-        } else {
-            // something's unambiguously wrong, so treat it like a domain
-            // and surface the error
-            let _domain: OptionalDomainSpan<'src> = first_bit.try_into()?;
-            unreachable!()
+        let prefix = DomainOrRefSpan::new(src)?;
+        let domain = match prefix {
+            DomainOrRefSpan::Domain(domain) => domain,
+            DomainOrRefSpan::TaggedRef(_) => OptionalDomainSpan::none(),
+        };
+        let mut index = domain.len();
+        let rest = &src[index..];
+        let path = match prefix {
+            DomainOrRefSpan::TaggedRef((left, _)) => Ok(left),
+            DomainOrRefSpan::Domain(_) => match rest.bytes().next() {
+                Some(b'/') => OptionalPathSpan::parse_from_slash(&src[index..]),
+                Some(b'@') | None => Ok(OptionalPathSpan::none()),
+                Some(_) => Err(Error(err::Kind::PathInvalidChar, 0)),
+            },
         }
+        .map_err(|e| e + domain.short_len())?;
+        index += path.len();
+        let rest = &src[index..];
+        let tag = match prefix {
+            DomainOrRefSpan::TaggedRef((_, right)) => match right.into_option() {
+                Some(tag) => Ok(tag),
+                None => match rest.bytes().next() {
+                    Some(b':') => OptionalTagSpan::new(rest),
+                    Some(b'@') | None => Ok(OptionalTagSpan::none()),
+                    Some(_) => Err(Error(err::Kind::PathInvalidChar, index.try_into().unwrap())),
+                },
+            },
+            DomainOrRefSpan::Domain(_) => match src[prefix.len() + path.len()..].bytes().next() {
+                Some(b':') => OptionalTagSpan::new(rest),
+                Some(_) | None => Ok(OptionalTagSpan::none()),
+            },
+        }
+        .map_err(|e| e + prefix.short_len() + path.short_len())?;
+        index += tag.len();
+        let rest = &src[index..];
+        // FIXME: have DigestSpan own the leading '@'
+        let (digest, compliance) = match rest.bytes().next() {
+            Some(b'@') => OptionalDigestSpan::new(&rest[1..]),
+            Some(b) => unreachable!(
+                "should have been caught by DomainOrRefSpan::new ; found {:?} @ {} in {:?}",
+                b as char, index, src
+            ),
+            None => Ok((OptionalDigestSpan::none(), Compliance::Universal)),
+        }
+        .map_err(|e| e + prefix.short_len() + path.short_len() + tag.short_len())?;
+        Ok(Self {
+            domain,
+            path,
+            tag,
+            digest,
+            digest_compliance: compliance,
+        })
     }
 }
 

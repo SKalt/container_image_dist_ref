@@ -9,7 +9,7 @@ with lib.fileset;
 let
 
   fileHasAnySuffix = fileSuffixes: file: (lib.lists.any (s: lib.hasSuffix s file.name) fileSuffixes);
-
+  # TODO: go filter?
   rust = basePath: (
     let
       mainFilter = fileFilter

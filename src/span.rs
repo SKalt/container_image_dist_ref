@@ -83,6 +83,9 @@ pub(crate) trait SpanMethods<'src> {
     fn span_of(&self, src: &'src str) -> &'src str {
         &src[..self.len()]
     }
+    fn into_span(&self) -> OptionalSpan<'src> {
+        OptionalSpan::new(self.short_len())
+    }
 }
 
 impl SpanMethods<'_> for OptionalSpan<'_> {

@@ -9,14 +9,11 @@
 //! we can't use the `url` crate for parsing domain names.
 //! Since `url::Host` needs to decode percent-encoded domain names per [rfc3986](https://www.rfc-editor.org/rfc/rfc3986#appendix-A)
 
-// use core::net::AddrParseError;
 pub(crate) mod host;
 pub(crate) mod ipv6;
 pub(crate) mod port;
 use crate::{
-    ambiguous::domain_or_tagged_ref::{
-        DomainOrRefSpan, ErrKind as AmbiguousErrorKind, Error as AmbiguousError,
-    },
+    ambiguous::{host_or_path::OptionalHostOrPath, port_or_tag::OptionalPortOrTag},
     domain::{
         host::{HostStr, OptionalHostSpan},
         port::OptionalPortSpan,
@@ -27,122 +24,114 @@ use crate::{
 
 /// a definite host and an optional port
 #[derive(Clone, Copy)]
-pub(super) struct DomainSpan<'src> {
+pub(super) struct OptionalDomainSpan<'src> {
     host: OptionalHostSpan<'src>,          // cannot be zero-length
     optional_port: OptionalPortSpan<'src>, // can be 0-length, indicating missing
 }
 
-/// a possibly missing host which may or may not have a port
-#[derive(Clone, Copy)]
-pub(crate) struct OptionalDomainSpan<'src>(DomainSpan<'src>);
+impl SpanMethods<'_> for OptionalDomainSpan<'_> {
+    #[inline(always)]
+    fn short_len(&self) -> U {
+        self.host().short_len() + self.port().short_len()
+    }
+}
+
 impl<'src> IntoOption for OptionalDomainSpan<'src> {
     fn is_some(&self) -> bool {
-        self.0.short_len() > 0
+        self.short_len() > 0
     }
     fn none() -> Self {
-        Self(DomainSpan {
+        Self {
             host: OptionalHostSpan::none(),
             optional_port: OptionalPortSpan::none(),
-        })
+        }
     }
 }
+
+fn disambiguate_error(e: Error) -> Error {
+    let kind = match e.kind() {
+        err::Kind::HostOrPathNoMatch => err::Kind::HostNoMatch,
+        err::Kind::HostOrPathNoMatch => err::Kind::HostInvalidChar,
+        err::Kind::HostOrPathNoMatch => err::Kind::HostTooLong,
+        err::Kind::PortOrTagInvalidChar => err::Kind::PortInvalidChar,
+        err::Kind::PortOrTagTooLong => err::Kind::PortTooLong,
+        err::Kind::PortOrTagMissing => err::Kind::PortMissing,
+        _ => e.kind(),
+    };
+    Error(kind, e.index())
+}
+
 impl<'src> OptionalDomainSpan<'src> {
-    pub(crate) fn from_domain(domain: DomainSpan<'src>) -> Self {
-        Self(domain)
-    }
-    #[inline(always)]
-    pub(crate) fn len(&self) -> usize {
-        self.0.len()
-    }
-    #[inline(always)]
-    pub(crate) fn short_len(&self) -> U {
-        self.0.short_len()
-    }
-    pub(crate) fn from_parts(
-        host: OptionalHostSpan<'src>,
-        optional_port: OptionalPortSpan<'src>,
-    ) -> Self {
-        Self(DomainSpan {
-            host,
-            optional_port,
-        })
-    }
-}
-
-impl<'src> TryFrom<DomainOrRefSpan<'src>> for OptionalDomainSpan<'src> {
-    type Error = Error;
-    fn try_from(ambiguous: DomainOrRefSpan<'src>) -> Result<Self, Error> {
-        Ok(Self(DomainSpan {
-            host: ambiguous.host_or_path.try_into()?,
-            optional_port: ambiguous.optional_port_or_tag.try_into()?,
-        }))
-    }
-}
-
-fn disambiguate_error(e: AmbiguousError) -> Error {
-    match e.kind() {
-        AmbiguousErrorKind::LeftNoMatch => Error(err::Kind::HostNoMatch, e.index()),
-        AmbiguousErrorKind::LeftInvalidChar => Error(err::Kind::HostInvalidChar, e.index()),
-        AmbiguousErrorKind::LeftTooLong => Error(err::Kind::HostTooLong, e.index()),
-        AmbiguousErrorKind::RightInvalidChar => Error(err::Kind::PortInvalidChar, e.index()),
-        AmbiguousErrorKind::RightTooLong => Error(err::Kind::PortTooLong, e.index()),
-        AmbiguousErrorKind::Ipv6NoMatch => Error(err::Kind::Ipv6NoMatch, e.index()),
-        AmbiguousErrorKind::Ipv6TooLong => Error(err::Kind::Ipv6TooLong, e.index()),
-        AmbiguousErrorKind::Ipv6BadColon => Error(err::Kind::Ipv6BadColon, e.index()),
-        AmbiguousErrorKind::Ipv6TooManyHexDigits => {
-            Error(err::Kind::Ipv6TooManyHexDigits, e.index())
-        }
-        AmbiguousErrorKind::Ipv6TooManyGroups => Error(err::Kind::Ipv6TooManyGroups, e.index()),
-        AmbiguousErrorKind::Ipv6TooFewGroups => Error(err::Kind::Ipv6TooFewGroups, e.index()),
-        AmbiguousErrorKind::Ipv6MissingClosingBracket => {
-            Error(err::Kind::Ipv6MissingClosingBracket, e.index())
-        }
-    }
-}
-impl<'src> TryFrom<Result<DomainOrRefSpan<'src>, AmbiguousError>> for OptionalDomainSpan<'src> {
-    type Error = Error;
-
-    fn try_from(value: Result<DomainOrRefSpan<'src>, AmbiguousError>) -> Result<Self, Self::Error> {
-        value.map_err(disambiguate_error)?.try_into()
-    }
-}
-
-impl<'src> DomainSpan<'src> {
-    #[inline(always)]
-    pub(super) fn len(&self) -> usize {
-        self.host.len() + self.optional_port.len()
-    }
-    #[inline(always)]
-    pub(super) fn short_len(&self) -> U {
-        self.host.short_len() + self.optional_port.short_len()
-    }
     pub(crate) fn host(&self) -> OptionalHostSpan<'src> {
         self.host
     }
 
+    pub fn port(&self) -> OptionalPortSpan {
+        self.optional_port
+    }
+
     pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
         let host = OptionalHostSpan::try_from(src)?;
-        let optional_port = OptionalPortSpan::try_from(&src[host.len()..])?;
+        let optional_port =
+            OptionalPortSpan::new(&src[host.len()..]).map_err(|e| e + host.short_len())?;
         Ok(Self {
             host,
             optional_port,
         })
     }
-    pub fn port(&self) -> OptionalPortSpan {
-        self.optional_port
+    pub(crate) fn from_parts(
+        host: OptionalHostSpan<'src>,
+        optional_port: OptionalPortSpan<'src>,
+    ) -> Self {
+        Self {
+            host,
+            optional_port,
+        }
+    }
+
+    // pub(crate) fn from_ambiguous(
+    //     ambiguous: OptionalHostOrPath<'src>,
+    //     context: &'src str,
+    // ) -> Result<Self, Error> {
+    //     let host = OptionalHostSpan::try_from(ambiguous).map_err(disambiguate_error)?;
+    //     let optional_port =
+    //         OptionalPortSpan::new(&context[host.len()..]).map_err(|e| e + host.short_len())?;
+    //     Ok(Self {
+    //         host,
+    //         optional_port,
+    //     })
+    // }
+    pub(crate) fn from_ambiguous_parts(
+        host: OptionalHostOrPath<'src>,
+        optional_port: OptionalPortOrTag<'src>,
+        context: &'src str,
+    ) -> Result<Self, Error> {
+        debug_assert!(
+            host.len() + optional_port.len() <= context.len(),
+            "ambiguous.len() = {}, context.len() = {}, context = {}",
+            host.len() + optional_port.len(),
+            context.len(),
+            context
+        );
+
+        let host = OptionalHostSpan::from_ambiguous(host, context)?;
+        if host.is_none() {
+            return Err(Error(err::Kind::HostNoMatch, 0));
+        }
+        let optional_port =
+            OptionalPortSpan::from_ambiguous(optional_port, &context[host.len()..])?;
+        Ok(Self {
+            host,
+            optional_port,
+        })
     }
 }
 
-impl<'src> From<DomainSpan<'src>> for OptionalDomainSpan<'src> {
-    fn from(domain: DomainSpan<'src>) -> Self {
-        Self::from_domain(domain)
-    }
-}
 pub struct DomainStr<'src> {
     pub src: &'src str,
     /// the host part of the domain. It can be an IPv4 address, an IPv6 address,
     /// or a restricted, non-percent-encoded domain name.
-    span: DomainSpan<'src>,
+    span: OptionalDomainSpan<'src>,
 }
 impl<'src> DomainStr<'src> {
     #[inline(always)]
@@ -150,7 +139,7 @@ impl<'src> DomainStr<'src> {
         self.src.len()
     }
     pub fn from_prefix(src: &'src str) -> Result<Self, Error> {
-        let span = DomainSpan::new(src)?;
+        let span = OptionalDomainSpan::new(src)?;
         Ok(Self {
             src: &src[..span.len()],
             span,

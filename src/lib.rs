@@ -37,7 +37,9 @@ pub mod path;
 pub(crate) mod span;
 mod tag;
 
-use ambiguous::domain_or_tagged_ref::DomainOrRef;
+// FIXME: distinguish between offsets and lengths
+
+use ambiguous::domain_or_tagged_ref::DomainOrRefSpan;
 use domain::OptionalDomainSpan;
 use span::{SpanMethods, MAX_USIZE};
 use tag::OptionalTagSpan;
@@ -75,17 +77,26 @@ impl<'src> RefSpan<'src> {
             _ => Err(Error(err::Kind::RefTooLong, U::MAX)),
         }?;
         // !!!!!
-        let first_bit = DomainOrRef::new(src);
+        let first_bit = DomainOrRefSpan::new(src);
         if let Ok(first_bit) = first_bit {
-            match src[first_bit.len()..].bytes().next() {
+            debug_assert!(
+                first_bit.len() <= src.len(),
+                "first_bit.len() = {}, src.len = {}",
+                first_bit.len(),
+                src.len()
+            );
+            let rest = &src[first_bit.len()..];
+            match rest.bytes().next() {
                 Some(b'/') => {
                     let domain: OptionalDomainSpan<'src> = first_bit.try_into()?;
                     // consume the separator slash
-                    let mut len = domain.len() + 1;
+                    let mut len = domain.len();
                     let path = PathSpan::new(&src[len..])?;
                     len += path.len();
                     let optional_tag = OptionalTagSpan::new(&src[len..])?;
                     len += optional_tag.len();
+                    // FIXME: handling missing digest
+
                     let (optional_digest, compliance) = OptionalDigestSpan::new(&src[len..])?;
                     Ok((
                         Self {
@@ -142,7 +153,13 @@ mod tests {
     fn should_parse(src: &str) {
         let result = super::RefSpan::new(src);
         if let Err(e) = result {
-            panic!("failed to parse {:?}: {:?}", src, e);
+            panic!(
+                "failed to parse {:?}: {:?} @ {} ({:?})",
+                src,
+                e,
+                e.1,
+                src.as_bytes()[e.1 as usize] as char
+            );
         }
     }
 

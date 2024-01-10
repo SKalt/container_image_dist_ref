@@ -5,6 +5,14 @@ use crate::span::U;
 // since ErrorKind can fit 256 unique errors, use it for all non-ambiguous cases
 #[derive(Debug, Clone, Copy)]
 pub enum Kind {
+    // ambiguous::host_or_path ---------------------------------
+    HostOrPathNoMatch,
+    HostOrPathTooLong,
+    HostOrPathInvalidChar,
+    // ambiguous::port_or_tag ----------------------------------
+    PortOrTagMissing,
+    PortOrTagTooLong,
+    PortOrTagInvalidChar,
     // domain::host --------------------------------------------
     HostNoMatch,
     HostComponentInvalidEnd,

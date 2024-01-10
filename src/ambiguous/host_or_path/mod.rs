@@ -1,6 +1,6 @@
 use crate::{
     domain::ipv6,
-    span::{impl_span_methods_on_tuple, IntoOption, OptionalSpan, U},
+    span::{impl_span_methods_on_tuple, IntoOption, OptionalSpan, Span, U},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -30,7 +30,7 @@ impl Error {
     pub(crate) fn kind(&self) -> AmbiguousErrorKind {
         self.0
     }
-    pub(crate) fn len(&self) -> U {
+    pub(crate) fn index(&self) -> U {
         self.1
     }
 }
@@ -108,8 +108,7 @@ impl Scan {
         if count > 2 {
             Err(Error(AmbiguousErrorKind::InvalidChar, 0))
         } else {
-            self.unset_dash();
-            self.unset_dot();
+            self.0 &= !Self::UNDERSCORE_COUNT; // clear the count
             Ok(self.0 |= count)
         }
     }
@@ -161,8 +160,36 @@ impl Scan {
     }
 }
 
+#[cfg(test)]
+struct DebugScan {
+    #[allow(dead_code)]
+    has_upper: bool,
+    #[allow(dead_code)]
+    last_was_dot: bool,
+    #[allow(dead_code)]
+    last_was_dash: bool,
+    #[allow(dead_code)]
+    underscore_count: u8,
+    #[allow(dead_code)]
+    has_underscore: bool,
+}
+
+#[cfg(test)]
+impl From<&Scan> for DebugScan {
+    fn from(scan: &Scan) -> Self {
+        Self {
+            has_upper: scan.has_upper(),
+            last_was_dot: scan.last_was_dot(),
+            last_was_dash: scan.last_was_dash(),
+            underscore_count: scan.underscore_count(),
+            has_underscore: scan.has_underscore(),
+        }
+    }
+}
+
+// FIXME: use Span<'src> instead of OptionalSpan<'src>
 #[derive(Clone, Copy)]
-pub(crate) struct OptionalHostOrPath<'src>(OptionalSpan<'src>, Kind);
+pub(crate) struct OptionalHostOrPath<'src>(Span<'src>, Kind);
 impl_span_methods_on_tuple!(OptionalHostOrPath);
 impl<'src> IntoOption for OptionalHostOrPath<'src> {
     fn is_some(&self) -> bool {
@@ -172,7 +199,7 @@ impl<'src> IntoOption for OptionalHostOrPath<'src> {
     where
         Self: Sized,
     {
-        Self(OptionalSpan::new(0), Kind::Either)
+        Self(Span::new(0), Kind::Either)
     }
 }
 impl OptionalHostOrPath<'_> {
@@ -210,12 +237,15 @@ impl OptionalHostOrPath<'_> {
     }
 
     pub(crate) fn new(src: &str, kind: Kind) -> Result<Self, Error> {
-        let mut ascii = src.bytes();
+        let ascii = src.as_bytes();
         let mut scan: Scan = kind.into(); // <- scan's setters will enforce the kind's constraint(s)
-        match ascii.next() {
+        let mut index = match ascii.iter().next() {
             None => Err(Error(AmbiguousErrorKind::NoMatch, 0)),
-            Some(b'a'..=b'z') | Some(b'0'..=b'9') => Ok(()),
-            Some(b'A'..=b'Z') => scan.set_upper(),
+            Some(b'a'..=b'z') | Some(b'0'..=b'9') => Ok(0),
+            Some(b'A'..=b'Z') => {
+                scan.set_upper()?;
+                Ok(0)
+            }
             Some(b'[') => {
                 // TODO: ensure this is unreachable
                 return match kind {
@@ -225,42 +255,73 @@ impl OptionalHostOrPath<'_> {
             }
             Some(_) => Err(Error(AmbiguousErrorKind::InvalidChar, 0)),
         }?;
-        let mut len = 1;
 
-        for c in ascii {
-            #[cfg(test)]
-            let _ch: char = c as char;
-            if len == U::MAX {
-                Err(Error(AmbiguousErrorKind::TooLong, len))?;
+        while (index as usize) < ascii.len() - 1 {
+            index += if index < U::MAX {
+                Ok(1)
             } else {
-                len += 1;
-            }
+                Err(Error(AmbiguousErrorKind::TooLong, index))
+            }?;
+            let c = ascii[index as usize];
+            #[cfg(test)]
+            let (_ch, _pre) = (c as char, DebugScan::from(&scan));
             match c {
                 b'a'..=b'z' | b'0'..=b'9' => Ok(scan.reset()),
                 b'A'..=b'Z' => scan.set_upper(),
                 b'_' => scan.add_underscore(),
                 b'.' => scan.set_dot(),
                 b'-' => scan.set_dash(),
-                b':' | b'/' => break,
-                _ => Err(Error(AmbiguousErrorKind::InvalidChar, len)),
+                b':' | b'/' => {
+                    index -= 1;
+                    break;
+                }
+                _ => Err(Error(AmbiguousErrorKind::InvalidChar, index)),
             }
-            .map_err(|e| e + len)?
+            .map_err(|e| e + index)?;
+            #[cfg(test)]
+            {
+                let _post = DebugScan::from(&scan);
+                debug_assert!(
+                    _pre.has_upper == _post.has_upper,
+                    "has_upper changed from {} to {} @ {}",
+                    _pre.has_upper,
+                    _post.has_upper,
+                    index
+                );
+            }
         }
         if scan.last_was_dash() || scan.last_was_dot() || scan.underscore_count() > 0 {
-            Err(Error(AmbiguousErrorKind::InvalidChar, len))?;
+            Err(Error(AmbiguousErrorKind::InvalidChar, index))?;
         }
-        Ok(Self(OptionalSpan::new(len), scan.into()))
+        debug_assert!(
+            index < src.len() as u8,
+            "index = {}, src.len() = {}",
+            index,
+            src.len()
+        );
+        Ok(Self(Span::new(index + 1), scan.into()))
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::span::SpanMethods;
-    fn should_parse_as(src: &str, expected: &str, kind: super::Kind) {
-        let span = should_parse(src);
-        assert_eq!(span.of(src), expected);
-        assert_eq!(span.kind(), kind, "incorrectly typed {src:?}");
+    fn should_parse_as(src: &str, kind: Kind) {
+        let host_or_path = should_parse(src);
+        let _ = host_or_path.span_of(src); // check bounds
+        assert_eq!(host_or_path.kind(), kind, "incorrectly typed {src:?}");
     }
+    fn should_parse_incomplete(src: &str, expected: &str) {
+        let host_or_path = should_parse(src);
+        let consumed = host_or_path.span_of(src);
+        let rest = &src[consumed.len()..];
+        assert_eq!(
+            rest, expected,
+            "incorrectly left {rest:?} instead of {expected:?} of {src:?}"
+        );
+    }
+
     fn should_parse(src: &str) -> super::OptionalHostOrPath<'_> {
         super::OptionalHostOrPath::new(src, super::Kind::Either)
             .map_err(|e| {
@@ -269,12 +330,12 @@ mod tests {
                     "failed to parse {:?}: {:?} @ {}",
                     src,
                     e.kind(),
-                    e.len()
+                    e.index()
                 );
             })
             .unwrap()
     }
-    fn should_fail_with(src: &str, err_kind: super::AmbiguousErrorKind) {
+    fn should_fail_with(src: &str, err_kind: super::AmbiguousErrorKind, bad_char_index: u8) {
         let err = super::OptionalHostOrPath::new(src, super::Kind::Either)
             .map(|e| {
                 assert!(
@@ -287,19 +348,37 @@ mod tests {
             })
             .unwrap_err();
         assert_eq!(err.kind(), err_kind, "incorrect error kind");
+        assert_eq!(
+            err.index(),
+            bad_char_index.into(),
+            "expected offset of incorrect char to be {bad_char_index}; got {}",
+            err.index()
+        );
     }
     #[test]
     fn test_valid() {
-        should_parse_as("example.com", "example.com", super::Kind::Either);
-        should_parse_as("127.0.0.1", "127.0.0.1", super::Kind::Either);
-        should_parse_as("123.456.789.101", "123.456.789.101", super::Kind::Either);
-        should_parse_as("0.0", "0.0", super::Kind::Either);
-        should_parse_as("1.2.3.4.5", "1.2.3.4.5", super::Kind::Either);
-
-        should_parse_as("sub_domain.ex.com", "sub_domain.ex.com", super::Kind::Path);
+        should_parse_as("example.com", Kind::Either);
+        should_parse_as("example.com:tag", Kind::Either);
+        should_parse_as("127.0.0.1", Kind::Either);
+        should_parse_as("123.456.789.101", Kind::Either);
+        should_parse_as("0.0", Kind::Either);
+        should_parse_as("1.2.3.4.5", Kind::Either);
+        should_parse_as("sub_domain.ex.com", Kind::Path);
+        should_parse_as("Example.Com", Kind::Host);
+    }
+    #[test]
+    fn test_stopping() {
+        should_parse_incomplete("example.com:tag", ":tag");
+        should_parse_incomplete("0.0.0.0:80", ":80");
+        should_parse_incomplete("example.com/path", "/path");
+        should_parse_incomplete("foo/bar", "/bar");
     }
     #[test]
     fn test_invalid() {
-        should_fail_with("google.com.", super::AmbiguousErrorKind::InvalidChar);
+        should_fail_with(
+            "google.com.",
+            super::AmbiguousErrorKind::InvalidChar,
+            ("google.com.".len() - 1) as u8,
+        );
     }
 }

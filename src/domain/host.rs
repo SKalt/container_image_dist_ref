@@ -23,16 +23,18 @@ impl From<HostOrPathError> for HostError {
         use crate::ambiguous::host_or_path::AmbiguousErrorKind as Src;
         use ErrorKind as Dest;
         match err.kind() {
-            Src::NoMatch => HostError(Dest::NoMatch, err.len()),
-            Src::TooLong => HostError(Dest::TooLong, err.len()),
-            Src::InvalidChar => HostError(Dest::InvalidChar, err.len()),
-            Src::Ipv6NoMatch => HostError(Dest::Ipv6NoMatch, err.len()),
-            Src::Ipv6TooLong => HostError(Dest::Ipv6TooLong, err.len()),
-            Src::Ipv6BadColon => HostError(Dest::Ipv6BadColon, err.len()),
-            Src::Ipv6TooManyHexDigits => HostError(Dest::Ipv6TooManyHexDigits, err.len()),
-            Src::Ipv6TooManyGroups => HostError(Dest::Ipv6TooManyGroups, err.len()),
-            Src::Ipv6TooFewGroups => HostError(Dest::Ipv6TooFewGroups, err.len()),
-            Src::Ipv6MissingClosingBracket => HostError(Dest::Ipv6MissingClosingBracket, err.len()),
+            Src::NoMatch => HostError(Dest::NoMatch, err.index()),
+            Src::TooLong => HostError(Dest::TooLong, err.index()),
+            Src::InvalidChar => HostError(Dest::InvalidChar, err.index()),
+            Src::Ipv6NoMatch => HostError(Dest::Ipv6NoMatch, err.index()),
+            Src::Ipv6TooLong => HostError(Dest::Ipv6TooLong, err.index()),
+            Src::Ipv6BadColon => HostError(Dest::Ipv6BadColon, err.index()),
+            Src::Ipv6TooManyHexDigits => HostError(Dest::Ipv6TooManyHexDigits, err.index()),
+            Src::Ipv6TooManyGroups => HostError(Dest::Ipv6TooManyGroups, err.index()),
+            Src::Ipv6TooFewGroups => HostError(Dest::Ipv6TooFewGroups, err.index()),
+            Src::Ipv6MissingClosingBracket => {
+                HostError(Dest::Ipv6MissingClosingBracket, err.index())
+            }
         }
     }
 }
@@ -160,7 +162,7 @@ impl<'src> HostStr<'src> {
         src: &'src str,
         OptionalHostSpan(span, kind): OptionalHostSpan<'src>,
     ) -> Self {
-        Self(kind, span.of(src))
+        Self(kind, span.span_of(src))
     }
     pub fn from_prefix(src: &'src str) -> Result<Self, Error> {
         let span = OptionalHostSpan::new(src)?;

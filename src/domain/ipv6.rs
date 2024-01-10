@@ -127,42 +127,42 @@ impl State {
 }
 impl<'src> Ipv6Span<'src> {
     pub(crate) fn new(ascii_bytes: &[u8]) -> Result<Self, Error> {
-        if ascii_bytes.len() == 0 {
-            return Err(Error(ErrorKind::Ipv6NoMatch, 0));
+        let mut index: U = if ascii_bytes.len() == 0 {
+            Err(Error(ErrorKind::Ipv6NoMatch, 0))
         } else if ascii_bytes[0] != b'[' {
-            return Err(Error(ErrorKind::Ipv6NoMatch, 0));
-        }
-        let mut i: U = 1; // cursor within the bytes
-
+            Err(Error(ErrorKind::Ipv6NoMatch, 0))
+        } else {
+            Ok(0) // consume the opening bracket
+        }?;
         let mut state = State(0);
         loop {
-            if ascii_bytes.len() == i as usize {
-                break;
-            }
-            if i == U::MAX {
-                return Err(Error(ErrorKind::Ipv6TooLong, i));
-            }
-            match ascii_bytes[i as usize] {
+            index = if (ascii_bytes.len() - 1) == index as usize {
+                Err(Error(ErrorKind::Ipv6MissingClosingBracket, index))
+            } else if index == U::MAX {
+                Err(Error(ErrorKind::Ipv6TooLong, index))
+            } else {
+                Ok(index + 1)
+            }?;
+            match ascii_bytes[index as usize] {
                 b'a'..=b'f' | b'A'..=b'F' | b'0'..=b'9' => state.increment_position_in_group(),
                 b':' => state.set_colon(),
                 b']' => break, // done!
                 _ => return Err(Error(ErrorKind::Ipv6MissingClosingBracket, 0)),
             }
-            .map_err(|e| e + i)?;
-            i += 1;
+            .map_err(|e| e + index)?;
         }
-        i += 1; // consume the closing bracket
         debug_assert!(ascii_bytes[0] == b'[');
-        debug_assert!(ascii_bytes[(i - 1) as usize] == b']');
+        debug_assert!(ascii_bytes[index as usize] == b']');
+        let len = index + 1; // consume the closing bracket
         match state.current_group() {
             0..=6 => {
                 if state.double_colon_already_seen() {
-                    Ok(Self(Span::new(i)))
+                    Ok(Self(Span::new(len)))
                 } else {
-                    Err(Error(ErrorKind::Ipv6TooFewGroups, i))
+                    Err(Error(ErrorKind::Ipv6TooFewGroups, index))
                 }
             }
-            7 => Ok(Self(Span::new(i.try_into().unwrap()))),
+            7 => Ok(Self(Span::new(len))),
             _ => unreachable!(), // enforced by checks on state.increment_group()
         }
     }
@@ -177,7 +177,12 @@ mod test {
 
     fn should_work(ip: &str) {
         match super::Ipv6Span::new(ip.as_bytes()) {
-            Ok(span) => assert_eq!(span.len(), ip.len()),
+            Ok(span) => assert_eq!(
+                span.span_of(ip),
+                ip,
+                "\n\tparsed: {:?}\n\tip    : {ip:?}",
+                span.span_of(ip)
+            ),
             Err(e) => assert!(
                 false,
                 "failed to parse\n{ip}\n{}^\n{:?} @ {}",
@@ -192,7 +197,7 @@ mod test {
             Ok(span) => assert!(
                 false,
                 "should have failed to parse\n{ip}\n{}",
-                &ip[0..span.len()],
+                span.span_of(ip),
             ),
             Err(_) => {}
         }

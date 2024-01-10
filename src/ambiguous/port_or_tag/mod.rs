@@ -3,6 +3,7 @@
 
 use crate::span::{impl_span_methods_on_tuple, IntoOption, OptionalSpan, U};
 
+#[derive(Debug)]
 pub enum Error {
     // while length within a tag is limited to 127, the total length in an error
     // might be longer, so we can't pack the entire error into a single bit.
@@ -19,6 +20,7 @@ impl std::ops::Add<U> for Error {
     }
 }
 
+#[cfg_attr(test, derive(Debug))]
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Kind {
     Either,
@@ -51,34 +53,65 @@ impl<'src> OptionalPortOrTag<'src> {
         self.1
     }
     pub(crate) fn new(src: &str, kind: Kind) -> Result<Self, Error> {
-        let mut ascii = src.bytes();
-        let mut len: U = match ascii.next() {
-            Some(b':') => Ok(1),
+        let ascii = src.as_bytes();
+        let mut index: U = match ascii.iter().next() {
+            Some(b':') => Ok(0), // consume the starting colon
             Some(b'/') | None => return Ok(Self(OptionalSpan::new(0), kind)),
             _ => Err(Error::InvalidChar(0)),
         }?;
 
         let mut kind = kind;
-        for c in ascii {
-            debug_assert!(len < 128, "128 <= {len} == len:");
+        loop {
+            index = if index >= 127 {
+                Err(Error::TooLong(index))
+            } else if index as usize == src.len() - 1 {
+                break; // end of string
+            } else {
+                Ok(index + 1)
+            }?;
+            let c = ascii[index as usize];
             kind = match c {
                 b'a'..=b'z' | b'A'..=b'Z' | b'.' | b'-' => match kind {
-                    Kind::Tag => Ok(kind),
-                    Kind::Either => Ok(Kind::Tag),
-                    Kind::Port => Err(Error::InvalidChar(len + 1)),
+                    Kind::Tag | Kind::Either => Ok(Kind::Tag),
+                    Kind::Port => Err(Error::InvalidChar(index + 1)),
                 },
                 b'0'..=b'9' => match kind {
                     Kind::Tag | Kind::Port => Ok(kind),
                     Kind::Either => Ok(Kind::Port),
                 },
-                b'/' => break,
-                _ => return Err(Error::InvalidChar(len + 1)),
+                b'/' => {
+                    index -= 1; // don't consume the slash
+                    break;
+                }
+                _ => return Err(Error::InvalidChar(index + 1)),
             }?;
-            len += 1;
-            if len > 127 {
-                return Err(Error::TooLong(len));
-            }
         }
+        let len = index + 1;
         Ok(Self(OptionalSpan::new(len), kind))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::span::SpanMethods;
+    fn should_parse_as(src: &str, kind: Kind) {
+        let tag = OptionalPortOrTag::new(src, kind);
+        match tag {
+            Ok(tag) => {
+                assert_eq!(tag.span().span_of(src), src);
+                assert_eq!(tag.kind(), kind);
+            }
+            Err(e) => panic!("failed to parse tag {src:?}: {:?}", e),
+        }
+    }
+
+    #[test]
+    fn test_basic_tag() {
+        should_parse_as(":tag", Kind::Tag);
+    }
+    #[test]
+    fn test_basic_port() {
+        should_parse_as(":1234", Kind::Port);
     }
 }

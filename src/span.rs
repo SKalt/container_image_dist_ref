@@ -3,34 +3,35 @@ pub type U = u8; // HACK: arbitrary limit
                  // TODO: consider increasing to u16?
 
 pub(crate) const MAX_USIZE: usize = U::MAX as usize;
+
 /// To avoid lugging around an entire &str (which costs 2 pointer-sizes), we can
 /// use a span to represent a length of string with a lifetime tied to the original
 /// string slice.
-
 #[derive(Clone, Copy)]
 pub(crate) struct OptionalSpan<'src> {
     __phantom: PhantomData<&'src str>, // tie Span to the lifetime of a string slice
-    len: U,
+    length: U,
 }
 impl<'src> OptionalSpan<'src> {
     // new() is needed to create a span with PhantomData tied to a specific lifetime
     pub(crate) fn new(len: U) -> Self {
         Self {
             __phantom: PhantomData,
-            len,
+            length: len,
         }
     }
 }
+
 impl std::ops::Add<U> for OptionalSpan<'_> {
     type Output = Self;
     fn add(self, rhs: U) -> Self {
-        Self::new(self.len + rhs)
+        Self::new(self.length + rhs)
     }
 }
 
 impl From<OptionalSpan<'_>> for usize {
     fn from(span: OptionalSpan) -> Self {
-        span.len as usize // U is always a small, valid usize
+        span.length as usize // U is always a small, valid usize
     }
 }
 
@@ -54,8 +55,8 @@ impl std::ops::Add<U> for Span<'_> {
 impl TryFrom<OptionalSpan<'_>> for Span<'_> {
     type Error = ();
     fn try_from(optional_span: OptionalSpan) -> Result<Self, Self::Error> {
-        if optional_span.len > 0 {
-            Ok(Self::new(optional_span.len))
+        if optional_span.length > 0 {
+            Ok(Self::new(optional_span.length))
         } else {
             Err(())
         }
@@ -79,14 +80,14 @@ pub(crate) trait SpanMethods<'src> {
     fn len(&self) -> usize {
         self.short_len() as usize
     }
-    fn of(&self, src: &'src str) -> &'src str {
+    fn span_of(&self, src: &'src str) -> &'src str {
         &src[..self.len()]
     }
 }
 
 impl SpanMethods<'_> for OptionalSpan<'_> {
     fn short_len(&self) -> U {
-        self.len
+        self.length
     }
 }
 impl SpanMethods<'_> for Span<'_> {
@@ -122,6 +123,9 @@ where
     Self: Sized + Copy + Clone,
 {
     fn is_some(&self) -> bool;
+    fn is_none(&self) -> bool {
+        !self.is_some()
+    }
     fn none() -> Self
     where
         Self: Sized;
@@ -144,7 +148,7 @@ impl<'src> IntoOption for OptionalSpan<'src> {
         Self::new(0)
     }
     fn is_some(&self) -> bool {
-        self.len > 0
+        self.length > 0
     }
     fn into_option(&self) -> Option<OptionalSpan<'src>>
     where

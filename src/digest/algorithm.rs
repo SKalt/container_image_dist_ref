@@ -79,14 +79,14 @@ impl<'src> AlgorithmStr<'src> {
     }
     fn from_prefix(src: &'src str) -> Result<(Self, Compliance), Error> {
         let (span, compliance) = AlgorithmSpan::new(src)?;
-        Ok((Self(span.of(src)), compliance))
+        Ok((Self(span.span_of(src)), compliance))
     }
     fn from_exact_match(src: &'src str) -> Result<(Self, Compliance), Error> {
         let (span, compliance) = AlgorithmSpan::from_exact_match(src)?;
-        Ok((Self(span.of(src)), compliance))
+        Ok((Self(span.span_of(src)), compliance))
     }
     pub(crate) fn from_span(src: &'src str, span: AlgorithmSpan<'src>) -> Self {
-        Self(span.of(src))
+        Self(span.span_of(src))
     }
     pub fn parts(&self) -> impl Iterator<Item = &str> {
         self.src().split(|c| is_separator(c as u8))

@@ -15,7 +15,7 @@ pub(crate) mod ipv6;
 pub(crate) mod port;
 use crate::{
     ambiguous::domain_or_tagged_ref::{
-        DomainOrRef, ErrKind as AmbiguousErrorKind, Error as AmbiguousError,
+        DomainOrRefSpan, ErrKind as AmbiguousErrorKind, Error as AmbiguousError,
     },
     domain::{
         host::{HostStr, OptionalHostSpan},
@@ -69,9 +69,9 @@ impl<'src> OptionalDomainSpan<'src> {
     }
 }
 
-impl<'src> TryFrom<DomainOrRef<'src>> for OptionalDomainSpan<'src> {
+impl<'src> TryFrom<DomainOrRefSpan<'src>> for OptionalDomainSpan<'src> {
     type Error = Error;
-    fn try_from(ambiguous: DomainOrRef<'src>) -> Result<Self, Error> {
+    fn try_from(ambiguous: DomainOrRefSpan<'src>) -> Result<Self, Error> {
         Ok(Self(DomainSpan {
             host: ambiguous.host_or_path.try_into()?,
             optional_port: ambiguous.optional_port_or_tag.try_into()?,
@@ -81,26 +81,28 @@ impl<'src> TryFrom<DomainOrRef<'src>> for OptionalDomainSpan<'src> {
 
 fn disambiguate_error(e: AmbiguousError) -> Error {
     match e.kind() {
-        AmbiguousErrorKind::LeftNoMatch => Error(err::Kind::HostNoMatch, e.len()),
-        AmbiguousErrorKind::LeftInvalidChar => Error(err::Kind::HostInvalidChar, e.len()),
-        AmbiguousErrorKind::LeftTooLong => Error(err::Kind::HostTooLong, e.len()),
-        AmbiguousErrorKind::RightInvalidChar => Error(err::Kind::PortInvalidChar, e.len()),
-        AmbiguousErrorKind::RightTooLong => Error(err::Kind::PortTooLong, e.len()),
-        AmbiguousErrorKind::Ipv6NoMatch => Error(err::Kind::Ipv6NoMatch, e.len()),
-        AmbiguousErrorKind::Ipv6TooLong => Error(err::Kind::Ipv6TooLong, e.len()),
-        AmbiguousErrorKind::Ipv6BadColon => Error(err::Kind::Ipv6BadColon, e.len()),
-        AmbiguousErrorKind::Ipv6TooManyHexDigits => Error(err::Kind::Ipv6TooManyHexDigits, e.len()),
-        AmbiguousErrorKind::Ipv6TooManyGroups => Error(err::Kind::Ipv6TooManyGroups, e.len()),
-        AmbiguousErrorKind::Ipv6TooFewGroups => Error(err::Kind::Ipv6TooFewGroups, e.len()),
+        AmbiguousErrorKind::LeftNoMatch => Error(err::Kind::HostNoMatch, e.index()),
+        AmbiguousErrorKind::LeftInvalidChar => Error(err::Kind::HostInvalidChar, e.index()),
+        AmbiguousErrorKind::LeftTooLong => Error(err::Kind::HostTooLong, e.index()),
+        AmbiguousErrorKind::RightInvalidChar => Error(err::Kind::PortInvalidChar, e.index()),
+        AmbiguousErrorKind::RightTooLong => Error(err::Kind::PortTooLong, e.index()),
+        AmbiguousErrorKind::Ipv6NoMatch => Error(err::Kind::Ipv6NoMatch, e.index()),
+        AmbiguousErrorKind::Ipv6TooLong => Error(err::Kind::Ipv6TooLong, e.index()),
+        AmbiguousErrorKind::Ipv6BadColon => Error(err::Kind::Ipv6BadColon, e.index()),
+        AmbiguousErrorKind::Ipv6TooManyHexDigits => {
+            Error(err::Kind::Ipv6TooManyHexDigits, e.index())
+        }
+        AmbiguousErrorKind::Ipv6TooManyGroups => Error(err::Kind::Ipv6TooManyGroups, e.index()),
+        AmbiguousErrorKind::Ipv6TooFewGroups => Error(err::Kind::Ipv6TooFewGroups, e.index()),
         AmbiguousErrorKind::Ipv6MissingClosingBracket => {
-            Error(err::Kind::Ipv6MissingClosingBracket, e.len())
+            Error(err::Kind::Ipv6MissingClosingBracket, e.index())
         }
     }
 }
-impl<'src> TryFrom<Result<DomainOrRef<'src>, AmbiguousError>> for OptionalDomainSpan<'src> {
+impl<'src> TryFrom<Result<DomainOrRefSpan<'src>, AmbiguousError>> for OptionalDomainSpan<'src> {
     type Error = Error;
 
-    fn try_from(value: Result<DomainOrRef<'src>, AmbiguousError>) -> Result<Self, Self::Error> {
+    fn try_from(value: Result<DomainOrRefSpan<'src>, AmbiguousError>) -> Result<Self, Self::Error> {
         value.map_err(disambiguate_error)?.try_into()
     }
 }

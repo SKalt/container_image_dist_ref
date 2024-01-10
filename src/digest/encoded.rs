@@ -88,10 +88,10 @@ impl<'src> EncodedStr<'src> {
         compliance: Compliance,
     ) -> Result<(Self, Compliance), Error> {
         let (span, compliance) = EncodedSpan::new(src, compliance)?;
-        Ok((Self(span.of(src)), compliance))
+        Ok((Self(span.span_of(src)), compliance))
     }
     pub(crate) fn from_span(src: &'src str, span: EncodedSpan<'src>) -> Self {
-        Self(span.of(src))
+        Self(span.span_of(src))
     }
     fn validate_oci_algorithm(&self, algorithm: &AlgorithmStr<'src>) -> Result<(), Error> {
         let mut parts = algorithm.parts();

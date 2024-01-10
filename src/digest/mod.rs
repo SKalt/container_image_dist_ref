@@ -62,18 +62,12 @@ pub(crate) struct OptionalDigestSpan<'src> {
     encoded: EncodedSpan<'src>,
 }
 impl<'src> OptionalDigestSpan<'src> {
-    pub(crate) fn short_len(&self) -> U {
-        self.algorithm
-            .into_option()
-            .map(|present| present.short_len() + 1 + self.encoded.short_len())
-            .unwrap_or(0)
-    }
-    pub(crate) fn len(&self) -> usize {
-        self.short_len() as usize
-    }
     pub(crate) fn new(src: &'src str) -> Result<(Self, Compliance), Error> {
+        if src.len() == 0 {
+            return Ok((Self::none(), Compliance::Universal));
+        }
         let (algorithm, compliance) = AlgorithmSpan::new(src)?;
-        let mut len = match src[algorithm.len()..].bytes().next() {
+        let len = match src[algorithm.len()..].bytes().next() {
             Some(b':') => Ok(algorithm.len() + 1),
             None => Err(Error(err::Kind::AlgorithmNoMatch, algorithm.short_len())),
             _ => Err(Error(
@@ -92,6 +86,15 @@ impl<'src> OptionalDigestSpan<'src> {
         Ok((Self { algorithm, encoded }, compliance))
     }
 }
+impl SpanMethods<'_> for OptionalDigestSpan<'_> {
+    fn short_len(&self) -> U {
+        self.algorithm
+            .into_option()
+            .map(|present| present.short_len() + self.encoded.short_len())
+            .unwrap_or(0)
+    }
+}
+
 impl IntoOption for OptionalDigestSpan<'_> {
     fn is_some(&self) -> bool {
         self.short_len() == 0

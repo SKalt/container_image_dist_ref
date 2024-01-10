@@ -26,7 +26,7 @@
 use crate::{
     ambiguous::host_or_path::{Error as HostOrPathError, Kind as PathKind, OptionalHostOrPath},
     err::{Error, Kind as ErrorKind},
-    span::{impl_span_methods_on_tuple, IntoOption, OptionalSpan, U},
+    span::{impl_span_methods_on_tuple, IntoOption, OptionalSpan, Span, U},
 };
 
 pub(super) enum EKind {
@@ -48,9 +48,9 @@ impl From<HostOrPathError> for _Error {
     fn from(err: HostOrPathError) -> Self {
         use crate::ambiguous::host_or_path::AmbiguousErrorKind as A;
         match err.kind() {
-            A::NoMatch => _Error(EKind::NoMatch, err.len()),
-            A::TooLong => _Error(EKind::TooLong, err.len()),
-            A::InvalidChar => _Error(EKind::InvalidChar, err.len()),
+            A::NoMatch => _Error(EKind::NoMatch, err.index()),
+            A::TooLong => _Error(EKind::TooLong, err.index()),
+            A::InvalidChar => _Error(EKind::InvalidChar, err.index()),
             _ => unreachable!("ipv6 errors should never be raised in this call path"),
             // A::Ipv6NoMatch => _Error(EKind::Ipv6NoMatch, err.len()),
             // A::Ipv6TooLong => _Error(EKind::Ipv6TooLong, err.len()),
@@ -112,25 +112,56 @@ impl<'src> TryFrom<OptionalHostOrPath<'src>> for PathSpan<'src> {
         }
     }
 }
-
+impl IntoOption for PathSpan<'_> {
+    fn is_some(&self) -> bool {
+        self.short_len() > 0
+    }
+    fn none() -> Self {
+        Self(OptionalSpan::new(0))
+    }
+}
 impl<'src> PathSpan<'src> {
     fn none() -> Self {
         Self(OptionalSpan::new(0))
     }
+    fn parse_component(src: &'src str) -> Result<Self, Error> {
+        OptionalHostOrPath::new(src, PathKind::Path)
+            .map_err(|e| Into::<_Error>::into(e))?
+            .try_into()
+    }
+    /// parse an interior path-component starting from an '/' character at the given index
+    /// in the source string
+    // pub(crate) fn proceed_from(index: U, src: &'src str) -> Result<Self, Error> {
+    //     let mut index = index;
+    //     let rest = &src[index as usize..];
+    //     match rest.bytes().next() {
+    //         None => return Ok(Self::none()),
+    //         Some(b'/') => index += 1,
+    //         Some(_) => return Err(Error(ErrorKind::PathInvalidChar, index)),
+    //     }
+
+    //     // TODO: watch out for an infinite loop
+    //     Self::parse_component(&rest[index as usize..])
+    //         .map(|p| PathSpan(OptionalSpan::new(p.short_len() + index)))
+    //         .map_err(|e| e + index)
+    // }
     pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
-        let mut len: usize = 0;
+        let mut index = Self::parse_component(src)?.short_len();
         loop {
-            let section = OptionalHostOrPath::new(&src[len..], PathKind::Path)
-                .map_err(|e| Into::<_Error>::into(e))?;
-            len += section.len();
-            if src[len..].bytes().next() == Some(b'/') {
-                len += 1;
-                continue;
-            } else {
-                break;
+            let next = src[index as usize..].bytes().next();
+            index = match next {
+                None | Some(b':') => break,
+                Some(b'/') => Ok(index + 1),
+                Some(_) => Err(Error(ErrorKind::PathInvalidChar, index + 1)),
+            }?;
+            let rest = &src[index as usize..];
+            let section = Self::parse_component(rest).map_err(|e| e + index)?;
+            match section.into_option() {
+                Some(p) => index += p.short_len(),
+                None => break,
             }
         }
-        Ok(Self(OptionalSpan::new(len.try_into().unwrap())))
+        Ok(Self(OptionalSpan::new(index)))
     }
 }
 
@@ -139,16 +170,8 @@ impl<'src> PathStr<'src> {
     pub(crate) fn src(&self) -> &'src str {
         self.0
     }
-    #[inline(always)]
-    pub fn len(&self) -> usize {
-        self.src().len()
-    }
-    #[inline(always)]
-    pub fn short_len(&self) -> U {
-        self.src().len().try_into().unwrap()
-    }
     fn from_span(src: &'src str, span: PathSpan<'src>) -> Self {
-        Self(span.of(src))
+        Self(span.span_of(src))
     }
     pub fn from_prefix(src: &'src str) -> Result<Self, Error> {
         Ok(PathStr::from_span(src, PathSpan::new(src)?))
@@ -162,5 +185,21 @@ impl<'src> PathStr<'src> {
     }
     pub fn parts(&self) -> impl Iterator<Item = &'src str> {
         self.src().split('/')
+    }
+}
+impl SpanMethods<'_> for PathStr<'_> {
+    fn short_len(&self) -> U {
+        self.src().len().try_into().unwrap()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_this() {
+        use super::*;
+        let src = "test.com/path:tag";
+        let span = PathSpan::new(src).unwrap();
+        assert_eq!(span.span_of(src), "test.com/path");
     }
 }

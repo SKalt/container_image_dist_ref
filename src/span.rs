@@ -1,78 +1,74 @@
 use core::marker::PhantomData;
-pub type U = u8; // HACK: arbitrary limit
-                 // TODO: consider increasing to u16?
+pub type Short = u8;
 
-pub(crate) const MAX_USIZE: usize = U::MAX as usize;
+pub type Long = u16;
+pub(crate) const MAX_USIZE: usize = Short::MAX as usize;
 
 /// To avoid lugging around an entire &str (which costs 2 pointer-sizes), we can
 /// use a span to represent a length of string with a lifetime tied to the original
 /// string slice.
 #[derive(Clone, Copy)]
-pub(crate) struct OptionalSpan<'src>(
-    U,
+pub(crate) struct Length<'src, Size = Short>(
+    Size,
     PhantomData<&'src str>, // tie Span to the lifetime of a string slice
 );
-impl<'src> OptionalSpan<'src> {
+impl<'src, Size> Length<'src, Size> {
     // new() is needed to create a span with PhantomData tied to a specific lifetime
-    pub(crate) fn new(len: U) -> Self {
+    pub(crate) fn new(len: Size) -> Self {
         Self(len, PhantomData)
     }
 }
+impl<Size> From<Size> for Length<'_, Size> {
+    fn from(len: Size) -> Self {
+        Self::new(len)
+    }
+}
+pub type ShortLength<'src> = Length<'src, Short>;
+pub type LongLength<'src> = Length<'src, u16>;
 
-impl std::ops::Add<U> for OptionalSpan<'_> {
+impl std::ops::Add<Short> for Length<'_> {
     type Output = Self;
-    fn add(self, rhs: U) -> Self {
+    fn add(self, rhs: Short) -> Self {
         Self::new(self.0 + rhs)
     }
 }
 
-impl From<OptionalSpan<'_>> for usize {
-    fn from(span: OptionalSpan) -> Self {
-        span.0 as usize // U is always a small, valid usize
+impl<Size: Into<usize>> From<Length<'_, Size>> for usize {
+    fn from(span: Length<Size>) -> Self {
+        span.0.into()
     }
 }
 
 /// A span that is guaranteed to be non-zero length
 #[derive(Clone, Copy)]
-pub(crate) struct Span<'src>(U, PhantomData<&'src str>);
+pub(crate) struct Span<'src>(Short, PhantomData<&'src str>);
 impl<'src> Span<'src> {
-    pub(crate) fn new(len: U) -> Self {
+    pub(crate) fn new(len: Short) -> Self {
         debug_assert!(len > 0);
         Self(len, PhantomData)
     }
 }
 
-impl std::ops::Add<U> for Span<'_> {
+impl std::ops::Add<Short> for Span<'_> {
     type Output = Self;
-    fn add(self, rhs: U) -> Self {
+    fn add(self, rhs: Short) -> Self {
         Self(self.0 + rhs, PhantomData)
     }
 }
-// impl std::ops::Add<Span<'_>> for Span<'_> {
-//     type Output = Self;
-//     fn add(self, rhs: Span) -> Self {
-//         Self(self.0 + rhs.0, PhantomData)
-//     }
-// }
-// impl std::ops::Add<OptionalSpan<'_>> for Span<'_> {
-//     type Output = Self;
-//     fn add(self, rhs: OptionalSpan) -> Self {
-//         Self(self.0 + rhs.length, PhantomData)
-//     }
-// }
-impl std::ops::Add<usize> for OptionalSpan<'_> {
+
+impl std::ops::Add<usize> for Length<'_> {
     type Output = Self;
     fn add(self, rhs: usize) -> Self {
         debug_assert!((rhs + self.0 as usize) <= MAX_USIZE);
-        let small: U = rhs.try_into().unwrap();
-        let result: U = self.0; //+ rhs.try_into().unwrap();
+        let small: Short = rhs.try_into().unwrap();
+        let result: Short = self.0 + small; //+ rhs.try_into().unwrap();
         Self(result, PhantomData)
     }
 }
 
-impl TryFrom<OptionalSpan<'_>> for Span<'_> {
+impl TryFrom<Length<'_>> for Span<'_> {
     type Error = ();
-    fn try_from(optional_span: OptionalSpan) -> Result<Self, Self::Error> {
+    fn try_from(optional_span: Length) -> Result<Self, Self::Error> {
         if optional_span.0 > 0 {
             Ok(Self::new(optional_span.0))
         } else {
@@ -87,32 +83,34 @@ impl From<Span<'_>> for usize {
     }
 }
 // This conversion is safe since Span<'_> is guaranteed to be a valid OptionalSpan<'_>
-impl From<Span<'_>> for OptionalSpan<'_> {
+impl From<Span<'_>> for Length<'_> {
     fn from(span: Span) -> Self {
         Self::new(span.0)
     }
 }
 
-pub(crate) trait SpanMethods<'src> {
-    fn short_len(&self) -> U;
+pub(crate) trait Lengthy<'src, Size>
+where
+    usize: From<Size>,
+{
+    fn short_len(&self) -> Size;
     fn len(&self) -> usize {
-        self.short_len() as usize
+        self.short_len().into()
     }
     fn span_of(&self, src: &'src str) -> &'src str {
         &src[..self.len()]
     }
-    fn into_span(&self) -> OptionalSpan<'src> {
-        OptionalSpan::new(self.short_len())
+    fn into_span(&self) -> Length<'src, Size> {
+        self.short_len().into()
     }
 }
 
-impl SpanMethods<'_> for OptionalSpan<'_> {
-    fn short_len(&self) -> U {
-        self.0
-    }
-}
-impl SpanMethods<'_> for Span<'_> {
-    fn short_len(&self) -> U {
+impl<Size> Lengthy<'_, Size> for Length<'_, Size>
+where
+    usize: From<Size>,
+    Size: Copy,
+{
+    fn short_len(&self) -> Size {
         self.0
     }
 }
@@ -120,16 +118,15 @@ impl SpanMethods<'_> for Span<'_> {
 /// Given a wrapper type like Wrapper<'a>(Span<'a>), re-expose the methods of Span
 /// on Wrapper
 macro_rules! impl_span_methods_on_tuple {
-    ($id:ident) => {
-        use crate::span::SpanMethods;
+    ($id:ident, $size:ident) => {
         impl From<$id<'_>> for usize {
             fn from(span: $id) -> Self {
                 span.0.into() // U is always a small, valid usize
             }
         }
-        impl<'src> SpanMethods<'src> for $id<'src> {
+        impl<'src> crate::span::Lengthy<'src, crate::span::$size> for $id<'src> {
             #[inline(always)]
-            fn short_len(&self) -> U {
+            fn short_len(&self) -> crate::span::$size {
                 self.0.short_len()
             }
         }
@@ -150,10 +147,7 @@ where
     fn none() -> Self
     where
         Self: Sized;
-    fn into_option(&self) -> Option<Self>
-    where
-        Self: Sized,
-    {
+    fn into_option(&self) -> Option<Self> {
         if self.is_some() {
             Some(*self)
         } else {
@@ -161,17 +155,14 @@ where
         }
     }
 }
-impl<'src> IntoOption for OptionalSpan<'src> {
-    fn none() -> Self
-    where
-        Self: Sized,
-    {
+impl<'src> IntoOption for Length<'src> {
+    fn none() -> Self {
         Self::new(0)
     }
     fn is_some(&self) -> bool {
         self.0 > 0
     }
-    fn into_option(&self) -> Option<OptionalSpan<'src>>
+    fn into_option(&self) -> Option<Length<'src>>
     where
         Self: Sized + Clone,
     {

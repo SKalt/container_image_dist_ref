@@ -21,13 +21,13 @@
 
 use crate::{
     err::{self, Error},
-    span::{impl_span_methods_on_tuple, IntoOption, OptionalSpan, U},
+    span::{impl_span_methods_on_tuple, IntoOption, Lengthy, Short, ShortLength},
 };
 
 use super::Compliance;
 #[derive(Clone, Copy)]
-pub(super) struct AlgorithmSpan<'src>(OptionalSpan<'src>);
-impl_span_methods_on_tuple!(AlgorithmSpan);
+pub(super) struct AlgorithmSpan<'src>(ShortLength<'src>);
+impl_span_methods_on_tuple!(AlgorithmSpan, Short);
 use err::Kind::{
     AlgorithmInvalidChar, AlgorithmInvalidNumericPrefix, AlgorithmNoMatch, InvalidOciAlgorithm,
 };
@@ -46,7 +46,7 @@ impl<'src> AlgorithmSpan<'src> {
             len += component_len;
             compliance = component_compliance; // narrow compliance from Universal -> (Oci | Distribution)
         }
-        Ok((Self(OptionalSpan::new(len)), compliance))
+        Ok((Self(len.into()), compliance))
     }
     fn from_exact_match(src: &'src str) -> Result<(Self, Compliance), Error> {
         let (span, compliance) = Self::new(src)?;
@@ -63,7 +63,7 @@ impl IntoOption for AlgorithmSpan<'_> {
     }
 
     fn none() -> Self {
-        Self(OptionalSpan::new(0))
+        Self(0.into())
     }
 }
 pub(crate) struct AlgorithmStr<'src>(&'src str);
@@ -114,7 +114,7 @@ fn is_separator(c: u8) -> bool {
 
 /// match an algorithm component and return the length of the match, along
 /// with what standard(s) the component is compliant with.
-fn component(src: &str, compliance: Compliance) -> Result<(U, Compliance), Error> {
+fn component(src: &str, compliance: Compliance) -> Result<(Short, Compliance), Error> {
     use Compliance::*;
     if src.len() == 0 {
         return Err(Error(AlgorithmNoMatch, 0));

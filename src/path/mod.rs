@@ -26,7 +26,7 @@
 use crate::{
     ambiguous::host_or_path::{Kind as PathKind, OptionalHostOrPath},
     err::{self, Error},
-    span::{impl_span_methods_on_tuple, IntoOption, OptionalSpan, U},
+    span::{impl_span_methods_on_tuple, IntoOption, Length, Lengthy, Short},
 };
 
 fn adapt_error(e: Error) -> Error {
@@ -41,8 +41,8 @@ fn adapt_error(e: Error) -> Error {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct OptionalPathSpan<'src>(OptionalSpan<'src>);
-impl_span_methods_on_tuple!(OptionalPathSpan);
+pub(crate) struct OptionalPathSpan<'src>(Length<'src>);
+impl_span_methods_on_tuple!(OptionalPathSpan, Short);
 
 impl<'src> TryFrom<OptionalHostOrPath<'src>> for OptionalPathSpan<'src> {
     type Error = Error;
@@ -52,12 +52,12 @@ impl<'src> TryFrom<OptionalHostOrPath<'src>> for OptionalPathSpan<'src> {
         // safely downcast to the more specific PathSpan
         match ambiguous.kind() {
             Either | Path => Ok(if ambiguous.is_some() {
-                Self(OptionalSpan::new(ambiguous.short_len()))
+                Self(Length::new(ambiguous.short_len()))
             } else {
                 Self::none()
             }),
             Host => Err(Error(err::Kind::PathInvalidChar, ambiguous.short_len())),
-            IpV6 => Ok(Self(OptionalSpan::new(ambiguous.short_len()))),
+            IpV6 => Ok(Self(Length::new(ambiguous.short_len()))),
         }
     }
 }
@@ -66,12 +66,12 @@ impl IntoOption for OptionalPathSpan<'_> {
         self.short_len() > 0
     }
     fn none() -> Self {
-        Self(OptionalSpan::new(0))
+        Self(Length::new(0))
     }
 }
 impl<'src> OptionalPathSpan<'src> {
     fn none() -> Self {
-        Self(OptionalSpan::new(0))
+        Self(Length::new(0))
     }
     fn parse_component(src: &'src str) -> Result<Self, Error> {
         OptionalHostOrPath::new(src, PathKind::Path)
@@ -79,7 +79,7 @@ impl<'src> OptionalPathSpan<'src> {
             .try_into()
     }
     pub(crate) fn parse_from_slash(src: &'src str) -> Result<Self, Error> {
-        let mut index: U = 0;
+        let mut index: Short = 0;
         loop {
             let next = src[index as usize..].bytes().next();
             index = match next {
@@ -94,12 +94,12 @@ impl<'src> OptionalPathSpan<'src> {
                 None => break,
             }
         }
-        Ok(Self(OptionalSpan::new(index)))
+        Ok(Self(Length::new(index)))
     }
     pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
         let index = Self::parse_component(src)?.short_len();
         Self::parse_from_slash(&src[index as usize..])
-            .map(|p| Self(OptionalSpan::new(p.short_len() + index)))
+            .map(|p| Self(Length::new(p.short_len() + index)))
             .map_err(|e| e + index)
     }
     pub(crate) fn from_ambiguous(
@@ -148,8 +148,8 @@ impl<'src> PathStr<'src> {
         self.src().split('/')
     }
 }
-impl SpanMethods<'_> for PathStr<'_> {
-    fn short_len(&self) -> U {
+impl Lengthy<'_, Short> for PathStr<'_> {
+    fn short_len(&self) -> Short {
         self.src().len().try_into().unwrap()
     }
 }

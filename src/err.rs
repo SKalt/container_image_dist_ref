@@ -1,4 +1,4 @@
-use crate::span::U;
+use crate::span::{Long, Short};
 
 // since ErrorKind can fit 256 unique errors, use it for all non-ambiguous cases
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -66,18 +66,37 @@ pub enum Kind {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Error(pub(crate) Kind, pub(crate) U);
-impl Error {
+pub struct Error<Size = Short>(pub(crate) Kind, pub(crate) Size);
+impl From<Error<Short>> for Error<Long> {
+    fn from(e: Error<Short>) -> Self {
+        Self(e.0, e.1.into())
+    }
+}
+
+impl<Size> Error<Size>
+where
+    Size: Copy,
+{
+    #[inline(always)]
     pub(crate) fn kind(&self) -> Kind {
         self.0
     }
-    pub(crate) fn index(&self) -> U {
+    #[inline(always)]
+    pub(crate) fn index(&self) -> Size {
         self.1
     }
+    pub(crate) fn at<T>(index: Size, kind: Kind) -> Result<T, Self> {
+        Err(Self(kind, index))
+    }
 }
-impl std::ops::Add<U> for Error {
+
+impl<Int, Size> std::ops::Add<Int> for Error<Size>
+where
+    Size: std::ops::Add<Output = Size>,
+    Int: Into<Size>,
+{
     type Output = Self;
-    fn add(self, rhs: U) -> Self {
-        Self(self.0, self.1 + rhs)
+    fn add(self, rhs: Int) -> Self {
+        Self(self.0, self.1 + rhs.into())
     }
 }

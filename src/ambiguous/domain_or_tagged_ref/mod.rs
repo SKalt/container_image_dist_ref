@@ -20,13 +20,13 @@
 use crate::{
     ambiguous::{
         host_or_path::{Kind as HostOrPathKind, OptionalHostOrPath},
-        port_or_tag::{Kind as PortOrTagKind, OptionalPortOrTag},
+        port_or_tag::{Kind as PortOrTagKind, PortOrTag},
     },
     domain::OptionalDomainSpan,
     err::{self, Error},
     path::OptionalPathSpan,
-    span::{SpanMethods, U},
-    tag::OptionalTagSpan,
+    span::{IntoOption, Lengthy, Short},
+    tag::TagSpan,
 };
 use HostOrPathKind::{Either as EitherHostPathOrIpv6, Host, IpV6, Path};
 use PortOrTagKind::{Either as EitherPortOrTag, Port, Tag};
@@ -34,15 +34,15 @@ use PortOrTagKind::{Either as EitherPortOrTag, Port, Tag};
 /// represents a colon-delimited string of the form "left:right"
 pub(crate) enum DomainOrRefSpan<'src> {
     Domain(OptionalDomainSpan<'src>),
-    TaggedRef((OptionalPathSpan<'src>, OptionalTagSpan<'src>)),
+    TaggedRef((OptionalPathSpan<'src>, TagSpan<'src>)),
 }
 
 pub(crate) enum Kind {
     Domain,
     TaggedRef,
 }
-impl SpanMethods<'_> for DomainOrRefSpan<'_> {
-    fn short_len(&self) -> U {
+impl Lengthy<'_, Short> for DomainOrRefSpan<'_> {
+    fn short_len(&self) -> Short {
         match self {
             DomainOrRefSpan::Domain(d) => d.short_len(),
             DomainOrRefSpan::TaggedRef((left, right)) => left.short_len() + right.short_len(),
@@ -54,8 +54,8 @@ impl<'src> DomainOrRefSpan<'src> {
         let left = OptionalHostOrPath::new(src, EitherHostPathOrIpv6)?;
         let right_src = &src[left.len()..];
         let right = match right_src.bytes().next() {
-            Some(b':') => OptionalPortOrTag::new(right_src, EitherPortOrTag),
-            Some(b'/') | Some(b'@') | None => Ok(OptionalPortOrTag::none()),
+            Some(b':') => PortOrTag::new(right_src, EitherPortOrTag),
+            Some(b'/') | Some(b'@') | None => Ok(PortOrTag::none()),
             Some(_) => Err(Error(err::Kind::HostOrPathInvalidChar, 0)),
         }
         .map_err(|e: Error| e + left.short_len())?;
@@ -72,7 +72,7 @@ impl<'src> DomainOrRefSpan<'src> {
     }
     pub(crate) fn from_parts(
         left: OptionalHostOrPath<'src>,
-        right: OptionalPortOrTag<'src>,
+        right: PortOrTag<'src>,
         target: Kind,
         context: &'src str,
     ) -> Result<Self, Error> {
@@ -106,7 +106,7 @@ impl<'src> DomainOrRefSpan<'src> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::span::SpanMethods;
+    use crate::span::Lengthy;
     fn should_split(src: &str, left: &str, right: &str) {
         let tag = DomainOrRefSpan::new(src);
         match tag {

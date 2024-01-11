@@ -43,63 +43,60 @@ use self::{
     ambiguous::domain_or_tagged_ref::DomainOrRefSpan,
     digest::OptionalDigestSpan,
     domain::OptionalDomainSpan,
-    err::Error,
     path::OptionalPathSpan,
-    span::{IntoOption, Span, SpanMethods, MAX_USIZE, U},
-    tag::OptionalTagSpan,
+    span::{IntoOption, Lengthy, Long, Short, Span, MAX_USIZE},
+    tag::TagSpan,
 };
-
+pub(crate) type Error = err::Error<Long>;
 struct RefSpan<'src> {
     domain: OptionalDomainSpan<'src>,
     path: OptionalPathSpan<'src>,
-    tag: OptionalTagSpan<'src>,
+    tag: TagSpan<'src>,
     digest: OptionalDigestSpan<'src>,
 }
 
 impl<'src> RefSpan<'src> {
     pub fn new(src: &'src str) -> Result<Self, Error> {
-        match src.len() {
-            1..=MAX_USIZE => Ok(()), // check length addressable by integer size
-            0 => Err(Error(err::Kind::RefNoMatch, 0)),
-            _ => Err(Error(err::Kind::RefTooLong, U::MAX)),
-        }?;
+        if src.is_empty() {
+            return Error::at(0, err::Kind::RefNoMatch);
+        };
         let prefix = DomainOrRefSpan::new(src)?;
         let domain = match prefix {
             DomainOrRefSpan::Domain(domain) => domain,
             DomainOrRefSpan::TaggedRef(_) => OptionalDomainSpan::none(),
         };
-        let mut index = domain.short_len();
+        let mut index: Long = domain.short_len().into();
         let rest = &src[index as usize..];
         let path = match prefix {
             DomainOrRefSpan::TaggedRef((left, _)) => Ok(left),
             DomainOrRefSpan::Domain(_) => match rest.bytes().next() {
                 Some(b'/') => {
                     index += 1; // consume the leading '/'
-                    OptionalPathSpan::new(&src[index as usize..])
+                    OptionalPathSpan::new(&src[index as usize..]).map_err(|e| e.into())
                 }
                 Some(b'@') | None => Ok(OptionalPathSpan::none()),
-                Some(_) => Err(Error(err::Kind::PathInvalidChar, 0)),
+                Some(_) => Error::at(0, err::Kind::PathInvalidChar),
             },
         }
         .map_err(|e| e + index)?;
-        index += path.short_len();
+        index += path.short_len() as Long;
         let rest = &src[index as usize..];
         let tag = match prefix {
             DomainOrRefSpan::TaggedRef((_, right)) => match right.into_option() {
                 Some(tag) => Ok(tag),
                 None => match rest.bytes().next() {
-                    Some(b':') => OptionalTagSpan::new(rest),
-                    Some(b'@') | None => Ok(OptionalTagSpan::none()),
-                    Some(_) => Err(Error(err::Kind::PathInvalidChar, 0)),
+                    Some(b':') => TagSpan::new(rest).map_err(|e| e.into()),
+                    Some(b'@') | None => Ok(TagSpan::none()),
+                    Some(_) => Error::at(0, err::Kind::PathInvalidChar),
                 },
             },
             DomainOrRefSpan::Domain(_) => match rest.bytes().next() {
-                Some(b':') => OptionalTagSpan::new(rest),
-                Some(_) | None => Ok(OptionalTagSpan::none()),
+                Some(b':') => TagSpan::new(rest).map_err(|e| e.into()),
+                Some(_) | None => Ok(TagSpan::none()),
             },
         }
         .map_err(|e| e + index)?;
-        index += tag.short_len();
+        index += tag.short_len() as Long;
         let rest = &src[index as usize..];
         let digest = match rest.bytes().next() {
             Some(b'@') => {

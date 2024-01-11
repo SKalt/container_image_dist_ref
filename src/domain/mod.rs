@@ -13,13 +13,13 @@ pub(crate) mod host;
 pub(crate) mod ipv6;
 pub(crate) mod port;
 use crate::{
-    ambiguous::{host_or_path::OptionalHostOrPath, port_or_tag::OptionalPortOrTag},
+    ambiguous::{host_or_path::OptionalHostOrPath, port_or_tag::PortOrTag},
     domain::{
         host::{HostStr, OptionalHostSpan},
         port::OptionalPortSpan,
     },
     err::{self, Error, Kind as ErrorKind},
-    span::{IntoOption, SpanMethods, U},
+    span::{IntoOption, Lengthy, Short},
 };
 
 /// a definite host and an optional port
@@ -29,9 +29,9 @@ pub(super) struct OptionalDomainSpan<'src> {
     optional_port: OptionalPortSpan<'src>, // can be 0-length, indicating missing
 }
 
-impl SpanMethods<'_> for OptionalDomainSpan<'_> {
+impl Lengthy<'_, Short> for OptionalDomainSpan<'_> {
     #[inline(always)]
-    fn short_len(&self) -> U {
+    fn short_len(&self) -> Short {
         self.host().short_len() + self.port().short_len()
     }
 }
@@ -103,7 +103,7 @@ impl<'src> OptionalDomainSpan<'src> {
     // }
     pub(crate) fn from_ambiguous_parts(
         host: OptionalHostOrPath<'src>,
-        optional_port: OptionalPortOrTag<'src>,
+        optional_port: PortOrTag<'src>,
         context: &'src str,
     ) -> Result<Self, Error> {
         debug_assert!(

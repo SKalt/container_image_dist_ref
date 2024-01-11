@@ -3,7 +3,7 @@
 
 use crate::{
     err::{self, Error},
-    span::{impl_span_methods_on_tuple, IntoOption, OptionalSpan, U},
+    span::{impl_span_methods_on_tuple, IntoOption, Lengthy, Short, ShortLength},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -15,22 +15,19 @@ pub(crate) enum Kind {
     Tag,
 }
 #[derive(Clone, Copy)]
-pub(crate) struct OptionalPortOrTag<'src>(pub(crate) OptionalSpan<'src>, pub(crate) Kind);
-impl_span_methods_on_tuple!(OptionalPortOrTag);
-impl<'src> IntoOption for OptionalPortOrTag<'src> {
+pub(crate) struct PortOrTag<'src>(pub(crate) ShortLength<'src>, pub(crate) Kind);
+impl_span_methods_on_tuple!(PortOrTag, Short);
+impl<'src> IntoOption for PortOrTag<'src> {
     fn is_some(&self) -> bool {
         self.short_len() > 0
     }
     fn none() -> Self {
-        Self(OptionalSpan::new(0), Kind::Either)
+        Self(0.into(), Kind::Either)
     }
 }
-impl<'src> OptionalPortOrTag<'src> {
-    pub(crate) fn none() -> Self {
-        Self(OptionalSpan::new(0), Kind::Either)
-    }
+impl<'src> PortOrTag<'src> {
     #[inline(always)]
-    pub(crate) fn span(&self) -> OptionalSpan<'src> {
+    pub(crate) fn span(&self) -> ShortLength<'src> {
         self.0
     }
     #[inline(always)]
@@ -45,7 +42,7 @@ impl<'src> OptionalPortOrTag<'src> {
         let ascii = src.as_bytes();
         len += match ascii[len as usize] {
             b':' => Ok(1), // consume the starting colon
-            b'/' | b'@' => return Ok(Self(OptionalSpan::none(), kind)),
+            b'/' | b'@' => return Ok(Self(0.into(), kind)),
             _ => Err(Error(err::Kind::PortOrTagInvalidChar, len)),
         }?;
 
@@ -71,7 +68,7 @@ impl<'src> OptionalPortOrTag<'src> {
         if len >= 128 {
             return Err(Error(err::Kind::PortOrTagTooLong, len));
         }
-        Ok(Self(OptionalSpan::new(len), kind))
+        Ok(Self(len.into(), kind))
     }
     pub(super) fn narrow(self, target: Kind, context: &'src str) -> Result<Self, Error> {
         match (self.kind(), target) {
@@ -96,9 +93,9 @@ impl<'src> OptionalPortOrTag<'src> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::span::SpanMethods;
+    use crate::span::Lengthy;
     fn should_parse_as(src: &str, kind: Kind) {
-        let tag = OptionalPortOrTag::new(src, kind);
+        let tag = PortOrTag::new(src, kind);
         match tag {
             Ok(tag) => {
                 assert_eq!(tag.span().span_of(src), src);

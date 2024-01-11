@@ -12,15 +12,15 @@
 pub mod algorithm;
 pub mod encoded;
 use crate::{
-    err::{self, Error},
-    span::{IntoOption, SpanMethods, MAX_USIZE, U},
+    err,
+    span::{IntoOption, Lengthy, Long, Short, MAX_USIZE},
 };
 
 use self::{
     algorithm::{AlgorithmSpan, AlgorithmStr},
     encoded::{EncodedSpan, EncodedStr},
 };
-
+type Error = err::Error<Long>;
 pub enum Standard {
     /// Though distribution/reference isn't officially a standard or specification
     /// as the de-facto reference implementation for references, we'll treat it as
@@ -67,7 +67,7 @@ impl<'src> OptionalDigestSpan<'src> {
     pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
         match src.len() {
             0 => return Ok(Self::none()),
-            MAX_USIZE => return Err(Error(err::Kind::DigestTooLong, U::MAX)),
+            MAX_USIZE => return Error::at(Short::MAX.into(), err::Kind::DigestTooLong),
             _ => {}
         }
         let (algorithm, compliance) = AlgorithmSpan::new(src)?;
@@ -75,8 +75,8 @@ impl<'src> OptionalDigestSpan<'src> {
         let rest = &src[len as usize..];
         len = match rest.bytes().next() {
             Some(b':') => Ok(len + 1),
-            None => Err(Error(err::Kind::AlgorithmNoMatch, len)),
-            _ => Err(Error(err::Kind::AlgorithmInvalidChar, len)),
+            None => Error::at(len.into(), err::Kind::AlgorithmNoMatch),
+            _ => Error::at(len.into(), err::Kind::AlgorithmInvalidChar),
         }?;
         let rest = &src[len as usize..];
         let (encoded, compliance) = EncodedSpan::new(rest, compliance)?;
@@ -95,11 +95,11 @@ impl<'src> OptionalDigestSpan<'src> {
         })
     }
 }
-impl SpanMethods<'_> for OptionalDigestSpan<'_> {
-    fn short_len(&self) -> U {
+impl Lengthy<'_, Long> for OptionalDigestSpan<'_> {
+    fn short_len(&self) -> Long {
         self.algorithm
             .into_option()
-            .map(|present| present.short_len() + 1 + self.encoded.short_len())
+            .map(|algo| algo.short_len() as Long + 1 + self.encoded.short_len())
             .unwrap_or(0)
     }
 }

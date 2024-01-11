@@ -1,7 +1,7 @@
 use crate::{
     ambiguous::host_or_path::{Kind as HostKind, OptionalHostOrPath},
     err::{self, Error},
-    span::{impl_span_methods_on_tuple, IntoOption, OptionalSpan, U},
+    span::{impl_span_methods_on_tuple, IntoOption, Length, Lengthy, Short},
 };
 
 fn disambiguate_err(e: Error) -> Error {
@@ -28,8 +28,8 @@ pub(crate) enum Kind {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct OptionalHostSpan<'src>(pub(crate) OptionalSpan<'src>, pub(crate) Kind);
-impl_span_methods_on_tuple!(OptionalHostSpan);
+pub(crate) struct OptionalHostSpan<'src>(pub(crate) Length<'src>, pub(crate) Kind);
+impl_span_methods_on_tuple!(OptionalHostSpan, Short);
 impl<'src> TryFrom<OptionalHostOrPath<'src>> for OptionalHostSpan<'_> {
     type Error = Error;
     fn try_from(ambiguous: OptionalHostOrPath) -> Result<Self, Error> {
@@ -38,10 +38,8 @@ impl<'src> TryFrom<OptionalHostOrPath<'src>> for OptionalHostSpan<'_> {
             Some(_) => {
                 use HostKind::*;
                 match ambiguous.kind() {
-                    Either | Host => {
-                        Ok(Self(OptionalSpan::new(ambiguous.short_len()), Kind::Domain))
-                    }
-                    IpV6 => Ok(Self(OptionalSpan::new(ambiguous.short_len()), Kind::Ipv6)),
+                    Either | Host => Ok(Self(Length::new(ambiguous.short_len()), Kind::Domain)),
+                    IpV6 => Ok(Self(Length::new(ambiguous.short_len()), Kind::Ipv6)),
                     Path => Err(Error(crate::err::Kind::HostInvalidChar, 0)), // <- needs the source str to find the index of the first underscore
                 }
             }
@@ -100,7 +98,7 @@ impl<'src> OptionalHostSpan<'src> {
 }
 impl<'src> From<Ipv6Span<'src>> for OptionalHostSpan<'src> {
     fn from(ipv6: Ipv6Span<'src>) -> Self {
-        Self(ipv6.span().into(), Kind::Ipv6)
+        Self(ipv6.short_len().into(), Kind::Ipv6)
     }
 }
 
@@ -109,7 +107,7 @@ impl<'src> IntoOption for OptionalHostSpan<'src> {
         self.short_len() > 0
     }
     fn none() -> Self {
-        Self(OptionalSpan::new(0), Kind::Empty)
+        Self(Length::new(0), Kind::Empty)
     }
 }
 
@@ -125,7 +123,7 @@ impl<'src> HostStr<'src> {
     fn len(&self) -> usize {
         self.src().len()
     }
-    fn short_len(&self) -> U {
+    fn short_len(&self) -> Short {
         self.len().try_into().unwrap() // this is safe since the length of a HostStr is always <= U::MAX
     }
     pub(super) fn from_span_of(

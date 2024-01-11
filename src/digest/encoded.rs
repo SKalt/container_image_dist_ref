@@ -18,19 +18,20 @@
 
 use super::algorithm::AlgorithmStr;
 use super::Compliance;
-use crate::{
-    err::{Error, Kind as ErrorKind},
-    span::{impl_span_methods_on_tuple, IntoOption, OptionalSpan, Span, MAX_USIZE, U},
+use crate::span::{
+    impl_span_methods_on_tuple, IntoOption, Lengthy, Long, LongLength, Short, MAX_USIZE,
 };
 
-use ErrorKind::{
-    EncodedInvalidChar, EncodedNonLowerHex, OciRegisteredAlgorithmTooManyParts,
-    OciRegisteredAlgorithmWrongLength, OciRegisteredDigestInvalidChar,
+use crate::err::Kind::{
+    EncodedInvalidChar, EncodedNoMatch, EncodedNonLowerHex, EncodingTooLong, EncodingTooShort,
+    OciRegisteredAlgorithmTooManyParts, OciRegisteredAlgorithmWrongLength,
+    OciRegisteredDigestInvalidChar,
 };
+type Error = crate::err::Error<Long>;
 
 #[derive(Clone, Copy)]
-pub(crate) struct EncodedSpan<'src>(OptionalSpan<'src>);
-impl_span_methods_on_tuple!(EncodedSpan);
+pub(crate) struct EncodedSpan<'src>(LongLength<'src>);
+impl_span_methods_on_tuple!(EncodedSpan, Long);
 impl<'src> EncodedSpan<'src> {
     pub(crate) fn new(src: &'src str, compliance: Compliance) -> Result<(Self, Compliance), Error> {
         use Compliance::*;
@@ -45,16 +46,16 @@ impl<'src> EncodedSpan<'src> {
                     if compliance != Distribution {
                         Ok(Oci)
                     } else {
-                        Err(Error(EncodedNonLowerHex, len))
+                        Error::at(len, EncodedNonLowerHex)
                     }
                 }
-                _ => Err(Error(EncodedInvalidChar, len)),
+                _ => Error::at(len, EncodedInvalidChar),
             }?;
             len += 1;
         }
         debug_assert!(len as usize == src.len(), "must have consume all src");
 
-        Ok((Self(OptionalSpan::new(len)), compliance))
+        Ok((Self(len.into()), compliance))
     }
 }
 
@@ -63,11 +64,8 @@ impl IntoOption for EncodedSpan<'_> {
         self.short_len() > 0
     }
 
-    fn none() -> Self
-    where
-        Self: Sized,
-    {
-        Self(OptionalSpan::new(0))
+    fn none() -> Self {
+        Self(0.into())
     }
 }
 pub(crate) struct EncodedStr<'src>(&'src str);
@@ -88,6 +86,9 @@ impl<'src> EncodedStr<'src> {
         compliance: Compliance,
     ) -> Result<(Self, Compliance), Error> {
         let (span, compliance) = EncodedSpan::new(src, compliance)?;
+        if span.len() != src.len() {
+            return Error::at(span.short_len().into(), EncodedNoMatch);
+        }
         Ok((Self(span.span_of(src)), compliance))
     }
     pub(crate) fn from_span(src: &'src str, span: EncodedSpan<'src>) -> Self {
@@ -99,27 +100,27 @@ impl<'src> EncodedStr<'src> {
         match first {
             "sha256" | "sha512" => {
                 if parts.count() != 0 {
-                    return Err(Error(
-                        OciRegisteredAlgorithmTooManyParts,
+                    return Error::at(
                         first.len().try_into().unwrap(),
-                    ));
+                        OciRegisteredAlgorithmTooManyParts,
+                    );
                 }
                 {
-                    let mut i: U = 0;
+                    let mut i: Short = 0;
                     for c in self.src().bytes() {
                         i += 1;
                         if !c.is_ascii_lowercase() || !c.is_ascii_hexdigit() {
-                            return Err(Error(OciRegisteredDigestInvalidChar, i));
+                            return Error::at(i.into(), OciRegisteredDigestInvalidChar);
                         }
                     }
                 }
                 match (first, self.len()) {
                     ("sha256", 64) => Ok(()),
                     ("sha512", 128) => Ok(()),
-                    (_, _) => Err(Error(
-                        OciRegisteredAlgorithmWrongLength,
+                    (_, _) => Error::at(
                         self.len().try_into().unwrap(),
-                    )),
+                        OciRegisteredAlgorithmWrongLength,
+                    ),
                 }
             }
 
@@ -128,9 +129,9 @@ impl<'src> EncodedStr<'src> {
     }
     fn validate_distribution(&self) -> Result<(), Error> {
         match self.len() {
-            0..=31 => Err(Error(ErrorKind::EncodingTooShort, self.short_len())),
+            0..=31 => Error::at(self.short_len().into(), EncodingTooShort),
             32..=MAX_USIZE => Ok(()),
-            _ => Err(Error(ErrorKind::EncodingTooLong, self.short_len())),
+            _ => Error::at(self.short_len().into(), EncodingTooLong),
         }
     }
     /// Note: `validate_algorithm` doesn't check character sets since that's handled
@@ -162,11 +163,11 @@ impl<'src> EncodedStr<'src> {
         }
     }
 }
-impl SpanMethods<'_> for EncodedStr<'_> {
+impl Lengthy<'_, Long> for EncodedStr<'_> {
     fn len(&self) -> usize {
         self.0.len()
     }
-    fn short_len(&self) -> U {
+    fn short_len(&self) -> Long {
         self.len().try_into().unwrap()
     }
 }

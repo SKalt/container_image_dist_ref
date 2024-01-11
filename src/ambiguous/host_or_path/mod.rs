@@ -1,7 +1,9 @@
+use std::io::Read;
+
 use crate::{
     domain::ipv6,
     err::{self, Error},
-    span::{impl_span_methods_on_tuple, IntoOption, OptionalSpan, Span, U},
+    span::{impl_span_methods_on_tuple, IntoOption, Length, Lengthy, Short},
 };
 use err::Kind::{
     HostOrPathInvalidChar as InvalidChar, HostOrPathInvalidComponentEnd as InvalidComponentEnd,
@@ -162,14 +164,14 @@ impl From<&Scan> for DebugScan {
 
 // FIXME: use Span<'src> instead of OptionalSpan<'src>
 #[derive(Clone, Copy)]
-pub(crate) struct OptionalHostOrPath<'src>(Span<'src>, Kind);
-impl_span_methods_on_tuple!(OptionalHostOrPath);
+pub(crate) struct OptionalHostOrPath<'src>(Length<'src>, Kind);
+impl_span_methods_on_tuple!(OptionalHostOrPath, Short);
 impl<'src> IntoOption for OptionalHostOrPath<'src> {
     fn is_some(&self) -> bool {
         self.short_len() > 0
     }
     fn none() -> Self {
-        Self(Span::new(0), Kind::Either)
+        Self(0.into(), Kind::Either)
     }
 }
 impl<'src> OptionalHostOrPath<'src> {
@@ -210,7 +212,7 @@ impl<'src> OptionalHostOrPath<'src> {
     }
     fn from_ipv6(src: &'src str) -> Result<Self, Error> {
         let span = ipv6::Ipv6Span::new(src.as_bytes())?;
-        Ok(Self(span.span().into(), Kind::IpV6))
+        Ok(Self(span.short_len().into(), Kind::IpV6))
     }
 
     pub(crate) fn new(src: &'src str, kind: Kind) -> Result<Self, Error> {
@@ -239,7 +241,7 @@ impl<'src> OptionalHostOrPath<'src> {
             _ => Err(Error(InvalidChar, 0)),
         }?;
 
-        while (len < U::MAX) && (len as usize) < ascii.len() {
+        while (len < (Short::MAX - 1)) && (len as usize) < ascii.len() {
             let c = ascii[len as usize];
             #[cfg(test)]
             let (_c, _pre) = (c as char, DebugScan::from(&scan));
@@ -277,8 +279,11 @@ impl<'src> OptionalHostOrPath<'src> {
             }
             len += 1;
         }
-        if len >= U::MAX {
-            return Err(Error(err::Kind::HostOrPathTooLong, len));
+        if len == Short::MAX {
+            match ascii[len as usize..].iter().next() {
+                Some(b':') | Some(b'@') => Ok(()),
+                _ => Error::at(len, err::Kind::HostTooLong),
+            }?;
         }
         #[cfg(test)]
         let _scan = DebugScan::from(&scan);
@@ -286,19 +291,18 @@ impl<'src> OptionalHostOrPath<'src> {
             Err(Error(err::Kind::HostOrPathInvalidComponentEnd, len - 1))?;
         }
         debug_assert!(
-            len <= src.len() as u8,
-            "len = {}, src.len() = {}",
-            len,
+            len as usize <= src.len(),
+            "len = {len}, src.len() = {} for {src:?}",
             src.len()
         );
-        Ok(Self(Span::new(len), scan.into()))
+        Ok(Self(len.into(), scan.into()))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::span::SpanMethods;
+    use crate::span::Lengthy;
     fn should_parse(src: &str) -> super::OptionalHostOrPath<'_> {
         super::OptionalHostOrPath::new(src, super::Kind::Either)
             .map_err(|e| {

@@ -6,8 +6,8 @@
 
 use crate::{
     err::{Error, Kind as ErrorKind},
-    span::impl_span_methods_on_tuple,
-    Span, U,
+    span::{impl_span_methods_on_tuple, Length},
+    Short,
 };
 /// recognize an IPv6 address as defined in https://www.rfc-editor.org/rfc/rfc3986#appendix-A
 /// and then subsequently restricted by distribution/reference:
@@ -20,8 +20,8 @@ use crate::{
 /// > ```
 /// > -- https://github.com/distribution/reference/blob/main/regexp.go#L87-90
 #[derive(Clone, Copy)]
-pub(crate) struct Ipv6Span<'src>(Span<'src>);
-impl_span_methods_on_tuple!(Ipv6Span);
+pub(crate) struct Ipv6Span<'src>(Length<'src>);
+impl_span_methods_on_tuple!(Ipv6Span, Short);
 
 struct State(u8);
 impl State {
@@ -127,7 +127,7 @@ impl State {
 }
 impl<'src> Ipv6Span<'src> {
     pub(crate) fn new(ascii_bytes: &[u8]) -> Result<Self, Error> {
-        let mut index: U = if ascii_bytes.len() == 0 {
+        let mut index: Short = if ascii_bytes.len() == 0 {
             Err(Error(ErrorKind::Ipv6NoMatch, 0))
         } else if ascii_bytes[0] != b'[' {
             Err(Error(ErrorKind::Ipv6NoMatch, 0))
@@ -138,7 +138,7 @@ impl<'src> Ipv6Span<'src> {
         loop {
             index = if (ascii_bytes.len() - 1) == index as usize {
                 Err(Error(ErrorKind::Ipv6MissingClosingBracket, index))
-            } else if index == U::MAX {
+            } else if index == Short::MAX {
                 Err(Error(ErrorKind::Ipv6TooLong, index))
             } else {
                 Ok(index + 1)
@@ -157,23 +157,20 @@ impl<'src> Ipv6Span<'src> {
         match state.current_group() {
             0..=6 => {
                 if state.double_colon_already_seen() {
-                    Ok(Self(Span::new(len)))
+                    Ok(Self(len.into()))
                 } else {
                     Err(Error(ErrorKind::Ipv6TooFewGroups, index))
                 }
             }
-            7 => Ok(Self(Span::new(len))),
+            7 => Ok(Self(len.into())),
             _ => unreachable!("group_count <= 7 enforced by checks on state.increment_group()"),
         }
-    }
-    pub(crate) fn span(&self) -> Span<'src> {
-        self.0
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::span::SpanMethods;
+    use crate::span::Lengthy;
 
     fn should_work(ip: &str) {
         match super::Ipv6Span::new(ip.as_bytes()) {

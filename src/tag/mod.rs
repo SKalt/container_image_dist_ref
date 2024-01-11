@@ -1,22 +1,22 @@
 use crate::{
-    ambiguous::port_or_tag::{Kind as TagKind, OptionalPortOrTag},
+    ambiguous::port_or_tag::{Kind as TagKind, PortOrTag},
     err::{self, Error},
-    span::{impl_span_methods_on_tuple, IntoOption, OptionalSpan, U},
+    span::{impl_span_methods_on_tuple, IntoOption, Lengthy, Short, ShortLength},
 };
 #[derive(Clone, Copy)]
-pub(crate) struct OptionalTagSpan<'src>(OptionalSpan<'src>);
-impl_span_methods_on_tuple!(OptionalTagSpan);
-impl<'src> IntoOption for OptionalTagSpan<'src> {
+pub(crate) struct TagSpan<'src>(ShortLength<'src>);
+impl_span_methods_on_tuple!(TagSpan, Short);
+impl<'src> IntoOption for TagSpan<'src> {
     fn is_some(&self) -> bool {
         self.short_len() > 0
     }
     fn none() -> Self {
-        Self(OptionalSpan::new(0))
+        Self(0.into())
     }
 }
 
-impl<'src> From<OptionalPortOrTag<'src>> for OptionalTagSpan<'src> {
-    fn from(optional_port_or_tag: OptionalPortOrTag<'src>) -> Self {
+impl<'src> From<PortOrTag<'src>> for TagSpan<'src> {
+    fn from(optional_port_or_tag: PortOrTag<'src>) -> Self {
         Self(optional_port_or_tag.span())
     }
 }
@@ -28,9 +28,9 @@ fn disambiguate_error(e: Error) -> Error {
     };
     Error(kind, e.index())
 }
-impl<'src> OptionalTagSpan<'src> {
+impl<'src> TagSpan<'src> {
     pub(crate) fn new(src: &str) -> Result<Self, Error> {
-        let span = OptionalPortOrTag::new(src, TagKind::Tag).map_err(disambiguate_error)?;
+        let span = PortOrTag::new(src, TagKind::Tag).map_err(disambiguate_error)?;
         debug_assert!(span.kind() == TagKind::Tag);
         Ok(Self(span.span()))
     }

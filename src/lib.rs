@@ -28,7 +28,7 @@
 // > -- https://github.com/distribution/reference/blob/4894124079e525c3c3c5c8aacaa653b5499004e9/reference.go#L4-L26
 // https://www.rfc-editor.org/rfc/rfc3986#appendix-A
 // https://docs.rs/regex/latest/regex/#sharing-a-regex-across-threads-can-result-in-contention
-// #![no_std]
+#![no_std]
 pub(crate) mod ambiguous;
 pub mod digest;
 pub mod domain;
@@ -44,7 +44,7 @@ use self::{
     digest::OptionalDigestSpan,
     domain::OptionalDomainSpan,
     path::OptionalPathSpan,
-    span::{IntoOption, Lengthy, Long, Short, Span, MAX_USIZE},
+    span::{IntoOption, Lengthy, Long, Short},
     tag::TagSpan,
 };
 pub(crate) type Error = err::Error<Long>;

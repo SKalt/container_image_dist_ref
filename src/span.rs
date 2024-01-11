@@ -26,7 +26,7 @@ impl<Size> From<Size> for Length<'_, Size> {
 pub type ShortLength<'src> = Length<'src, Short>;
 pub type LongLength<'src> = Length<'src, u16>;
 
-impl std::ops::Add<Short> for Length<'_> {
+impl core::ops::Add<Short> for Length<'_> {
     type Output = Self;
     fn add(self, rhs: Short) -> Self {
         Self::new(self.0 + rhs)
@@ -49,14 +49,14 @@ impl<'src> Span<'src> {
     }
 }
 
-impl std::ops::Add<Short> for Span<'_> {
+impl core::ops::Add<Short> for Span<'_> {
     type Output = Self;
     fn add(self, rhs: Short) -> Self {
         Self(self.0 + rhs, PhantomData)
     }
 }
 
-impl std::ops::Add<usize> for Length<'_> {
+impl core::ops::Add<usize> for Length<'_> {
     type Output = Self;
     fn add(self, rhs: usize) -> Self {
         debug_assert!((rhs + self.0 as usize) <= MAX_USIZE);

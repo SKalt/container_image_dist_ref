@@ -1,5 +1,3 @@
-use std::io::Read;
-
 use crate::{
     domain::ipv6,
     err::{self, Error},

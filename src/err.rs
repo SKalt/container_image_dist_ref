@@ -90,9 +90,9 @@ where
     }
 }
 
-impl<Int, Size> std::ops::Add<Int> for Error<Size>
+impl<Int, Size> core::ops::Add<Int> for Error<Size>
 where
-    Size: std::ops::Add<Output = Size>,
+    Size: core::ops::Add<Output = Size>,
     Int: Into<Size>,
 {
     type Output = Self;

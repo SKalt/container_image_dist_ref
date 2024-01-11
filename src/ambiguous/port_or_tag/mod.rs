@@ -38,40 +38,39 @@ impl<'src> OptionalPortOrTag<'src> {
         self.1
     }
     pub(crate) fn new(src: &str, kind: Kind) -> Result<Self, Error> {
+        if src.is_empty() {
+            return Ok(Self::none());
+        }
+        let mut len = 0;
         let ascii = src.as_bytes();
-        let mut index: U = match ascii.iter().next() {
-            Some(b':') => Ok(0), // consume the starting colon
-            Some(b'/') | None => return Ok(Self(OptionalSpan::new(0), kind)),
-            _ => Err(Error(err::Kind::PortOrTagInvalidChar, 0)),
+        len += match ascii[len as usize] {
+            b':' => Ok(1), // consume the starting colon
+            b'/' | b'@' => return Ok(Self(OptionalSpan::none(), kind)),
+            _ => Err(Error(err::Kind::PortOrTagInvalidChar, len)),
         }?;
 
         let mut kind = kind;
-        loop {
-            index = if index >= 127 {
-                Err(Error(err::Kind::PortOrTagTooLong, index))
-            } else if index as usize == src.len() - 1 {
-                break; // end of string
-            } else {
-                Ok(index + 1)
-            }?;
-            let c = ascii[index as usize];
+        while (len <= 128) && (len as usize) < src.len() {
+            let c = ascii[len as usize];
+            #[cfg(test)]
+            let _c = c as char;
             kind = match c {
                 b'a'..=b'z' | b'A'..=b'Z' | b'.' | b'-' => match kind {
                     Kind::Tag | Kind::Either => Ok(Kind::Tag),
-                    Kind::Port => Err(Error(err::Kind::PortInvalidChar, index + 1)),
+                    Kind::Port => Err(Error(err::Kind::PortInvalidChar, len + 1)),
                 },
                 b'0'..=b'9' => match kind {
                     Kind::Tag | Kind::Port => Ok(kind),
                     Kind::Either => Ok(Kind::Port),
                 },
-                b'/' => {
-                    index -= 1; // don't consume the slash
-                    break;
-                }
-                _ => return Err(Error(err::Kind::PortOrTagInvalidChar, index + 1)),
+                b'/' | b'@' => break,
+                _ => return Err(Error(err::Kind::PortOrTagInvalidChar, len + 1)),
             }?;
+            len += 1;
         }
-        let len = index + 1;
+        if len >= 128 {
+            return Err(Error(err::Kind::PortOrTagTooLong, len));
+        }
         Ok(Self(OptionalSpan::new(len), kind))
     }
     pub(super) fn narrow(self, target: Kind, context: &'src str) -> Result<Self, Error> {

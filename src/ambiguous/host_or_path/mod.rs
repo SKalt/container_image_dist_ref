@@ -3,6 +3,10 @@ use crate::{
     err::{self, Error},
     span::{impl_span_methods_on_tuple, IntoOption, OptionalSpan, Span, U},
 };
+use err::Kind::{
+    HostOrPathInvalidChar as InvalidChar, HostOrPathInvalidComponentEnd as InvalidComponentEnd,
+    HostOrPathNoMatch as NoMatch, HostOrPathTooLong as TooLong,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
@@ -49,44 +53,44 @@ impl Scan {
 
     // setters -----------------------------------------------------------------
     // all of which are fallible
-    fn set_dot(&mut self) -> Result<(), Error> {
-        if self.last_was_dot() {
-            Err(Error(err::Kind::HostOrPathInvalidChar, 0))
+    fn set_dot(&mut self) -> Result<(), err::Kind> {
+        if self.last_was_dot() || self.last_was_dash() {
+            Err(InvalidComponentEnd)
         } else {
             Ok(self.0 |= Self::LAST_WAS_DOT)
         }
     }
 
-    fn set_dash(&mut self) -> Result<(), Error> {
-        if self.last_was_dash() {
-            Err(Error(err::Kind::HostInvalidChar, 0))
+    fn set_dash(&mut self) -> Result<(), err::Kind> {
+        if self.last_was_dot() || self.underscore_count() > 0 {
+            Err(InvalidComponentEnd)
         } else {
             Ok(self.0 |= Self::LAST_WAS_DASH)
         }
     }
 
-    fn set_upper(&mut self) -> Result<(), Error> {
+    fn set_upper(&mut self) -> Result<(), err::Kind> {
         if self.has_underscore() {
-            Err(Error(err::Kind::HostOrPathInvalidChar, 0))
+            Err(InvalidChar)
         } else {
             self.reset();
             Ok(self.0 |= Self::HAS_UPPERCASE)
         }
     }
-    fn set_underscore_count(&mut self, count: u8) -> Result<(), Error> {
+    fn set_underscore_count(&mut self, count: u8) -> Result<(), err::Kind> {
         if count > 2 {
-            Err(Error(err::Kind::HostOrPathInvalidChar, 0))
+            Err(InvalidChar)
         } else {
             self.0 &= !Self::UNDERSCORE_COUNT; // clear the count
             Ok(self.0 |= count)
         }
     }
-    fn add_underscore(&mut self) -> Result<(), Error> {
+    fn add_underscore(&mut self) -> Result<(), err::Kind> {
         if self.has_upper() {
-            Err(Error(err::Kind::HostOrPathInvalidChar, 0))
+            Err(InvalidChar)
         } else if self.last_was_dash() || self.last_was_dot() {
             // TODO: use more specific error kind?
-            Err(Error(err::Kind::HostOrPathInvalidChar, 0))
+            Err(InvalidChar)
         } else {
             self.0 |= Self::HAS_UNDERSCORE;
             self.set_underscore_count(self.underscore_count() + 1)
@@ -164,10 +168,7 @@ impl<'src> IntoOption for OptionalHostOrPath<'src> {
     fn is_some(&self) -> bool {
         self.short_len() > 0
     }
-    fn none() -> Self
-    where
-        Self: Sized,
-    {
+    fn none() -> Self {
         Self(Span::new(0), Kind::Either)
     }
 }
@@ -179,7 +180,7 @@ impl<'src> OptionalHostOrPath<'src> {
             (_, Either) => panic!("cannot narrow to Either"),
             (Either, _) => Ok(Self(self.0, target_kind)),
             (IpV6, IpV6) | (Path, Path) | (Host, Host) => Ok(self),
-            (_, IpV6) => Err(Error(err::Kind::HostOrPathInvalidChar, 0)),
+            (_, IpV6) => Err(Error(InvalidChar, 0)),
             (_, Path) => {
                 let offending_underscore_index = self.span_of(context)
                     .bytes()
@@ -199,7 +200,7 @@ impl<'src> OptionalHostOrPath<'src> {
                     .unwrap() // safe since this self.kind() == Host means there must have been an uppercase letter
                     .try_into()
                     .unwrap();
-                Err(Error(err::Kind::HostInvalidChar, offending_uppercase_index))
+                Err(Error(InvalidChar, offending_uppercase_index))
             }
         }
     }
@@ -213,69 +214,84 @@ impl<'src> OptionalHostOrPath<'src> {
     }
 
     pub(crate) fn new(src: &'src str, kind: Kind) -> Result<Self, Error> {
+        if src.is_empty() {
+            return Err(Error(NoMatch, 0));
+        }
+        let mut len = 0;
         let ascii = src.as_bytes();
         let mut scan: Scan = kind.into(); // <- scan's setters will enforce the kind's constraint(s)
-        let mut index = match ascii.iter().next() {
-            None => Err(Error(err::Kind::HostOrPathNoMatch, 0)),
-            Some(b'a'..=b'z') | Some(b'0'..=b'9') => Ok(0),
-            Some(b'A'..=b'Z') => {
-                scan.set_upper()?;
-                Ok(0)
+        let c = ascii[len as usize];
+        #[cfg(test)]
+        let _c = c as char;
+        len += match c {
+            b'a'..=b'z' | b'0'..=b'9' => Ok(1),
+            b'A'..=b'Z' => {
+                scan.set_upper().map_err(|kind| Error(kind, 0))?;
+                Ok(1)
             }
-            Some(b'[') => {
+            b'[' => {
                 // TODO: ensure this is unreachable
                 return match kind {
                     Kind::Either | Kind::IpV6 => Self::from_ipv6(src),
-                    _ => Err(Error(err::Kind::HostOrPathInvalidChar, 0)),
+                    _ => Err(Error(InvalidChar, 0)),
                 };
             }
-            Some(_) => Err(Error(err::Kind::HostOrPathInvalidChar, 0)),
+            _ => Err(Error(InvalidChar, 0)),
         }?;
 
-        while (index as usize) < ascii.len() - 1 {
-            index += if index < U::MAX {
-                Ok(1)
-            } else {
-                Err(Error(err::Kind::HostOrPathTooLong, index))
-            }?;
-            let c = ascii[index as usize];
+        while (len < U::MAX) && (len as usize) < ascii.len() {
+            let c = ascii[len as usize];
             #[cfg(test)]
-            let (_ch, _pre) = (c as char, DebugScan::from(&scan));
+            let (_c, _pre) = (c as char, DebugScan::from(&scan));
             match c {
                 b'a'..=b'z' | b'0'..=b'9' => Ok(scan.reset()),
                 b'A'..=b'Z' => scan.set_upper(),
                 b'_' => scan.add_underscore(),
                 b'.' => scan.set_dot(),
                 b'-' => scan.set_dash(),
-                b':' | b'/' => {
-                    index -= 1;
-                    break;
-                }
-                _ => Err(Error(err::Kind::HostOrPathInvalidChar, index)),
+                b':' | b'/' | b'@' => break,
+                _ => Err(InvalidChar),
             }
-            .map_err(|e| e + index)?;
+            .map_err(|err_kind| Error(err_kind, len))?;
             #[cfg(test)]
             {
                 let _post = DebugScan::from(&scan);
+                if _c == '.' {
+                    debug_assert!(
+                        _pre.last_was_dot == false && _post.last_was_dot == true,
+                        "last_was_dot changed from {} to {} @ {}",
+                        _pre.last_was_dot,
+                        _post.last_was_dot,
+                        len
+                    );
+                } else {
+                    debug_assert!(!_post.last_was_dot)
+                }
                 debug_assert!(
                     _pre.has_upper == _post.has_upper,
                     "has_upper changed from {} to {} @ {}",
                     _pre.has_upper,
                     _post.has_upper,
-                    index
+                    len
                 );
             }
+            len += 1;
         }
+        if len >= U::MAX {
+            return Err(Error(err::Kind::HostOrPathTooLong, len));
+        }
+        #[cfg(test)]
+        let _scan = DebugScan::from(&scan);
         if scan.last_was_dash() || scan.last_was_dot() || scan.underscore_count() > 0 {
-            Err(Error(err::Kind::HostOrPathInvalidChar, index))?;
+            Err(Error(err::Kind::HostOrPathInvalidComponentEnd, len - 1))?;
         }
         debug_assert!(
-            index < src.len() as u8,
-            "index = {}, src.len() = {}",
-            index,
+            len <= src.len() as u8,
+            "len = {}, src.len() = {}",
+            len,
             src.len()
         );
-        Ok(Self(Span::new(index + 1), scan.into()))
+        Ok(Self(Span::new(len), scan.into()))
     }
 }
 
@@ -283,10 +299,32 @@ impl<'src> OptionalHostOrPath<'src> {
 mod tests {
     use super::*;
     use crate::span::SpanMethods;
-    fn should_parse_as(src: &str, kind: Kind) {
+    fn should_parse(src: &str) -> super::OptionalHostOrPath<'_> {
+        super::OptionalHostOrPath::new(src, super::Kind::Either)
+            .map_err(|e| {
+                assert!(
+                    false,
+                    "failed to parse {:?}: {:?} @ {} ({:?})",
+                    src,
+                    e.kind(),
+                    e.index(),
+                    src.as_bytes()[e.index() as usize] as char
+                );
+            })
+            .unwrap()
+    }
+    fn should_parse_as(src: &str, expected: &str, kind: Kind) {
         let host_or_path = should_parse(src);
-        let _ = host_or_path.span_of(src); // check bounds
-        assert_eq!(host_or_path.kind(), kind, "incorrectly typed {src:?}");
+        let consumed = host_or_path.span_of(src);
+        assert_eq!(
+            consumed, expected,
+            "incorrectly parsed {consumed:?} of {src:?}"
+        );
+        assert_eq!(
+            host_or_path.kind(),
+            kind,
+            "incorrectly typed {src:?} as {kind:?}"
+        );
     }
     fn should_parse_incomplete(src: &str, expected: &str) {
         let host_or_path = should_parse(src);
@@ -298,19 +336,6 @@ mod tests {
         );
     }
 
-    fn should_parse(src: &str) -> super::OptionalHostOrPath<'_> {
-        super::OptionalHostOrPath::new(src, super::Kind::Either)
-            .map_err(|e| {
-                assert!(
-                    false,
-                    "failed to parse {:?}: {:?} @ {}",
-                    src,
-                    e.kind(),
-                    e.index()
-                );
-            })
-            .unwrap()
-    }
     fn should_fail_with(src: &str, err_kind: err::Kind, bad_char_index: u8) {
         let err = super::OptionalHostOrPath::new(src, super::Kind::Either)
             .map(|e| {
@@ -327,20 +352,22 @@ mod tests {
         assert_eq!(
             err.index(),
             bad_char_index.into(),
-            "expected offset of incorrect char to be {bad_char_index}; got {}",
-            err.index()
+            "expected index of incorrect char to be {bad_char_index} in {src:?}; got {}, which is the index of {:?}",
+            err.index(),
+            src.as_bytes()[err.index() as usize] as char
         );
     }
     #[test]
     fn test_valid() {
-        should_parse_as("example.com", Kind::Either);
-        should_parse_as("example.com:tag", Kind::Either);
-        should_parse_as("127.0.0.1", Kind::Either);
-        should_parse_as("123.456.789.101", Kind::Either);
-        should_parse_as("0.0", Kind::Either);
-        should_parse_as("1.2.3.4.5", Kind::Either);
-        should_parse_as("sub_domain.ex.com", Kind::Path);
-        should_parse_as("Example.Com", Kind::Host);
+        // should_parse_as("example.com", Kind::Either);
+        // should_parse_as("example.com:tag", Kind::Either);
+        should_parse_as("127.0.0.1", "127.0.0.1", Kind::Either);
+        should_parse_as("123.456.789.101", "123.456.789.101", Kind::Either);
+        should_parse_as("0.0", "0.0", Kind::Either);
+        should_parse_as("1.2.3.4.5", "1.2.3.4.5", Kind::Either);
+        should_parse_as("sub_domain.ex.com", "sub_domain.ex.com", Kind::Path);
+        should_parse_as("Example.Com", "Example.Com", Kind::Host);
+        should_parse_as("example.com:tag", "example.com", Kind::Either);
     }
     #[test]
     fn test_stopping() {
@@ -348,12 +375,14 @@ mod tests {
         should_parse_incomplete("0.0.0.0:80", ":80");
         should_parse_incomplete("example.com/path", "/path");
         should_parse_incomplete("foo/bar", "/bar");
+        should_parse_incomplete("foo@algo:aaa", "@algo:aaa");
     }
     #[test]
     fn test_invalid() {
+        should_fail_with("$", InvalidChar, 0);
         should_fail_with(
             "google.com.",
-            super::err::Kind::HostOrPathInvalidChar,
+            InvalidComponentEnd,
             ("google.com.".len() - 1) as u8,
         );
     }

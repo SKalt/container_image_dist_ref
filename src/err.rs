@@ -7,6 +7,7 @@ pub enum Kind {
     HostOrPathNoMatch,
     HostOrPathTooLong,
     HostOrPathInvalidChar,
+    HostOrPathInvalidComponentEnd,
     // ambiguous::port_or_tag ----------------------------------
     PortOrTagMissing,
     PortOrTagTooLong,
@@ -52,6 +53,7 @@ pub enum Kind {
     OciRegisteredAlgorithmWrongLength,
     AlgorithmInvalidChar,
     // digest::encoded ------------------------------------------
+    DigestTooLong,
     EncodedNoMatch,
     EncodedInvalidChar,
     EncodedNonLowerHex,

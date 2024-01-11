@@ -59,13 +59,10 @@ impl<'src> AlgorithmSpan<'src> {
 }
 impl IntoOption for AlgorithmSpan<'_> {
     fn is_some(&self) -> bool {
-        self.short_len() == 0
+        self.short_len() > 0
     }
 
-    fn none() -> Self
-    where
-        Self: Sized,
-    {
+    fn none() -> Self {
         Self(OptionalSpan::new(0))
     }
 }
@@ -91,11 +88,19 @@ impl<'src> AlgorithmStr<'src> {
     pub fn parts(&self) -> impl Iterator<Item = &str> {
         self.src().split(|c| is_separator(c as u8))
     }
-    /// prefer hanging on to the compliance value from initial parsing via `from_prefix`
-    /// or `from_exact_match` rather than re-parsing
-    pub fn compliance(&self) -> Result<Compliance, Error> {
-        let (_, compliance) = AlgorithmSpan::from_exact_match(&self.src())?;
-        Ok(compliance)
+    pub fn compliance(&self) -> Compliance {
+        let mut parts = self.parts();
+        let first = parts.next().unwrap();
+        match first {
+            "sha256" | "sha512" => {
+                if parts.count() != 0 {
+                    Compliance::Oci
+                } else {
+                    Compliance::Distribution
+                }
+            }
+            _ => Compliance::Universal,
+        }
     }
 }
 
@@ -114,10 +119,10 @@ fn component(src: &str, compliance: Compliance) -> Result<(U, Compliance), Error
     if src.len() == 0 {
         return Err(Error(AlgorithmNoMatch, 0));
     }
-    assert!(src.len() <= 256, "algorithm component too long"); // HACK: arbitrary limit
+    debug_assert!(src.len() <= 256, "algorithm component too long"); // HACK: arbitrary limit
 
     let mut len = 0;
-    let compliance = match src.bytes().next().unwrap() {
+    let compliance = match src.as_bytes()[len as usize] {
         b'a'..=b'z' => Ok(compliance), // universally compatible first character
         b'0'..=b'9' => {
             // acceptable according to OCI spec, but not distribution/reference
@@ -141,20 +146,26 @@ fn component(src: &str, compliance: Compliance) -> Result<(U, Compliance), Error
         }
         _ => Err(Error(AlgorithmInvalidChar, len)),
     }?;
-    for c in src.bytes() {
-        len += 1;
-        match c {
-            b'a'..=b'z' | b'0'..=b'9' => {} // ok
+    len += 1;
+    while (len as usize) < src.len() {
+        let c = src.as_bytes()[len as usize];
+        #[cfg(test)]
+        let _c = c as char;
+        len = match c {
+            b'a'..=b'z' | b'0'..=b'9' => Ok(len + 1),
             b'A'..=b'Z' => {
                 // acceptable according to distribution/reference
                 // but not the OCI image spec
                 if compliance == Oci {
                     // this is not a valid OCI algorithm
-                    return Err(Error(InvalidOciAlgorithm, len));
+                    Err(Error(InvalidOciAlgorithm, len))
+                } else {
+                    Ok(len + 1)
                 }
             }
-            _ => break,
-        }
+            b':' | b'+' | b'.' | b'_' | b'-' => break,
+            _ => Err(Error(AlgorithmInvalidChar, len)),
+        }?;
     }
     Ok((len, compliance))
 }

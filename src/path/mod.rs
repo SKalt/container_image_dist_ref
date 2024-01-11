@@ -83,7 +83,7 @@ impl<'src> OptionalPathSpan<'src> {
         loop {
             let next = src[index as usize..].bytes().next();
             index = match next {
-                None | Some(b':') => break,
+                None | Some(b':') | Some(b'@') => break,
                 Some(b'/') => Ok(index + 1),
                 Some(_) => Err(Error(err::Kind::PathInvalidChar, index + 1)),
             }?;
@@ -156,9 +156,9 @@ impl SpanMethods<'_> for PathStr<'_> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     #[test]
     fn test_this() {
-        use super::*;
         let src = "test.com/path:tag";
         let span = OptionalPathSpan::new(src).unwrap();
         assert_eq!(span.span_of(src), "test.com/path");

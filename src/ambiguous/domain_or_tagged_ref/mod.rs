@@ -55,7 +55,7 @@ impl<'src> DomainOrRefSpan<'src> {
         let right_src = &src[left.len()..];
         let right = match right_src.bytes().next() {
             Some(b':') => OptionalPortOrTag::new(right_src, EitherPortOrTag),
-            Some(b'/') | None => Ok(OptionalPortOrTag::none()),
+            Some(b'/') | Some(b'@') | None => Ok(OptionalPortOrTag::none()),
             Some(_) => Err(Error(err::Kind::HostOrPathInvalidChar, 0)),
         }
         .map_err(|e: Error| e + left.short_len())?;
@@ -83,13 +83,13 @@ impl<'src> DomainOrRefSpan<'src> {
             },
             Kind::TaggedRef => Path,
         };
-        let left = left.narrow(left_kind, left.span_of(context))?;
+        let left = left.narrow(left_kind, context)?;
         let right_kind = match target {
             Kind::Domain => Port,
             Kind::TaggedRef => Tag,
         };
         let right = right
-            .narrow(right_kind, right.span_of(&context[left.len()..]))
+            .narrow(right_kind, &context[left.len()..])
             .map_err(|e| e + left.short_len())?;
         match target {
             Kind::Domain => Ok(Self::Domain(OptionalDomainSpan::from_ambiguous_parts(

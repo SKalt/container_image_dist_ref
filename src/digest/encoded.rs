@@ -60,7 +60,7 @@ impl<'src> EncodedSpan<'src> {
 
 impl IntoOption for EncodedSpan<'_> {
     fn is_some(&self) -> bool {
-        self.short_len() == 0
+        self.short_len() > 0
     }
 
     fn none() -> Self

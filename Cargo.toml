@@ -8,3 +8,10 @@ edition = "2021"
 
 [dependencies]
 url = "2"
+
+[dev-dependencies]
+criterion = "0.4"
+
+[[bench]]
+name = "basic_benchmark"
+harness = false

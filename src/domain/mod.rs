@@ -48,19 +48,6 @@ impl<'src> IntoOption for OptionalDomainSpan<'src> {
     }
 }
 
-fn disambiguate_error(e: Error) -> Error {
-    let kind = match e.kind() {
-        err::Kind::HostOrPathNoMatch => err::Kind::HostNoMatch,
-        err::Kind::HostOrPathNoMatch => err::Kind::HostInvalidChar,
-        err::Kind::HostOrPathNoMatch => err::Kind::HostTooLong,
-        err::Kind::PortOrTagInvalidChar => err::Kind::PortInvalidChar,
-        err::Kind::PortOrTagTooLong => err::Kind::PortTooLong,
-        err::Kind::PortOrTagMissing => err::Kind::PortMissing,
-        _ => e.kind(),
-    };
-    Error(kind, e.index())
-}
-
 impl<'src> OptionalDomainSpan<'src> {
     pub(crate) fn host(&self) -> OptionalHostSpan<'src> {
         self.host

@@ -177,21 +177,30 @@ impl<'src> OptionalHostOrPath<'src> {
         // TODO: consider moving this fn into DomainOrRef
         use Kind::*;
         match (self.kind(), target_kind) {
-            (_, Either) => panic!("cannot narrow to Either"),
+            (_, Either) => {
+                debug_assert!(false, "don't narrow to Either, that's broadening");
+                Ok(Self(self.0, Either))
+            }
             (Either, _) => Ok(Self(self.0, target_kind)),
             (IpV6, IpV6) | (Path, Path) | (Host, Host) => Ok(self),
             (_, IpV6) => Err(Error(InvalidChar, 0)),
-            (_, Path) => {
-                let offending_underscore_index = self.span_of(context)
-                    .bytes()
-                    .find(|b| b == &b'_')
-                    .unwrap()// safe since this self.kind() == Path means there must have been an underscore
-                    .try_into()
-                    .unwrap();
-                Err(Error(
-                    err::Kind::PathInvalidChar,
-                    offending_underscore_index,
-                ))
+            (IpV6, Path) | (IpV6, Host) => Error::at(0, InvalidChar), // 0 must be an opening [, which is invalid for a Host or Path
+            (Host, Path) => {
+                let i = {
+                    let underscore_index = self
+                        .span_of(context)
+                        .bytes()
+                        .enumerate()
+                        .find(|(_, b)| b.is_ascii_uppercase())
+                        .map(|(i, _)| i);
+                    debug_assert!(
+                        underscore_index.is_some(),
+                        "unable to find _ in {context:?}"
+                    );
+                    underscore_index.unwrap() // !?!? safe since this self.kind() == Path means there must have been an underscore
+                };
+                let i = i.try_into().unwrap(); // safe since self.span_of(context) must be short
+                Err(Error(err::Kind::PathInvalidChar, i))
             }
             (_, Host) => {
                 let offending_uppercase_index = self.span_of(context)

@@ -18,14 +18,12 @@
 
 use super::algorithm::AlgorithmStr;
 use super::Compliance;
-use crate::span::{
-    impl_span_methods_on_tuple, IntoOption, Lengthy, Long, LongLength, Short, MAX_USIZE,
-};
+use crate::span::{impl_span_methods_on_tuple, IntoOption, Lengthy, Long, LongLength, Short};
+const MAX_LENGTH: usize = Long::MAX as usize;
 
 use crate::err::Kind::{
     EncodedInvalidChar, EncodedNoMatch, EncodedNonLowerHex, EncodingTooLong, EncodingTooShort,
-    OciRegisteredAlgorithmTooManyParts, OciRegisteredAlgorithmWrongLength,
-    OciRegisteredDigestInvalidChar,
+    OciRegisteredAlgorithmWrongDigestLength, OciRegisteredDigestInvalidChar,
 };
 type Error = crate::err::Error<Long>;
 
@@ -35,9 +33,12 @@ impl_span_methods_on_tuple!(EncodedSpan, Long);
 impl<'src> EncodedSpan<'src> {
     pub(crate) fn new(src: &'src str, compliance: Compliance) -> Result<(Self, Compliance), Error> {
         use Compliance::*;
+        if src.is_empty() {
+            return Error::at(0, EncodedNoMatch);
+        }
         let mut len = 0;
         let mut compliance = compliance;
-        for c in src.bytes() {
+        for c in src.as_bytes() {
             compliance = match c {
                 b'a'..=b'f' | b'0'..=b'9' | b'A'..=b'F' => Ok(compliance), // hex digits are universally accepted
                 b'g'..=b'z' | b'G'..=b'Z' | b'=' | b'_' | b'-' => {
@@ -85,52 +86,43 @@ impl<'src> EncodedStr<'src> {
         src: &'src str,
         compliance: Compliance,
     ) -> Result<(Self, Compliance), Error> {
-        let (span, compliance) = EncodedSpan::new(src, compliance)?;
-        if span.len() != src.len() {
-            return Error::at(span.short_len().into(), EncodedNoMatch);
-        }
-        Ok((Self(span.span_of(src)), compliance))
+        let (_, compliance) = EncodedSpan::new(src, compliance)?;
+        Ok((Self(src), compliance))
     }
     pub(crate) fn from_span(src: &'src str, span: EncodedSpan<'src>) -> Self {
         Self(span.span_of(src))
     }
-    fn validate_oci_algorithm(&self, algorithm: &AlgorithmStr<'src>) -> Result<(), Error> {
-        let mut parts = algorithm.parts();
-        let first = parts.next().unwrap();
-        match first {
+    fn is_lower_hex(&self) -> Result<(), Error> {
+        let mut i: Short = 0;
+        self.src().bytes().enumerate().try_for_each(|(i, c)| {
+            if c.is_ascii_lowercase() && c.is_ascii_hexdigit() {
+                Ok(())
+            } else {
+                Error::at(i.try_into().unwrap(), OciRegisteredDigestInvalidChar)
+            }
+        })
+    }
+    fn validate_registered_algorithms(&self, algorithm: &AlgorithmStr<'src>) -> Result<(), Error> {
+        match algorithm.src() {
             "sha256" | "sha512" => {
-                if parts.count() != 0 {
-                    return Error::at(
-                        first.len().try_into().unwrap(),
-                        OciRegisteredAlgorithmTooManyParts,
-                    );
-                }
-                {
-                    let mut i: Short = 0;
-                    for c in self.src().bytes() {
-                        i += 1;
-                        if !c.is_ascii_lowercase() || !c.is_ascii_hexdigit() {
-                            return Error::at(i.into(), OciRegisteredDigestInvalidChar);
-                        }
-                    }
-                }
-                match (first, self.len()) {
+                self.is_lower_hex()?;
+                match (algorithm.src(), self.len()) {
                     ("sha256", 64) => Ok(()),
                     ("sha512", 128) => Ok(()),
                     (_, _) => Error::at(
                         self.len().try_into().unwrap(),
-                        OciRegisteredAlgorithmWrongLength,
+                        OciRegisteredAlgorithmWrongDigestLength,
                     ),
                 }
             }
-
-            _ => Ok(()),
+            _ => Ok(()), // non-registered algorithm
         }
     }
+
     fn validate_distribution(&self) -> Result<(), Error> {
         match self.len() {
             0..=31 => Error::at(self.short_len().into(), EncodingTooShort),
-            32..=MAX_USIZE => Ok(()),
+            32..=MAX_LENGTH => Ok(()),
             _ => Error::at(self.short_len().into(), EncodingTooLong),
         }
     }
@@ -141,25 +133,17 @@ impl<'src> EncodedStr<'src> {
         algorithm: &AlgorithmStr<'src>,
         compliance: Compliance,
     ) -> Result<Compliance, Error> {
+        self.validate_registered_algorithms(algorithm)?;
         match compliance {
-            Compliance::Oci => {
-                self.validate_oci_algorithm(algorithm)?;
-                Ok(Compliance::Oci)
-            }
+            Compliance::Oci => Ok(Compliance::Oci),
             Compliance::Distribution => {
                 self.validate_distribution()?;
                 Ok(Compliance::Distribution)
             }
-            Compliance::Universal => {
-                let dist = self.validate_distribution();
-                let oci = self.validate_oci_algorithm(algorithm);
-                match (oci.is_ok(), dist.is_ok()) {
-                    (true, true) => Ok(Compliance::Universal),
-                    (true, false) => Ok(Compliance::Oci),
-                    (false, true) => Ok(Compliance::Distribution),
-                    (false, false) => dist.map(|_| Compliance::Distribution), // distribution's error condition (len<32)  is more egregious
-                }
-            }
+            Compliance::Universal => match self.validate_distribution() {
+                Ok(_) => Ok(Compliance::Universal),
+                Err(_) => return Ok(Compliance::Oci),
+            },
         }
     }
 }

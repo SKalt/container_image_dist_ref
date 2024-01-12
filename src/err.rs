@@ -12,12 +12,14 @@ pub enum Kind {
     PortOrTagMissing,
     PortOrTagTooLong,
     PortOrTagInvalidChar,
-    // domain::host --------------------------------------------
+    // name ----------------------------------------------------------
+    NameTooLong,
+    // name::domain::host --------------------------------------------
     HostNoMatch,
     HostComponentInvalidEnd,
     HostInvalidChar,
     HostTooLong,
-    // domain::ipv6 -------------------------------------------
+    // name::domain::ipv6 -------------------------------------------
     Ipv6NoMatch,
     Ipv6TooLong,
     Ipv6BadColon,
@@ -25,13 +27,13 @@ pub enum Kind {
     Ipv6TooManyGroups,
     Ipv6TooFewGroups,
     Ipv6MissingClosingBracket,
-    // domain::port --------------------------------------------
+    // name::domain::port --------------------------------------------
     Port,
     PortInvalidChar,
     PortTooLong,
     /// an empty port was observed (like "host:/", or "host:" at the end of the string)
     PortMissing,
-    // path ----------------------------------------------------
+    // name::path ----------------------------------------------------
     PathNoMatch,
     PathComponentInvalidEnd,
     PathInvalidChar,
@@ -48,9 +50,7 @@ pub enum Kind {
     /// includes uppercase letters, which is allowed by distribution/reference
     /// but not the OCI image spec.
     AlgorithmInvalidNumericPrefix,
-    OciRegisteredAlgorithmInvalidChar,
-    OciRegisteredAlgorithmTooManyParts,
-    OciRegisteredAlgorithmWrongLength,
+    OciRegisteredAlgorithmWrongDigestLength,
     AlgorithmInvalidChar,
     // digest::encoded ------------------------------------------
     DigestTooLong,

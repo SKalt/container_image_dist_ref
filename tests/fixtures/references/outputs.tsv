@@ -1,0 +1,46 @@
+input	name	domain	path	tag	digest_algo	digest_encoded	err
+test_com	test_com		test_com				
+test.com:tag	test.com		test.com	tag			
+test.com:5000	test.com		test.com	5000			
+test.com/repo:tag	test.com/repo	test.com	repo	tag			
+test:5000/repo	test:5000/repo	test:5000	repo				
+test:5000/repo:tag	test:5000/repo	test:5000	repo	tag			
+test:5000/repo@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff	test:5000/repo	test:5000	repo		sha256	ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff	
+test:5000/repo:tag@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff	test:5000/repo	test:5000	repo	tag	sha256	ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff	
+test:5000/repo	test:5000/repo	test:5000	repo				
+lowercase:Uppercase	lowercase		lowercase	Uppercase			
+a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a:tag-puts-this-over-max	a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a	a	a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a	tag-puts-this-over-max			
+sub-dom1.foo.com/bar/baz/quux	sub-dom1.foo.com/bar/baz/quux	sub-dom1.foo.com	bar/baz/quux				
+sub-dom1.foo.com/bar/baz/quux:some-long-tag	sub-dom1.foo.com/bar/baz/quux	sub-dom1.foo.com	bar/baz/quux	some-long-tag			
+b.gcr.io/test.example.com/my-app:test.example.com	b.gcr.io/test.example.com/my-app	b.gcr.io	test.example.com/my-app	test.example.com			
+xn--n3h.com/myimage:xn--n3h.com	xn--n3h.com/myimage	xn--n3h.com	myimage	xn--n3h.com			
+xn--7o8h.com/myimage:xn--7o8h.com@sha512:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff	xn--7o8h.com/myimage	xn--7o8h.com	myimage	xn--7o8h.com	sha512	ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff	
+foo_bar.com:8080	foo_bar.com		foo_bar.com	8080			
+foo/foo_bar.com:8080	foo/foo_bar.com	foo	foo_bar.com	8080			
+192.168.1.1	192.168.1.1		192.168.1.1				
+192.168.1.1:tag	192.168.1.1		192.168.1.1	tag			
+192.168.1.1:5000	192.168.1.1		192.168.1.1	5000			
+192.168.1.1/repo	192.168.1.1/repo	192.168.1.1	repo				
+192.168.1.1:5000/repo	192.168.1.1:5000/repo	192.168.1.1:5000	repo				
+192.168.1.1:5000/repo:5050	192.168.1.1:5000/repo	192.168.1.1:5000	repo	5050			
+[2001:db8::1]/repo	[2001:db8::1]/repo	[2001:db8::1]	repo				
+[2001:db8:1:2:3:4:5:6]/repo:tag	[2001:db8:1:2:3:4:5:6]/repo	[2001:db8:1:2:3:4:5:6]	repo	tag			
+[2001:db8::1]:5000/repo	[2001:db8::1]:5000/repo	[2001:db8::1]:5000	repo				
+[2001:db8::1]:5000/repo:tag	[2001:db8::1]:5000/repo	[2001:db8::1]:5000	repo	tag			
+[2001:db8::1]:5000/repo@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff	[2001:db8::1]:5000/repo	[2001:db8::1]:5000	repo		sha256	ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff	
+[2001:db8::1]:5000/repo:tag@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff	[2001:db8::1]:5000/repo	[2001:db8::1]:5000	repo	tag	sha256	ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff	
+[2001:db8::]:5000/repo	[2001:db8::]:5000/repo	[2001:db8::]:5000	repo				
+[::1]:5000/repo	[::1]:5000/repo	[::1]:5000	repo				
+:justtag							invalid reference format
+@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff							invalid reference format
+repo@sha256:ffffffffffffffffffffffffffffffffff							invalid checksum digest length
+test:5000/repo@sha256:FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF							invalid checksum digest format
+Uppercase:tag							repository name must be lowercase
+test:5000/Uppercase/lowercase:tag							repository name must be lowercase
+a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a:tag							repository name must not be more than 255 characters
+aa/asdf$$^/aa							invalid reference format
+[2001:db8::1]							invalid reference format
+[2001:db8::1]:5000							invalid reference format
+[2001:db8::1]:tag							invalid reference format
+[fe80::1%eth0]:5000/repo							invalid reference format
+[fe80::1%@invalidzone]:5000/repo							invalid reference format

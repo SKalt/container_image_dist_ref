@@ -1,8 +1,8 @@
 use core::marker::PhantomData;
 pub type Short = u8;
-
 pub type Long = u16;
-pub(crate) const MAX_USIZE: usize = Short::MAX as usize;
+
+pub(crate) const MAX_USIZE: usize = Short::MAX as usize; // FIXME: deprecate
 
 /// To avoid lugging around an entire &str (which costs 2 pointer-sizes), we can
 /// use a span to represent a length of string with a lifetime tied to the original

@@ -1,7 +1,7 @@
 :justtag
 @sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
 repo@sha256:ffffffffffffffffffffffffffffffffff
-validname@invaliddigest:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+test:5000/repo@sha256:FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
 Uppercase:tag
 test:5000/Uppercase/lowercase:tag
 a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a:tag
@@ -11,4 +11,3 @@ aa/asdf$$^/aa
 [2001:db8::1]:tag
 [fe80::1%eth0]:5000/repo
 [fe80::1%@invalidzone]:5000/repo
-

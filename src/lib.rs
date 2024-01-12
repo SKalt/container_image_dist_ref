@@ -37,7 +37,9 @@ pub mod path;
 pub(crate) mod span;
 mod tag;
 
-// FIXME: distinguish between offsets and lengths
+/// the maximum total number of characters in a repository name, as defined by
+/// https://github.com/distribution/reference/blob/main/reference.go#L39
+pub const NAME_TOTAL_MAX_LENGTH: u8 = 255;
 
 use self::{
     ambiguous::domain_or_tagged_ref::DomainOrRefSpan,
@@ -80,6 +82,9 @@ impl<'src> RefSpan<'src> {
         }
         .map_err(|e| e + index)?;
         index += path.short_len() as Long;
+        if index > NAME_TOTAL_MAX_LENGTH.into() {
+            return Error::at(index, err::Kind::NameTooLong);
+        }
         let rest = &src[index as usize..];
         let tag = match prefix {
             DomainOrRefSpan::TaggedRef((_, right)) => match right.into_option() {
@@ -154,6 +159,7 @@ impl<'src> Reference<'src> {
             + self.span.digest.into_option().map(|_| 1).unwrap_or(0)
         // consume the leading '@' if a digest is present
     }
+
     pub fn domain(&self) -> Option<&str> {
         self.span.domain.into_option().map(|d| d.span_of(self.src))
     }
@@ -162,6 +168,9 @@ impl<'src> Reference<'src> {
             .path
             .into_option()
             .map(|p| p.span_of(&self.src[self.path_index()..]))
+    }
+    pub fn name(&self) -> &str {
+        &self.src[..self.tag_index()]
     }
     pub fn tag(&self) -> Option<&str> {
         self.span
@@ -179,6 +188,7 @@ impl<'src> Reference<'src> {
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
     fn should_parse(src: &str) -> Reference {
         let result = Reference::new(src);
@@ -261,11 +271,91 @@ mod tests {
 
     #[test]
     fn basic_corpus() {
-        include_str!("../tests/fixtures/references/valid/inputs.txt")
+        #[derive(Debug, PartialEq, Eq)]
+        struct TestCase<'src> {
+            input: &'src str,
+            name: &'src str,
+            domain: Option<&'src str>,
+            path: Option<&'src str>,
+            tag: Option<&'src str>,
+            digest_algo: Option<&'src str>,
+            digest_encoded: Option<&'src str>,
+            err: Option<&'src str>,
+        }
+        impl<'src> From<&'src str> for TestCase<'src> {
+            fn from(line: &'src str) -> Self {
+                fn maybe(s: &str) -> Option<&str> {
+                    if s.is_empty() {
+                        None
+                    } else {
+                        Some(s)
+                    }
+                }
+                let mut cols = line.split('\t');
+                let input = cols.next().unwrap();
+                let name = cols.next().unwrap();
+                let domain = cols.next().unwrap();
+                let path = cols.next().unwrap();
+                let tag = cols.next().unwrap();
+                let digest_algo = cols.next().unwrap();
+                let digest_encoded = cols.next().unwrap();
+                let err = cols.next().unwrap();
+                Self {
+                    input,
+                    name,
+                    domain: maybe(domain),
+                    path: maybe(path),
+                    tag: maybe(tag),
+                    digest_algo: maybe(digest_algo),
+                    digest_encoded: maybe(digest_encoded),
+                    err: maybe(err),
+                }
+            }
+        }
+        fn as_test_case<'s>(span: &'s Reference<'s>) -> TestCase<'s> {
+            let digest = span
+                .digest()
+                .map(|d| d.split(':'))
+                .map(|mut iter| (iter.next().unwrap(), iter.next().unwrap()));
+            TestCase {
+                input: span.src,
+                name: span.name(),
+                domain: span.domain(),
+                path: span.path(),
+                tag: span.tag(),
+                digest_algo: digest.map(|d| d.0),
+                digest_encoded: digest.map(|d| d.1),
+                err: None,
+            }
+        }
+
+        fn expect(src: &str, expected: TestCase) {
+            let parsed = Reference::new(src);
+            match (expected.err, parsed) {
+                (Some(_err), Err(_e)) => {} // ok
+                (None, Ok(actual)) => {
+                    assert_eq!(as_test_case(&actual), expected)
+                }
+                (Some(err), Ok(_span)) => {
+                    panic!("expected {src:?} to fail with {err:?}, but it succeeded")
+                }
+                (None, Err(e)) => panic!("expected {src:?} to succeed, but it failed with {e:?}"),
+            }
+        }
+        let valid_inputs = include_str!("../tests/fixtures/references/valid/inputs.txt")
             .lines()
+            .filter(|line| !line.is_empty());
+        let invalid_inputs = include_str!("../tests/fixtures/references/invalid/inputs.txt")
+            .lines()
+            .filter(|line| !line.is_empty());
+        let expected_outputs = include_str!("../tests/fixtures/references/outputs.tsv")
+            .lines()
+            .skip(1) // the header
             .filter(|line| !line.is_empty())
-            .for_each(|line| {
-                should_parse(line);
-            });
+            .map(|line| TestCase::from(line));
+        valid_inputs
+            .chain(invalid_inputs)
+            .zip(expected_outputs)
+            .for_each(|(src, expected)| expect(src, expected))
     }
 }

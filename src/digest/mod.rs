@@ -140,6 +140,9 @@ impl<'src> DigestStr<'src> {
         AlgorithmStr::from_span(self.src, self.span.algorithm)
     }
     pub fn encoded(&self) -> EncodedStr<'src> {
-        EncodedStr::from_span(self.src, self.span.encoded)
+        EncodedStr::from_span(
+            &self.src[self.span.algorithm.len() + 1..],
+            self.span.encoded,
+        )
     }
 }

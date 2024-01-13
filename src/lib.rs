@@ -233,9 +233,8 @@ impl<'src> RefStr<'src> {
     }
     pub fn digest(&self) -> Option<DigestStr<'src>> {
         self.span
-            .digest
-            .into_option()
-            .map(|span| DigestStr::from_span(self.src, span))
+            .digest_range()
+            .map(|range| DigestStr::from_span(&self.src[range], self.span.digest))
     }
 }
 
@@ -487,7 +486,11 @@ mod tests {
             match (expected.err, parsed) {
                 (Some(_err), Err(_e)) => {} // ok
                 (None, Ok(actual)) => {
-                    assert_eq!(as_test_case(&actual), expected)
+                    let actual = as_test_case(&actual);
+                    assert!(
+                        actual == expected,
+                        "left: {actual:#?}\nright: {expected:#?}",
+                    );
                 }
                 (Some(err), Ok(_span)) => {
                     panic!("expected {src:?} to fail with {err:?}, but it succeeded")

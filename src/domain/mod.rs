@@ -91,22 +91,12 @@ impl<'src> OptionalDomainSpan<'src> {
     pub(crate) fn from_ambiguous_parts(
         host: OptionalHostOrPath<'src>,
         optional_port: PortOrTag<'src>,
-        context: &'src str,
     ) -> Result<Self, Error> {
-        debug_assert!(
-            host.len() + optional_port.len() <= context.len(),
-            "ambiguous.len() = {}, context.len() = {}, context = {}",
-            host.len() + optional_port.len(),
-            context.len(),
-            context
-        );
-
-        let host = OptionalHostSpan::from_ambiguous(host, context)?;
+        let host = OptionalHostSpan::from_ambiguous(host)?;
         if host.is_none() {
-            return Err(Error(err::Kind::HostNoMatch, 0));
+            return Error::at(0, err::Kind::HostNoMatch);
         }
-        let optional_port =
-            OptionalPortSpan::from_ambiguous(optional_port, &context[host.len()..])?;
+        let optional_port = OptionalPortSpan::from_ambiguous(optional_port)?;
         Ok(Self {
             host,
             optional_port,

@@ -76,23 +76,14 @@ impl<'src> OptionalHostSpan<'src> {
             .map_err(disambiguate_err)?
             .try_into()
     }
-    pub(crate) fn from_ambiguous(
-        ambiguous: OptionalHostOrPath<'src>,
-        context: &'src str,
-    ) -> Result<Self, Error> {
+    pub(crate) fn from_ambiguous(ambiguous: OptionalHostOrPath<'src>) -> Result<Self, Error> {
+        // FIXME: use ambiguous.narrow() instead of this match
         match ambiguous.kind() {
-            HostKind::Host | HostKind::Either => Ok(Self(ambiguous.into_span(), Kind::Domain)),
             HostKind::IpV6 => Ok(Self(ambiguous.into_span(), Kind::Ipv6)),
-            HostKind::Path => Err(Error(
-                err::Kind::HostInvalidChar,
-                ambiguous
-                    .span_of(context)
-                    .bytes()
-                    .find(|b| b == &b'_')
-                    .unwrap() // safe since a Path must have at least one underscore
-                    .try_into()
-                    .unwrap(), // safe since ambiguous.span_of(context) must be short
-            )),
+            _ => {
+                let ok = ambiguous.narrow(HostKind::Host)?;
+                Ok(Self(ok.into_span(), Kind::Domain))
+            }
         }
     }
 }

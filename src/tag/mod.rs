@@ -31,7 +31,7 @@ fn disambiguate_error(e: Error) -> Error {
 impl<'src> TagSpan<'src> {
     pub(crate) fn new(src: &str) -> Result<Self, Error> {
         let span = PortOrTag::new(src, TagKind::Tag).map_err(disambiguate_error)?;
-        debug_assert!(span.kind() == TagKind::Tag);
+        debug_assert!(span.kind == TagKind::Tag);
         Ok(Self(span.span()))
     }
     // pub(crate) fn from_ambiguous(

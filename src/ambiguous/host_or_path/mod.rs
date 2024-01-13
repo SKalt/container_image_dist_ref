@@ -1,7 +1,8 @@
+use super::Discriminant;
 use crate::{
     domain::ipv6,
     err::{self, Error},
-    span::{impl_span_methods_on_tuple, IntoOption, Length, Lengthy, Short},
+    span::{IntoOption, Lengthy, Short, ShortLength},
 };
 use err::Kind::{
     HostOrPathInvalidChar as InvalidChar, HostOrPathInvalidComponentEnd as InvalidComponentEnd,
@@ -160,66 +161,75 @@ impl From<&Scan> for DebugScan {
     }
 }
 
-// FIXME: use Span<'src> instead of OptionalSpan<'src>
 #[derive(Clone, Copy)]
-pub(crate) struct OptionalHostOrPath<'src>(Length<'src>, Kind);
-impl_span_methods_on_tuple!(OptionalHostOrPath, Short);
+pub(crate) struct OptionalHostOrPath<'src> {
+    length: ShortLength<'src>,
+    kind: Kind,
+    /// the index of the first character that determines the kind: either an
+    /// - uppercase letter => a hostname
+    /// - opening bracket  => ipv6 (in this case, the index must be 0)
+    /// - underscore       => a path
+    discriminant: Discriminant,
+}
+impl Lengthy<'_, Short> for OptionalHostOrPath<'_> {
+    fn short_len(&self) -> Short {
+        self.length.short_len()
+    }
+}
 impl<'src> IntoOption for OptionalHostOrPath<'src> {
     fn is_some(&self) -> bool {
         self.short_len() > 0
     }
     fn none() -> Self {
-        Self(0.into(), Kind::Either)
+        Self {
+            length: 0.into(),
+            kind: Kind::Either,
+            discriminant: Discriminant::none(),
+        }
     }
 }
 impl<'src> OptionalHostOrPath<'src> {
-    pub(crate) fn narrow(self, target_kind: Kind, context: &'src str) -> Result<Self, Error> {
+    pub(crate) fn narrow(self, target_kind: Kind) -> Result<Self, Error> {
         // TODO: consider moving this fn into DomainOrRef
         use Kind::*;
+        let Self {
+            length,
+            kind,
+            discriminant,
+        } = self;
         match (self.kind(), target_kind) {
             (_, Either) => {
+                debug_assert!(discriminant.is_none(), "discriminant must be None");
                 debug_assert!(false, "don't narrow to Either, that's broadening");
-                Ok(Self(self.0, Either))
+                Ok(Self {
+                    length,
+                    kind: Either,
+                    discriminant: Discriminant::none(),
+                })
             }
-            (Either, _) => Ok(Self(self.0, target_kind)),
+            (Either, _) => Ok(Self {
+                length,
+                kind: target_kind,
+                discriminant,
+            }),
             (IpV6, IpV6) | (Path, Path) | (Host, Host) => Ok(self),
             (_, IpV6) => Err(Error(InvalidChar, 0)),
             (IpV6, Path) | (IpV6, Host) => Error::at(0, InvalidChar), // 0 must be an opening [, which is invalid for a Host or Path
-            (Host, Path) => {
-                let i = {
-                    let underscore_index = self
-                        .span_of(context)
-                        .bytes()
-                        .enumerate()
-                        .find(|(_, b)| b.is_ascii_uppercase())
-                        .map(|(i, _)| i);
-                    debug_assert!(
-                        underscore_index.is_some(),
-                        "unable to find _ in {context:?}"
-                    );
-                    underscore_index.unwrap() // !?!? safe since this self.kind() == Path means there must have been an underscore
-                };
-                let i = i.try_into().unwrap(); // safe since self.span_of(context) must be short
-                Err(Error(err::Kind::PathInvalidChar, i))
-            }
-            (_, Host) => {
-                let offending_uppercase_index = self.span_of(context)
-                    .bytes()
-                    .find(|b| b.is_ascii_uppercase())
-                    .unwrap() // safe since this self.kind() == Host means there must have been an uppercase letter
-                    .try_into()
-                    .unwrap();
-                Err(Error(InvalidChar, offending_uppercase_index))
-            }
+            (Host, Path) => Error::at(discriminant.0, err::Kind::PathInvalidChar),
+            (_, Host) => Error::at(discriminant.0, err::Kind::HostInvalidChar),
         }
     }
     #[inline(always)]
     pub(crate) fn kind(&self) -> Kind {
-        self.1
+        self.kind
     }
     fn from_ipv6(src: &'src str) -> Result<Self, Error> {
         let span = ipv6::Ipv6Span::new(src.as_bytes())?;
-        Ok(Self(span.short_len().into(), Kind::IpV6))
+        Ok(Self {
+            length: span.short_len().into(),
+            kind: Kind::IpV6,
+            discriminant: Discriminant(0), // FIXME: _
+        })
     }
 
     pub(crate) fn new(src: &'src str, kind: Kind) -> Result<Self, Error> {
@@ -247,6 +257,7 @@ impl<'src> OptionalHostOrPath<'src> {
             }
             _ => Err(Error(InvalidChar, 0)),
         }?;
+        let mut discriminant = Discriminant::none().into_option();
 
         while (len < (Short::MAX - 1)) && (len as usize) < ascii.len() {
             let c = ascii[len as usize];
@@ -254,8 +265,14 @@ impl<'src> OptionalHostOrPath<'src> {
             let (_c, _pre) = (c as char, DebugScan::from(&scan));
             match c {
                 b'a'..=b'z' | b'0'..=b'9' => Ok(scan.reset()),
-                b'A'..=b'Z' => scan.set_upper(),
-                b'_' => scan.add_underscore(),
+                b'A'..=b'Z' => {
+                    discriminant |= Discriminant(len);
+                    scan.set_upper()
+                }
+                b'_' => {
+                    discriminant |= Discriminant(len);
+                    scan.add_underscore()
+                }
                 b'.' => scan.set_dot(),
                 b'-' => scan.set_dash(),
                 b':' | b'/' | b'@' => break,
@@ -302,7 +319,11 @@ impl<'src> OptionalHostOrPath<'src> {
             "len = {len}, src.len() = {} for {src:?}",
             src.len()
         );
-        Ok(Self(len.into(), scan.into()))
+        Ok(Self {
+            length: len.into(),
+            kind: scan.into(),
+            discriminant: discriminant.into(),
+        })
     }
 }
 
@@ -362,7 +383,7 @@ mod tests {
         assert_eq!(err.kind(), err_kind, "incorrect error kind");
         assert_eq!(
             err.index(),
-            bad_char_index.into(),
+            bad_char_index,
             "expected index of incorrect char to be {bad_char_index} in {src:?}; got {}, which is the index of {:?}",
             err.index(),
             src.as_bytes()[err.index() as usize] as char

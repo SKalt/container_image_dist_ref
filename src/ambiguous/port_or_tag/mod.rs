@@ -6,6 +6,8 @@ use crate::{
     span::{impl_span_methods_on_tuple, IntoOption, Lengthy, Short, ShortLength},
 };
 
+use super::Discriminant;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Kind {
     Either,
@@ -15,24 +17,33 @@ pub(crate) enum Kind {
     Tag,
 }
 #[derive(Clone, Copy)]
-pub(crate) struct PortOrTag<'src>(pub(crate) ShortLength<'src>, pub(crate) Kind);
-impl_span_methods_on_tuple!(PortOrTag, Short);
+pub(crate) struct PortOrTag<'src> {
+    pub(crate) short_length: ShortLength<'src>,
+    pub(crate) kind: Kind,
+    discriminant: Discriminant,
+}
+impl<'src> Lengthy<'src, Short> for PortOrTag<'src> {
+    #[inline(always)]
+    fn short_len(&self) -> Short {
+        self.short_length.short_len()
+    }
+}
 impl<'src> IntoOption for PortOrTag<'src> {
     fn is_some(&self) -> bool {
         self.short_len() > 0
     }
     fn none() -> Self {
-        Self(0.into(), Kind::Either)
+        Self {
+            short_length: ShortLength::none(),
+            discriminant: Discriminant::none(),
+            kind: Kind::Either,
+        }
     }
 }
 impl<'src> PortOrTag<'src> {
     #[inline(always)]
     pub(crate) fn span(&self) -> ShortLength<'src> {
-        self.0
-    }
-    #[inline(always)]
-    pub(crate) fn kind(&self) -> Kind {
-        self.1
+        self.short_length
     }
     pub(crate) fn new(src: &str, kind: Kind) -> Result<Self, Error> {
         if src.is_empty() {
@@ -40,9 +51,16 @@ impl<'src> PortOrTag<'src> {
         }
         let mut len = 0;
         let ascii = src.as_bytes();
+        let mut discriminant: Option<Discriminant> = None;
         len += match ascii[len as usize] {
             b':' => Ok(1), // consume the starting colon
-            b'/' | b'@' => return Ok(Self(0.into(), kind)),
+            b'/' | b'@' => {
+                return Ok(Self {
+                    short_length: 0.into(),
+                    kind,
+                    discriminant: discriminant.into(),
+                })
+            }
             _ => Err(Error(err::Kind::PortOrTagInvalidChar, len)),
         }?;
 
@@ -52,10 +70,13 @@ impl<'src> PortOrTag<'src> {
             #[cfg(test)]
             let _c = c as char;
             kind = match c {
-                b'a'..=b'z' | b'A'..=b'Z' | b'.' | b'-' => match kind {
-                    Kind::Tag | Kind::Either => Ok(Kind::Tag),
-                    Kind::Port => Err(Error(err::Kind::PortInvalidChar, len + 1)),
-                },
+                b'a'..=b'z' | b'A'..=b'Z' | b'.' | b'-' => {
+                    discriminant |= Discriminant(len);
+                    match kind {
+                        Kind::Tag | Kind::Either => Ok(Kind::Tag),
+                        Kind::Port => Err(Error(err::Kind::PortInvalidChar, len + 1)),
+                    }
+                }
                 b'0'..=b'9' => match kind {
                     Kind::Tag | Kind::Port => Ok(kind),
                     Kind::Either => Ok(Kind::Port),
@@ -68,24 +89,43 @@ impl<'src> PortOrTag<'src> {
         if len >= 128 {
             return Err(Error(err::Kind::PortOrTagTooLong, len));
         }
-        Ok(Self(len.into(), kind))
+        Ok(Self {
+            short_length: len.into(),
+            kind,
+            discriminant: discriminant.into(),
+        })
     }
-    pub(super) fn narrow(self, target: Kind, context: &'src str) -> Result<Self, Error> {
-        match (self.kind(), target) {
-            (_, Kind::Either) => Ok(Self(self.span(), Kind::Either)),
-            (Kind::Either, _) => Ok(Self(self.span(), target)),
+    pub(crate) fn narrow(self, target: Kind) -> Result<Self, Error> {
+        let Self {
+            kind,
+            short_length,
+            discriminant,
+        } = self;
+        match (kind, target) {
+            (_, Kind::Either) => {
+                debug_assert!(discriminant.is_none());
+                debug_assert!(false, "don't narrow to Either");
+                Ok(Self {
+                    kind: Kind::Either,
+                    short_length,
+                    discriminant,
+                })
+            }
+            (Kind::Either, _) => Ok(Self {
+                short_length,
+                kind: target,
+                discriminant,
+            }),
             (Kind::Port, Kind::Port) | (Kind::Tag, Kind::Tag) => Ok(self),
-
-            (Kind::Port, Kind::Tag) => Ok(Self(self.span(), Kind::Tag)), // all ports are valid tags
-            (Kind::Tag, Kind::Port) => Err(Error(
-                err::Kind::PortInvalidChar,
-                self.span_of(context)
-                    .bytes()
-                    .find(|b| !b.is_ascii_digit())
-                    .unwrap() // safe since self.kind == Tag, which means there must be a non-digit char
-                    .try_into()
-                    .unwrap(), // safe since self.span_of(context) must be short
-            )),
+            (Kind::Port, Kind::Tag) => {
+                debug_assert!(discriminant.is_none(), "all ports should be valid tags");
+                Ok(Self {
+                    kind: Kind::Tag,
+                    short_length,
+                    discriminant,
+                })
+            }
+            (Kind::Tag, Kind::Port) => Error::at(discriminant.0, err::Kind::PortInvalidChar),
         }
     }
 }
@@ -99,7 +139,7 @@ mod tests {
         match tag {
             Ok(tag) => {
                 assert_eq!(tag.span().span_of(src), src);
-                assert_eq!(tag.kind(), kind);
+                assert_eq!(tag.kind, kind);
             }
             Err(e) => panic!("failed to parse tag {src:?}: {:?}", e),
         }

@@ -35,25 +35,9 @@ impl<'src> OptionalPortSpan<'src> {
             Some(_) => Ok(Self(span.span())),
         }
     }
-    pub(super) fn from_ambiguous(
-        ambiguous: PortOrTag<'src>,
-        context: &'src str,
-    ) -> Result<Self, Error> {
-        match ambiguous.kind() {
-            PortKind::Either | PortKind::Port => Ok(if ambiguous.is_some() {
-                Self(ambiguous.into_span())
-            } else {
-                Self::none()
-            }),
-            PortKind::Tag => Err(Error(
-                err::Kind::PortInvalidChar,
-                ambiguous.span_of(context)
-                    .bytes()
-                    .find(|b| !b.is_ascii_digit())
-                    .unwrap() // safe since ambiguous.kind == Tag, which means there must be a non-digit char
-                    .try_into()
-                    .unwrap(), // safe since ambiguous.span_of(context) must be short
-            )),
-        }
+    pub(super) fn from_ambiguous(ambiguous: PortOrTag<'src>) -> Result<Self, Error> {
+        ambiguous
+            .narrow(PortKind::Port)
+            .map(|ok| Self(ok.into_span()))
     }
 }

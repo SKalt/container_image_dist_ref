@@ -83,17 +83,15 @@ impl<'src> DomainOrRefSpan<'src> {
             },
             Kind::TaggedRef => Path,
         };
-        let left = left.narrow(left_kind, context)?;
+        let left = left.narrow(left_kind)?;
         let right_kind = match target {
             Kind::Domain => Port,
             Kind::TaggedRef => Tag,
         };
-        let right = right
-            .narrow(right_kind, &context[left.len()..])
-            .map_err(|e| e + left.short_len())?;
+        let right = right.narrow(right_kind).map_err(|e| e + left.short_len())?;
         match target {
             Kind::Domain => Ok(Self::Domain(OptionalDomainSpan::from_ambiguous_parts(
-                left, right, context,
+                left, right,
             )?)),
             Kind::TaggedRef => Ok(Self::TaggedRef((
                 OptionalPathSpan::from_ambiguous(left, context)?,

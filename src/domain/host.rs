@@ -19,9 +19,11 @@ use super::ipv6::Ipv6Span;
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     /// a span of characters that represents a restricted domain name, e.g. "Example.com".
-    /// TODO: note the restrictions
+    /// Must match the regex `^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]$`
     Domain,
-    /// an IPv6 address wrapped in square brackets, e.g. "[2001:db8::1]"
+    /// a restricted IPv6 address wrapped in square brackets, e.g. `[2001:db8::1]`
+    /// Unlike the IPv6 described in [RFC 3986](https://www.rfc-editor.org/rfc/rfc3986#appendix-A),
+    /// IPv4 mapping is forbidden: only hex digits and colons are allowed.
     Ipv6,
     /// Missing altogether
     Empty,

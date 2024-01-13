@@ -176,7 +176,6 @@ impl<'src> IntoOption for HostOrPathSpan<'src> {
 }
 impl<'src> HostOrPathSpan<'src> {
     pub(crate) fn narrow(self, target_kind: Kind, context: &'src str) -> Result<Self, Error> {
-        // TODO: consider moving this fn into DomainOrRef
         use Kind::*;
         match (self.kind(), target_kind) {
             (_, Either) => {
@@ -241,7 +240,6 @@ impl<'src> HostOrPathSpan<'src> {
                 Ok(1)
             }
             b'[' => {
-                // TODO: ensure this is unreachable
                 return match kind {
                     Kind::Either | Kind::IpV6 => Self::from_ipv6(src),
                     _ => Error::at(0, InvalidChar).into(),

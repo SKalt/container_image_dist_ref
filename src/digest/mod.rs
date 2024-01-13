@@ -13,7 +13,7 @@ pub mod algorithm;
 pub mod encoded;
 use crate::{
     err,
-    span::{IntoOption, Lengthy, Long, Short, MAX_USIZE},
+    span::{IntoOption, Lengthy, Long},
 };
 
 use self::{
@@ -22,12 +22,14 @@ use self::{
 };
 type Error = err::Error<Long>;
 pub enum Standard {
+    /// Matching [0-9a-f]{32,} per distribution/reference.
+    ///
     /// Though distribution/reference isn't officially a standard or specification
     /// as the de-facto reference implementation for references, we'll treat it as
     /// a standard.
     Distribution,
 
-    /// As defined in the OCI image spec. // TODO: link
+    /// As defined in [the OCI image spec](https://github.com/opencontainers/image-spec/blob/v1.0.2/descriptor.md#digests).
     Oci,
 }
 
@@ -63,11 +65,12 @@ pub(crate) struct DigestSpan<'src> {
     compliance: Compliance,
 }
 
+const MAX_USIZE: usize = Long::MAX as usize;
 impl<'src> DigestSpan<'src> {
     pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
         match src.len() {
             0 => return Ok(Self::none()),
-            MAX_USIZE => return Error::at(Short::MAX.into(), err::Kind::DigestTooLong).into(),
+            MAX_USIZE => return Error::at(Long::MAX.into(), err::Kind::DigestTooLong).into(),
             _ => {}
         }
         let (algorithm, compliance) = AlgorithmSpan::new(src)?;

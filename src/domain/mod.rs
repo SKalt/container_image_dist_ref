@@ -113,7 +113,6 @@ impl<'src> DomainStr<'src> {
     pub fn from_exact_match(src: &'src str) -> Result<Self, Error> {
         let result = DomainStr::from_prefix(src)?;
         if result.len() != src.len() {
-            // TODO: better error type?
             return Err(Error(result.span.short_len(), ErrorKind::HostNoMatch));
         }
         Ok(result)

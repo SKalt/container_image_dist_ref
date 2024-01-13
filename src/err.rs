@@ -65,7 +65,7 @@ pub enum Kind {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Error<Size = Short>(pub(crate) Size, pub(crate) Kind); // TODO: reverse order of fields
+pub struct Error<Size = Short>(pub(crate) Size, pub(crate) Kind);
 impl From<Error<Short>> for Error<Long> {
     fn from(e: Error<Short>) -> Self {
         Self(e.0.into(), e.1)

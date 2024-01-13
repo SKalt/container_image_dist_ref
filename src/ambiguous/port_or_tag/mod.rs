@@ -3,7 +3,7 @@
 
 use crate::{
     err::{self, Error},
-    span::{impl_span_methods_on_tuple, IntoOption, Lengthy, Short, ShortLength},
+    span::{impl_span_methods_on_tuple, IntoOption, Lengthy, ShortLength},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -80,8 +80,9 @@ impl<'src> PortOrTagSpan<'src> {
             (Kind::Port, Kind::Tag) => Ok(Self(self.span(), Kind::Tag)), // all ports are valid tags
             (Kind::Tag, Kind::Port) => Err(Error(
                 self.span_of(context)
-                    .bytes()
-                    .find(|b| !b.is_ascii_digit())
+                    .bytes().enumerate()
+                    .find(|(_, b)| !b.is_ascii_digit())
+                    .map(|(i, _)| i)
                     .unwrap() // safe since self.kind == Tag, which means there must be a non-digit char
                     .try_into()
                     .unwrap(), // safe since self.span_of(context) must be short

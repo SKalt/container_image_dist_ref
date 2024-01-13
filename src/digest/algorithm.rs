@@ -66,57 +66,60 @@ impl IntoOption for AlgorithmSpan<'_> {
         Self(0.into())
     }
 }
-pub(crate) struct AlgorithmStr<'src>(&'src str);
+pub struct AlgorithmStr<'src>(&'src str);
 impl<'src> AlgorithmStr<'src> {
-    pub(crate) fn src(&self) -> &'src str {
+    pub fn src(&self) -> &'src str {
         self.0
     }
-    pub(crate) fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.src().len()
     }
-    fn from_prefix(src: &'src str) -> Result<(Self, Compliance), Error> {
+    pub fn is_empty(&self) -> bool {
+        self.src().is_empty()
+    }
+    pub fn from_prefix(src: &'src str) -> Result<(Self, Compliance), Error> {
         let (span, compliance) = AlgorithmSpan::new(src)?;
         Ok((Self(span.span_of(src)), compliance))
     }
-    fn from_exact_match(src: &'src str) -> Result<(Self, Compliance), Error> {
+    pub fn from_exact_match(src: &'src str) -> Result<(Self, Compliance), Error> {
         let (span, compliance) = AlgorithmSpan::from_exact_match(src)?;
         Ok((Self(span.span_of(src)), compliance))
     }
-    pub(crate) fn from_span(src: &'src str, span: AlgorithmSpan<'src>) -> Self {
+    pub(super) fn from_span(src: &'src str, span: AlgorithmSpan<'src>) -> Self {
         Self(span.span_of(src))
     }
     pub fn parts(&self) -> impl Iterator<Item = &str> {
         self.src().split(|c| is_separator(c as u8))
     }
     pub fn compliance(&self) -> Compliance {
-        let mut parts = self.parts();
-        let first = parts.next().unwrap();
-        match first {
-            "sha256" | "sha512" => {
-                if parts.count() != 0 {
-                    Compliance::Oci
-                } else {
-                    Compliance::Distribution
-                }
+        let mut bytes = self.src().bytes();
+        match bytes.next().unwrap() {
+            b'a'..=b'z' => {}
+            b'0'..=b'9' => return Compliance::Oci,
+            b'A'..=b'Z' => return Compliance::Distribution,
+            _ => unreachable!(),
+        };
+        for c in bytes {
+            match c {
+                b'a'..=b'z' | b'0'..=b'9' => {}
+                b'A'..=b'Z' => return Compliance::Distribution,
+                _ => unreachable!(),
             }
-            _ => Compliance::Universal,
         }
+        Compliance::Universal
     }
 }
 
 /// match a single separator character: matching the regular expression /[+._-]/
 fn is_separator(c: u8) -> bool {
-    match c {
-        b'+' | b'.' | b'_' | b'-' => true,
-        _ => false,
-    }
+    matches!(c, b'+' | b'.' | b'_' | b'-')
 }
 
 /// match an algorithm component and return the length of the match, along
 /// with what standard(s) the component is compliant with.
 fn component(src: &str, compliance: Compliance) -> Result<(Short, Compliance), Error> {
     use Compliance::*;
-    if src.len() == 0 {
+    if src.is_empty() {
         return Err(Error(0, AlgorithmNoMatch));
     }
     debug_assert!(src.len() <= 256, "algorithm component too long"); // HACK: arbitrary limit

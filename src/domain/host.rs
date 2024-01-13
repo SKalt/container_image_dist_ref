@@ -17,7 +17,7 @@ fn disambiguate_err(e: Error) -> Error {
 use super::ipv6::Ipv6Span;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Kind {
+pub enum Kind {
     /// a span of characters that represents a restricted domain name, e.g. "Example.com".
     /// TODO: note the restrictions
     Domain,
@@ -67,9 +67,6 @@ impl<'src> TryFrom<&'src str> for HostSpan<'src> {
 }
 
 impl<'src> HostSpan<'src> {
-    pub(crate) fn kind(&self) -> Kind {
-        self.1
-    }
     pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
         // handle bracketed ipv6 addresses
         HostOrPathSpan::new(src, HostKind::Either)
@@ -81,13 +78,14 @@ impl<'src> HostSpan<'src> {
         context: &'src str,
     ) -> Result<Self, Error> {
         match ambiguous.kind() {
-            HostKind::Host | HostKind::Either => Ok(Self(ambiguous.into_span(), Kind::Domain)),
-            HostKind::IpV6 => Ok(Self(ambiguous.into_span(), Kind::Ipv6)),
+            HostKind::Host | HostKind::Either => Ok(Self(ambiguous.into_length(), Kind::Domain)),
+            HostKind::IpV6 => Ok(Self(ambiguous.into_length(), Kind::Ipv6)),
             HostKind::Path => Err(Error(
                 ambiguous
                 .span_of(context)
-                .bytes()
-                .find(|b| b == &b'_')
+                .bytes().enumerate()
+                .find(|(_, b)| b == &b'_')
+                .map(|(i, _)| i)
                 .unwrap() // safe since a Path must have at least one underscore
                 .try_into()
                 .unwrap(), // safe since ambiguous.span_of(context) must be short
@@ -111,16 +109,16 @@ impl<'src> IntoOption for HostSpan<'src> {
     }
 }
 
-pub(crate) struct HostStr<'src>(Kind, &'src str);
+pub struct HostStr<'src>(Kind, &'src str);
 impl<'src> HostStr<'src> {
-    fn src(&self) -> &'src str {
+    pub fn src(&self) -> &'src str {
         self.1
     }
-    pub(crate) fn kind(&self) -> Kind {
+    pub fn kind(&self) -> Kind {
         self.0
     }
     #[inline(always)]
-    fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.src().len()
     }
     fn short_len(&self) -> Short {
@@ -140,9 +138,4 @@ impl<'src> HostStr<'src> {
         }
         Ok(result)
     }
-}
-
-#[cfg(test)]
-mod tests {
-    //TODO: tests
 }

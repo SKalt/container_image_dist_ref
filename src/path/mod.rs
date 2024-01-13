@@ -108,20 +108,21 @@ impl<'src> PathSpan<'src> {
     ) -> Result<Self, Error> {
         match ambiguous.kind() {
             PathKind::Either | PathKind::Path => Ok(if ambiguous.is_some() {
-                Self(ambiguous.into_span())
+                Self(ambiguous.into_length())
             } else {
                 Self::none()
             }),
             PathKind::Host => Err(Error(
                 ambiguous.span_of(context)
-                    .bytes()
-                    .find(|b| b.is_ascii_uppercase())
+                    .bytes().enumerate()
+                    .find(|(_, b)| b.is_ascii_uppercase())
+                    .map(|(i, _)| i)
                     .unwrap() // safe since ambiguous.kind == Host, which means there must be an uppercase letter
                     .try_into()
                     .unwrap(), // safe since ambiguous.span_of(context) must be short
                 err::Kind::PathInvalidChar,
             )),
-            PathKind::IpV6 => Ok(Self(ambiguous.into_span())),
+            PathKind::IpV6 => Ok(Self(ambiguous.into_length())),
         }
     }
 }

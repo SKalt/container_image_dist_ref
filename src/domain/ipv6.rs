@@ -31,7 +31,6 @@ impl State {
     const DOUBLE_COLON: u8 = 1 << 7; //      0b10000000 = 0-1 = bool
 
     // setters -------------------------------------------------------------
-    #[inline(always)]
     fn increment_position_in_group(&mut self) -> Result<(), err::Kind> {
         let pos = if self.last_was_colon() {
             self.position_in_group() + 1
@@ -41,25 +40,26 @@ impl State {
         self.set_colon_count(0)?;
         self.set_position_in_group(pos)
     }
-    #[inline(always)]
     fn set_colon_count(&mut self, count: u8) -> Result<(), err::Kind> {
         match count {
-            0 => Ok(self.set_last_was_colon(false)),
-            1 => Ok(self.set_last_was_colon(true)),
+            0 => self.set_last_was_colon(false),
+            1 => self.set_last_was_colon(true),
             2 => {
                 self.set_last_was_colon(true);
-                self.set_double_colon()
+                self.set_double_colon()?;
             }
-            _ => Err(err::Kind::Ipv6BadColon),
-        }?;
+            _ => return Err(err::Kind::Ipv6BadColon),
+        };
+
+        // update the colon count
         self.0 &= !Self::COLON_COUNT; // clear the colon count
-        Ok(self.0 |= count << 5) // update the colon count
+        self.0 |= count << 5;
+
+        Ok(())
     }
-    #[inline(always)]
     fn increment_colon_count(&mut self) -> Result<(), err::Kind> {
         self.set_colon_count(self.colon_count() + 1)
     }
-    #[inline(always)]
     fn set_position_in_group(&mut self, pos: u8) -> Result<(), err::Kind> {
         match pos {
             0..=3 => {
@@ -70,66 +70,56 @@ impl State {
             _ => Err(err::Kind::Ipv6TooManyHexDigits),
         }
     }
-    #[inline(always)]
     fn set_group(&mut self, group: u8) -> Result<(), err::Kind> {
         match group {
             0..=7 => {
                 self.0 &= !Self::CURRENT_GROUP; // clear the current group
-                Ok(self.0 |= group & Self::CURRENT_GROUP) // update the current group
+                self.0 |= group & Self::CURRENT_GROUP;
+                Ok(()) // update the current group
             }
             _ => Err(err::Kind::Ipv6TooManyGroups),
         }
     }
-    #[inline(always)]
     fn increment_group(&mut self) -> Result<(), err::Kind> {
         self.set_group(self.current_group() + 1)
     }
-    #[inline(always)]
     fn set_colon(&mut self) -> Result<(), err::Kind> {
         self.increment_colon_count()?;
         self.increment_group()?;
         self.set_position_in_group(0) // <- position=0 is always valid
     }
-    #[inline(always)]
     fn set_double_colon(&mut self) -> Result<(), err::Kind> {
         if self.double_colon_already_seen() {
             Err(err::Kind::Ipv6BadColon)
         } else {
-            Ok(self.0 |= Self::DOUBLE_COLON)
+            self.0 |= Self::DOUBLE_COLON;
+            Ok(())
         }
     }
-    #[inline(always)]
     fn set_last_was_colon(&mut self, last_was_colon: bool) {
         self.0 |= (if last_was_colon { 1 } else { 0 }) << 5;
     }
     // getters -------------------------------------------------------------
     /// returns the group index, 0-7.
-    #[inline(always)]
     fn current_group(&self) -> u8 {
         self.0 & Self::CURRENT_GROUP
     }
-    #[inline(always)]
     fn double_colon_already_seen(&self) -> bool {
         (self.0 & Self::DOUBLE_COLON) == Self::DOUBLE_COLON
     }
-    #[inline(always)]
     fn last_was_colon(&self) -> bool {
         self.colon_count() > 0
     }
-    #[inline(always)]
     fn position_in_group(&self) -> u8 {
         (self.0 & Self::POSITION_IN_GROUP) >> 3
     }
-    #[inline(always)]
     fn colon_count(&self) -> u8 {
         (self.0 & Self::COLON_COUNT) >> 5
     }
 }
 impl<'src> Ipv6Span<'src> {
     pub(crate) fn new(ascii_bytes: &[u8]) -> Result<Self, Error> {
-        let mut index: Short = if ascii_bytes.len() == 0 {
-            Err(Error(0, err::Kind::Ipv6NoMatch))
-        } else if ascii_bytes[0] != b'[' {
+        let mut index: Short = if ascii_bytes.is_empty() || ascii_bytes[0] != b'[' {
             Err(Error(0, err::Kind::Ipv6NoMatch))
         } else {
             Ok(0) // consume the opening bracket

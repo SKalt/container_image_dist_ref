@@ -18,7 +18,7 @@
 
 use super::algorithm::AlgorithmStr;
 use super::Compliance;
-use crate::span::{impl_span_methods_on_tuple, IntoOption, Lengthy, Long, LongLength, Short};
+use crate::span::{impl_span_methods_on_tuple, IntoOption, Lengthy, Long, LongLength};
 const MAX_LENGTH: usize = Long::MAX as usize;
 
 use crate::err::Kind::{
@@ -69,20 +69,21 @@ impl IntoOption for EncodedSpan<'_> {
         Self(0.into())
     }
 }
-pub(crate) struct EncodedStr<'src>(&'src str);
+pub struct EncodedStr<'src>(&'src str);
 impl<'src> EncodedStr<'src> {
-    pub(crate) fn src(&self) -> &'src str {
+    pub fn src(&self) -> &'src str {
         self.0
     }
-    #[inline(always)]
-    pub(crate) fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.0.len()
     }
-
+    pub fn is_empty(&self) -> bool {
+        self.src().is_empty()
+    }
     // no implementation of from_prefix(&str) because digests MUST terminate a
     // reference
 
-    pub(crate) fn from_exact_match(
+    pub fn from_exact_match(
         src: &'src str,
         compliance: Compliance,
     ) -> Result<(Self, Compliance), Error> {
@@ -92,8 +93,8 @@ impl<'src> EncodedStr<'src> {
     pub(crate) fn from_span(src: &'src str, span: EncodedSpan<'src>) -> Self {
         Self(span.span_of(src))
     }
+    /// validates whether every ascii character is a lowercase hex digit
     fn is_lower_hex(&self) -> Result<(), Error> {
-        let mut i: Short = 0;
         self.src().bytes().enumerate().try_for_each(|(i, c)| {
             if c.is_ascii_lowercase() && c.is_ascii_hexdigit() {
                 Ok(())
@@ -102,6 +103,8 @@ impl<'src> EncodedStr<'src> {
             }
         })
     }
+    /// check that the encoded string is an appropriate hex length for the registered
+    /// algorithms `sha256` and `sha512`.
     fn validate_registered_algorithms(&self, algorithm: &AlgorithmStr<'src>) -> Result<(), Error> {
         match algorithm.src() {
             "sha256" | "sha512" => {
@@ -116,35 +119,38 @@ impl<'src> EncodedStr<'src> {
                     .into(),
                 }
             }
-            _ => Ok(()), // non-registered algorithm
+            _ => Ok(()), // non-registered algorithm, so validation falls to the caller
         }
     }
-
+    /// check that the encoded string is an appropriate length according to distribution/reference
     fn validate_distribution(&self) -> Result<(), Error> {
         match self.len() {
-            0..=31 => Error::at(self.short_len().into(), EncodingTooShort).into(),
+            0..=31 => Error::at(self.short_len(), EncodingTooShort).into(),
             32..=MAX_LENGTH => Ok(()),
-            _ => Error::at(self.short_len().into(), EncodingTooLong).into(),
+            _ => Error::at(self.short_len(), EncodingTooLong).into(),
         }
     }
-    /// Note: `validate_algorithm` doesn't check character sets since that's handled
-    /// by the `from_exact_match` constructor.
+    /// Validate the encoded string is compliant with an algorithm string (possibly a
+    /// registered algorithm such as sha256 or sha512) and one or more of the OCI or
+    /// distribution/reference specifications' constraints.
     pub fn validate_algorithm(
         &self,
         algorithm: &AlgorithmStr<'src>,
         compliance: Compliance,
     ) -> Result<Compliance, Error> {
         self.validate_registered_algorithms(algorithm)?;
+        // Note: `validate_algorithm` doesn't check character sets since that's handled
+        // by the `from_exact_match` constructor.
         match compliance {
             Compliance::Oci => Ok(Compliance::Oci),
             Compliance::Distribution => {
                 self.validate_distribution()?;
                 Ok(Compliance::Distribution)
             }
-            Compliance::Universal => match self.validate_distribution() {
-                Ok(_) => Ok(Compliance::Universal),
-                Err(_) => return Ok(Compliance::Oci),
-            },
+            Compliance::Universal => Ok(match self.validate_distribution() {
+                Ok(_) => Compliance::Universal,
+                Err(_) => Compliance::Oci,
+            }),
         }
     }
 }

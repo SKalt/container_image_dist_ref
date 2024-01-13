@@ -101,9 +101,9 @@ where
     }
 }
 
-impl<T, Size> Into<Result<T, Error<Size>>> for Error<Size> {
+impl<T, Size> From<Error<Size>> for Result<T, Error<Size>> {
     #[inline(always)]
-    fn into(self) -> Result<T, Error<Size>> {
-        Err(self)
+    fn from(value: Error<Size>) -> Self {
+        Err(value)
     }
 }

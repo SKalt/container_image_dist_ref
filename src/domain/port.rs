@@ -41,14 +41,15 @@ impl<'src> PortSpan<'src> {
     ) -> Result<Self, Error> {
         match ambiguous.kind() {
             PortKind::Either | PortKind::Port => Ok(if ambiguous.is_some() {
-                Self(ambiguous.into_span())
+                Self(ambiguous.into_length())
             } else {
                 Self::none()
             }),
             PortKind::Tag => Err(Error(
                 ambiguous.span_of(context)
-                    .bytes()
-                    .find(|b| !b.is_ascii_digit())
+                    .bytes().enumerate()
+                    .find(|(_, b)| !b.is_ascii_digit())
+                    .map(|(i, _)| i)
                     .unwrap() // safe since ambiguous.kind == Tag, which means there must be a non-digit char
                     .try_into()
                     .unwrap(), // safe since ambiguous.span_of(context) must be short

@@ -88,15 +88,20 @@ impl<'src> DomainSpan<'src> {
 }
 
 pub struct DomainStr<'src> {
-    pub src: &'src str,
+    src: &'src str,
     /// the host part of the domain. It can be an IPv4 address, an IPv6 address,
     /// or a restricted, non-percent-encoded domain name.
     span: DomainSpan<'src>,
 }
 impl<'src> DomainStr<'src> {
-    #[inline(always)]
+    pub fn src(&self) -> &'src str {
+        self.src
+    }
     pub fn len(&self) -> usize {
         self.src.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.src.is_empty()
     }
     pub fn from_prefix(src: &'src str) -> Result<Self, Error> {
         let span = DomainSpan::new(src)?;

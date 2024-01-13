@@ -57,7 +57,8 @@ impl Scan {
         if self.last_was_dot() || self.last_was_dash() {
             Err(InvalidComponentEnd)
         } else {
-            Ok(self.0 |= Self::LAST_WAS_DOT)
+            self.0 |= Self::LAST_WAS_DOT;
+            Ok(())
         }
     }
 
@@ -65,7 +66,8 @@ impl Scan {
         if self.last_was_dot() || self.underscore_count() > 0 {
             Err(InvalidComponentEnd)
         } else {
-            Ok(self.0 |= Self::LAST_WAS_DASH)
+            self.0 |= Self::LAST_WAS_DASH;
+            Ok(())
         }
     }
 
@@ -74,7 +76,8 @@ impl Scan {
             Err(InvalidChar)
         } else {
             self.reset();
-            Ok(self.0 |= Self::HAS_UPPERCASE)
+            self.0 |= Self::HAS_UPPERCASE;
+            Ok(())
         }
     }
     fn set_underscore_count(&mut self, count: u8) -> Result<(), err::Kind> {
@@ -82,15 +85,15 @@ impl Scan {
             Err(InvalidChar)
         } else {
             self.0 &= !Self::UNDERSCORE_COUNT; // clear the count
-            Ok(self.0 |= count)
+            self.0 |= count; // update the count
+            Ok(())
         }
     }
     fn add_underscore(&mut self) -> Result<(), err::Kind> {
         if self.has_upper() {
             Err(InvalidChar)
         } else if self.last_was_dash() || self.last_was_dot() {
-            // TODO: use more specific error kind?
-            Err(InvalidChar)
+            Err(InvalidComponentEnd)
         } else {
             self.0 |= Self::HAS_UNDERSCORE;
             self.set_underscore_count(self.underscore_count() + 1)
@@ -203,8 +206,9 @@ impl<'src> HostOrPathSpan<'src> {
             }
             (_, Host) => {
                 let offending_uppercase_index = self.span_of(context)
-                    .bytes()
-                    .find(|b| b.is_ascii_uppercase())
+                    .bytes().enumerate()
+                    .find(|(_, b)| b.is_ascii_uppercase())
+                    .map(|(i, _)| i)
                     .unwrap() // safe since this self.kind() == Host means there must have been an uppercase letter
                     .try_into()
                     .unwrap();
@@ -212,7 +216,6 @@ impl<'src> HostOrPathSpan<'src> {
             }
         }
     }
-    #[inline(always)]
     pub(crate) fn kind(&self) -> Kind {
         self.1
     }
@@ -252,7 +255,10 @@ impl<'src> HostOrPathSpan<'src> {
             #[cfg(test)]
             let (_c, _pre) = (c as char, DebugScan::from(&scan));
             match c {
-                b'a'..=b'z' | b'0'..=b'9' => Ok(scan.reset()),
+                b'a'..=b'z' | b'0'..=b'9' => {
+                    scan.reset();
+                    Ok(())
+                }
                 b'A'..=b'Z' => scan.set_upper(),
                 b'_' => scan.add_underscore(),
                 b'.' => scan.set_dot(),

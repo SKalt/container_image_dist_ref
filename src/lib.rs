@@ -32,9 +32,9 @@
 pub(crate) mod ambiguous;
 pub mod digest;
 pub mod domain;
-mod err;
+pub mod err;
 pub mod path;
-pub(crate) mod span;
+pub mod span;
 mod tag;
 
 /// the maximum total number of characters in a repository name, as defined by
@@ -42,6 +42,8 @@ mod tag;
 pub const NAME_TOTAL_MAX_LENGTH: u8 = 255;
 
 use core::ops::{Range, RangeFrom};
+
+use digest::DigestStr;
 
 use self::{
     ambiguous::domain_or_tagged_ref::DomainOrRefSpan,
@@ -232,8 +234,11 @@ impl<'src> RefStr<'src> {
     pub fn tag(&self) -> Option<&str> {
         self.span.tag_range().map(|range| &self.src[range])
     }
-    pub fn digest(&self) -> Option<&str> {
-        self.span.digest_range().map(|range| &self.src[range])
+    pub fn digest(&self) -> Option<DigestStr<'src>> {
+        self.span
+            .digest
+            .into_option()
+            .map(|span| DigestStr::from_span(self.src, span))
     }
 }
 
@@ -245,7 +250,7 @@ fn rank(span: &RefSpan) -> u8 {
         | span.tag.into_option().map(|_| 1 << 1).unwrap_or(0)
         | span.digest.into_option().map(|_| 1 << 0).unwrap_or(0)
 }
-// TODO: sort refs by information, most -> least
+// TODO: sort RefStr's by information, most -> least
 impl<'src> PartialOrd for RefSpan<'src> {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         rank(other).partial_cmp(&rank(self))
@@ -266,7 +271,7 @@ impl<'src> CanonicalStr<'src> {
     pub fn domain(&self) -> &str {
         let domain = self.span.0.domain.span_of(self.src);
         debug_assert!(
-            domain.len() > 0,
+            !domain.is_empty(),
             "canonical refs should have non-empty domains by construction"
         );
         domain
@@ -278,7 +283,7 @@ impl<'src> CanonicalStr<'src> {
             .path
             .span_of(&self.src[self.span.0.path_index()..]);
         debug_assert!(
-            path.len() > 0,
+            !path.is_empty(),
             "canonical refs should have non-empty paths by construction"
         );
         path
@@ -296,18 +301,18 @@ impl<'src> CanonicalStr<'src> {
     pub fn digest(&self) -> &str {
         let digest = &self.src[self.span.0.digest_range().unwrap()];
         debug_assert!(
-            digest.len() > 0,
+            !digest.is_empty(),
             "canonical refs should have non-empty digests by construction"
         );
         digest
     }
 }
 
-impl<'src> Into<RefStr<'src>> for CanonicalStr<'src> {
-    fn into(self) -> RefStr<'src> {
-        RefStr {
-            src: self.src,
-            span: self.span.0,
+impl<'src> From<CanonicalStr<'src>> for RefStr<'src> {
+    fn from(value: CanonicalStr<'src>) -> Self {
+        Self {
+            src: value.src,
+            span: value.span.0,
         }
     }
 }
@@ -338,9 +343,8 @@ impl<'src> TryInto<CanonicalStr<'src>> for RefStr<'src> {
 }
 #[cfg(test)]
 mod tests {
-
     use super::*;
-    fn should_parse(src: &str) -> RefStr {
+    fn should_parse(src: &'_ str) -> RefStr<'_> {
         let result = RefStr::new(src);
         if let Err(e) = result {
             panic!(
@@ -354,15 +358,20 @@ mod tests {
         let span = result.unwrap();
         span
     }
-    fn should_parse_as(
-        src: &str,
+    fn should_parse_as<'src>(
+        src: &'src str,
         domain: Option<&str>,
         path: Option<&str>,
         tag: Option<&str>,
         digest: Option<&str>,
     ) {
         let span = should_parse(src);
-        let actual = (span.domain(), span.path(), span.tag(), span.digest());
+        let actual = (
+            span.domain(),
+            span.path(),
+            span.tag(),
+            span.digest().map(|d| d.src()),
+        );
         let expected = (domain, path, tag, digest);
         assert_eq!(actual, expected, "failed to parse {:?}", src);
     }
@@ -463,18 +472,15 @@ mod tests {
             }
         }
         fn as_test_case<'s>(span: &'s RefStr<'s>) -> TestCase<'s> {
-            let digest = span
-                .digest()
-                .map(|d| d.split(':'))
-                .map(|mut iter| (iter.next().unwrap(), iter.next().unwrap()));
+            let digest = span.digest();
             TestCase {
                 input: span.src,
                 name: span.name(),
                 domain: span.domain(),
                 path: span.path(),
                 tag: span.tag(),
-                digest_algo: digest.map(|d| d.0),
-                digest_encoded: digest.map(|d| d.1),
+                digest_algo: digest.as_ref().map(|d| d.algorithm().src()),
+                digest_encoded: digest.map(|d| d.encoded().src()),
                 err: None,
             }
         }

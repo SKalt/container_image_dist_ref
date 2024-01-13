@@ -8,7 +8,7 @@ pub(crate) const MAX_USIZE: usize = Short::MAX as usize; // FIXME: deprecate
 /// use a span to represent a length of string with a lifetime tied to the original
 /// string slice.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Length<'src, Size = Short>(
+pub struct Length<'src, Size = Short>(
     Size,
     PhantomData<&'src str>, // tie Span to the lifetime of a string slice
 );
@@ -87,6 +87,7 @@ impl From<Span<'_>> for Length<'_> {
 
 pub(crate) trait Lengthy<'src, Size>
 where
+    Self: Sized,
     usize: From<Size>,
 {
     fn short_len(&self) -> Size;
@@ -96,7 +97,7 @@ where
     fn span_of(&self, src: &'src str) -> &'src str {
         &src[..self.len()]
     }
-    fn into_span(&self) -> Length<'src, Size> {
+    fn into_length(self) -> Length<'src, Size> {
         self.short_len().into()
     }
 }
@@ -143,9 +144,9 @@ where
     fn none() -> Self
     where
         Self: Sized;
-    fn into_option(&self) -> Option<Self> {
+    fn into_option(self) -> Option<Self> {
         if self.is_some() {
-            Some(*self)
+            Some(self)
         } else {
             None
         }
@@ -158,12 +159,12 @@ impl<'src> IntoOption for Length<'src> {
     fn is_some(&self) -> bool {
         self.0 > 0
     }
-    fn into_option(&self) -> Option<Length<'src>>
+    fn into_option(self) -> Option<Length<'src>>
     where
         Self: Sized + Clone,
     {
         if self.is_some() {
-            Some(self.clone())
+            Some(self)
         } else {
             None
         }

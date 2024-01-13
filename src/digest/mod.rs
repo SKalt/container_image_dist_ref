@@ -45,12 +45,12 @@ pub enum Compliance {
 
 impl Compliance {
     pub fn compliant_with(self, standard: Standard) -> bool {
-        match (self, standard) {
-            (Compliance::Universal, _) => true,
-            (Compliance::Oci, Standard::Oci) => true,
-            (Compliance::Distribution, Standard::Distribution) => true,
-            _ => false,
-        }
+        matches!(
+            (self, standard),
+            (Compliance::Universal, _)
+                | (Compliance::Oci, Standard::Oci)
+                | (Compliance::Distribution, Standard::Distribution)
+        )
     }
 }
 
@@ -118,7 +118,7 @@ impl IntoOption for DigestSpan<'_> {
     }
 }
 pub struct DigestStr<'src> {
-    pub src: &'src str,
+    src: &'src str,
     span: DigestSpan<'src>,
 }
 
@@ -127,10 +127,16 @@ impl<'src> DigestStr<'src> {
         let span = DigestSpan::new(src)?;
         Ok(Self { src, span })
     }
-    // pub fn algorithm(&self) -> AlgorithmStr<'src> {
-    //     AlgorithmStr::from_span(self.src, self.span.algorithm)
-    // }
-    // pub fn encoded(&self) -> EncodedStr<'src> {
-    //     EncodedStr::from_span(self.src, self.span.encoded)
-    // }
+    pub(crate) fn from_span(src: &'src str, span: DigestSpan<'src>) -> Self {
+        Self { src, span }
+    }
+    pub fn src(self) -> &'src str {
+        self.src
+    }
+    pub fn algorithm(&self) -> AlgorithmStr<'src> {
+        AlgorithmStr::from_span(self.src, self.span.algorithm)
+    }
+    pub fn encoded(&self) -> EncodedStr<'src> {
+        EncodedStr::from_span(self.src, self.span.encoded)
+    }
 }

@@ -113,10 +113,7 @@ impl<'src> RefSpan<'src> {
                 index += 1;
                 DigestSpan::new(&src[index as usize..])
             }
-            Some(b) => unreachable!(
-                "should have been caught by DomainOrRefSpan::new ; found {:?} @ {} in {:?}",
-                b as char, index, src
-            ),
+            Some(_) => DigestSpan::new(&src[index as usize..]),
             None => Ok(DigestSpan::none()),
         }
         .map_err(|e| e + index)?;

@@ -97,13 +97,13 @@ impl<'src> AlgorithmStr<'src> {
             b'a'..=b'z' => {}
             b'0'..=b'9' => return Compliance::Oci,
             b'A'..=b'Z' => return Compliance::Distribution,
-            _ => unreachable!(),
+            _ => unreachable!("by construction, an AlgorithmStr may contain only [a-zA-Z0-9]"),
         };
         for c in bytes {
             match c {
                 b'a'..=b'z' | b'0'..=b'9' => {}
                 b'A'..=b'Z' => return Compliance::Distribution,
-                _ => unreachable!(),
+                _ => unreachable!("by construction, an AlgorithmStr may contain only [a-zA-Z0-9]"),
             }
         }
         Compliance::Universal

@@ -45,19 +45,19 @@ use core::ops::{Range, RangeFrom};
 
 use self::{
     ambiguous::domain_or_tagged_ref::DomainOrRefSpan,
-    digest::OptionalDigestSpan,
-    domain::OptionalDomainSpan,
-    path::OptionalPathSpan,
+    digest::DigestSpan,
+    domain::DomainSpan,
+    path::PathSpan,
     span::{IntoOption, Lengthy, Long, Short},
     tag::TagSpan,
 };
 pub(crate) type Error = err::Error<Long>;
 #[derive(PartialEq, Eq)]
 struct RefSpan<'src> {
-    domain: OptionalDomainSpan<'src>,
-    path: OptionalPathSpan<'src>,
+    domain: DomainSpan<'src>,
+    path: PathSpan<'src>,
     tag: TagSpan<'src>,
-    digest: OptionalDigestSpan<'src>,
+    digest: DigestSpan<'src>,
 }
 
 impl<'src> RefSpan<'src> {
@@ -68,7 +68,7 @@ impl<'src> RefSpan<'src> {
         let prefix = DomainOrRefSpan::new(src)?;
         let domain = match prefix {
             DomainOrRefSpan::Domain(domain) => domain,
-            DomainOrRefSpan::TaggedRef(_) => OptionalDomainSpan::none(),
+            DomainOrRefSpan::TaggedRef(_) => DomainSpan::none(),
         };
         let mut index: Long = domain.short_len().into();
         let rest = &src[index as usize..];
@@ -77,9 +77,9 @@ impl<'src> RefSpan<'src> {
             DomainOrRefSpan::Domain(_) => match rest.bytes().next() {
                 Some(b'/') => {
                     index += 1; // consume the leading '/'
-                    OptionalPathSpan::new(&src[index as usize..]).map_err(|e| e.into())
+                    PathSpan::new(&src[index as usize..]).map_err(|e| e.into())
                 }
-                Some(b'@') | None => Ok(OptionalPathSpan::none()),
+                Some(b'@') | None => Ok(PathSpan::none()),
                 Some(_) => Error::at(0, err::Kind::PathInvalidChar).into(),
             },
         }
@@ -109,13 +109,13 @@ impl<'src> RefSpan<'src> {
         let digest = match rest.bytes().next() {
             Some(b'@') => {
                 index += 1;
-                OptionalDigestSpan::new(&src[index as usize..])
+                DigestSpan::new(&src[index as usize..])
             }
             Some(b) => unreachable!(
                 "should have been caught by DomainOrRefSpan::new ; found {:?} @ {} in {:?}",
                 b as char, index, src
             ),
-            None => Ok(OptionalDigestSpan::none()),
+            None => Ok(DigestSpan::none()),
         }
         .map_err(|e| e + index)?;
         index += digest.short_len();
@@ -177,13 +177,13 @@ impl<'src> RefSpan<'src> {
 pub struct CanonicalSpan<'src>(RefSpan<'src>);
 impl<'src> CanonicalSpan<'src> {
     pub fn new(src: &'src str) -> Result<Self, Error> {
-        let domain = OptionalDomainSpan::new(src)?;
+        let domain = DomainSpan::new(src)?;
         let mut len = match src.as_bytes()[domain.len()..].iter().next() {
             Some(b'/') => Ok(domain.short_len().into()),
             Some(_) => Error::at(domain.short_len().into(), err::Kind::PathInvalidChar).into(),
             None => Error::at(domain.short_len().into(), err::Kind::RefNoMatch).into(),
         }?;
-        let path = OptionalPathSpan::new(&src[len as usize..])
+        let path = PathSpan::new(&src[len as usize..])
             .map_err(|e| e.into())
             .map_err(|e: err::Error<Long>| e + len)?;
         len += path.short_len() as Long;
@@ -199,7 +199,7 @@ impl<'src> CanonicalSpan<'src> {
             Some(_) => Error::at(len, err::Kind::PathInvalidChar).into(),
             None => Error::at(len, err::Kind::RefNoMatch).into(),
         }?;
-        let digest = OptionalDigestSpan::new(&src[len as usize..]).map_err(|e| e + len)?;
+        let digest = DigestSpan::new(&src[len as usize..]).map_err(|e| e + len)?;
         Ok(Self(RefSpan {
             domain,
             path,

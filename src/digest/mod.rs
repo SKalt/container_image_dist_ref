@@ -57,13 +57,13 @@ impl Compliance {
 // Note: DigestSpan doesn't own a leading '@'; that's only implied when DigestSpan
 // is part of a larger ReferenceSpan.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) struct OptionalDigestSpan<'src> {
+pub(crate) struct DigestSpan<'src> {
     algorithm: AlgorithmSpan<'src>,
     encoded: EncodedSpan<'src>,
     compliance: Compliance,
 }
 
-impl<'src> OptionalDigestSpan<'src> {
+impl<'src> DigestSpan<'src> {
     pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
         match src.len() {
             0 => return Ok(Self::none()),
@@ -95,7 +95,7 @@ impl<'src> OptionalDigestSpan<'src> {
         })
     }
 }
-impl Lengthy<'_, Long> for OptionalDigestSpan<'_> {
+impl Lengthy<'_, Long> for DigestSpan<'_> {
     fn short_len(&self) -> Long {
         self.algorithm
             .into_option()
@@ -104,7 +104,7 @@ impl Lengthy<'_, Long> for OptionalDigestSpan<'_> {
     }
 }
 
-impl IntoOption for OptionalDigestSpan<'_> {
+impl IntoOption for DigestSpan<'_> {
     fn is_some(&self) -> bool {
         self.algorithm.is_some() && self.encoded.is_some()
     }
@@ -119,12 +119,12 @@ impl IntoOption for OptionalDigestSpan<'_> {
 }
 pub struct DigestStr<'src> {
     pub src: &'src str,
-    span: OptionalDigestSpan<'src>,
+    span: DigestSpan<'src>,
 }
 
 impl<'src> DigestStr<'src> {
     pub fn new(src: &'src str) -> Result<Self, Error> {
-        let span = OptionalDigestSpan::new(src)?;
+        let span = DigestSpan::new(src)?;
         Ok(Self { src, span })
     }
     // pub fn algorithm(&self) -> AlgorithmStr<'src> {

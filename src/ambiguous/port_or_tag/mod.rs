@@ -15,9 +15,9 @@ pub(crate) enum Kind {
     Tag,
 }
 #[derive(Clone, Copy)]
-pub(crate) struct PortOrTag<'src>(pub(crate) ShortLength<'src>, pub(crate) Kind);
-impl_span_methods_on_tuple!(PortOrTag, Short);
-impl<'src> IntoOption for PortOrTag<'src> {
+pub(crate) struct PortOrTagSpan<'src>(pub(crate) ShortLength<'src>, pub(crate) Kind);
+impl_span_methods_on_tuple!(PortOrTagSpan, Short);
+impl<'src> IntoOption for PortOrTagSpan<'src> {
     fn is_some(&self) -> bool {
         self.short_len() > 0
     }
@@ -25,7 +25,7 @@ impl<'src> IntoOption for PortOrTag<'src> {
         Self(0.into(), Kind::Either)
     }
 }
-impl<'src> PortOrTag<'src> {
+impl<'src> PortOrTagSpan<'src> {
     #[inline(always)]
     pub(crate) fn span(&self) -> ShortLength<'src> {
         self.0
@@ -96,7 +96,7 @@ mod tests {
     use super::*;
     use crate::span::Lengthy;
     fn should_parse_as(src: &str, kind: Kind) {
-        let tag = PortOrTag::new(src, kind);
+        let tag = PortOrTagSpan::new(src, kind);
         match tag {
             Ok(tag) => {
                 assert_eq!(tag.span().span_of(src), src);

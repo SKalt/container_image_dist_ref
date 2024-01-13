@@ -24,7 +24,7 @@
 //! > -- https://github.com/opencontainers/distribution-spec/commit/efe2de09470d7f182d2fbd83ac4462fbdc462455
 
 use crate::{
-    ambiguous::host_or_path::{Kind as PathKind, OptionalHostOrPath},
+    ambiguous::host_or_path::{HostOrPathSpan, Kind as PathKind},
     err::{self, Error},
     span::{impl_span_methods_on_tuple, IntoOption, Length, Lengthy, Short},
 };
@@ -41,14 +41,14 @@ fn adapt_error(e: Error) -> Error {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) struct OptionalPathSpan<'src>(Length<'src>);
-impl_span_methods_on_tuple!(OptionalPathSpan, Short);
+pub(crate) struct PathSpan<'src>(Length<'src>);
+impl_span_methods_on_tuple!(PathSpan, Short);
 
-impl<'src> TryFrom<OptionalHostOrPath<'src>> for OptionalPathSpan<'src> {
+impl<'src> TryFrom<HostOrPathSpan<'src>> for PathSpan<'src> {
     type Error = Error;
-    fn try_from(ambiguous: OptionalHostOrPath) -> Result<Self, Error> {
+    fn try_from(ambiguous: HostOrPathSpan) -> Result<Self, Error> {
         use PathKind::*;
-        // since 0-length OptionalHostOrPath will always have type Either, we can
+        // since 0-length HostOrPath will always have type Either, we can
         // safely downcast to the more specific PathSpan
         match ambiguous.kind() {
             Either | Path => Ok(if ambiguous.is_some() {
@@ -61,7 +61,7 @@ impl<'src> TryFrom<OptionalHostOrPath<'src>> for OptionalPathSpan<'src> {
         }
     }
 }
-impl IntoOption for OptionalPathSpan<'_> {
+impl IntoOption for PathSpan<'_> {
     fn is_some(&self) -> bool {
         self.short_len() > 0
     }
@@ -69,12 +69,12 @@ impl IntoOption for OptionalPathSpan<'_> {
         Self(Length::new(0))
     }
 }
-impl<'src> OptionalPathSpan<'src> {
+impl<'src> PathSpan<'src> {
     fn none() -> Self {
         Self(Length::new(0))
     }
     fn parse_component(src: &'src str) -> Result<Self, Error> {
-        OptionalHostOrPath::new(src, PathKind::Path)
+        HostOrPathSpan::new(src, PathKind::Path)
             .map_err(adapt_error)?
             .try_into()
     }
@@ -103,7 +103,7 @@ impl<'src> OptionalPathSpan<'src> {
             .map_err(|e| e + index)
     }
     pub(crate) fn from_ambiguous(
-        ambiguous: OptionalHostOrPath<'src>,
+        ambiguous: HostOrPathSpan<'src>,
         context: &'src str,
     ) -> Result<Self, Error> {
         match ambiguous.kind() {
@@ -131,14 +131,14 @@ impl<'src> PathStr<'src> {
     pub(crate) fn src(&self) -> &'src str {
         self.0
     }
-    fn from_span(src: &'src str, span: OptionalPathSpan<'src>) -> Self {
+    fn from_span(src: &'src str, span: PathSpan<'src>) -> Self {
         Self(span.span_of(src))
     }
     pub fn from_prefix(src: &'src str) -> Result<Self, Error> {
-        Ok(PathStr::from_span(src, OptionalPathSpan::new(src)?))
+        Ok(PathStr::from_span(src, PathSpan::new(src)?))
     }
     pub fn from_exact_match(src: &'src str) -> Result<Self, Error> {
-        let span = OptionalPathSpan::new(src)?;
+        let span = PathSpan::new(src)?;
         if span.len() != src.len() {
             return Err(Error(span.short_len(), err::Kind::PathNoMatch));
         }
@@ -160,7 +160,7 @@ mod tests {
     #[test]
     fn test_this() {
         let src = "test.com/path:tag";
-        let span = OptionalPathSpan::new(src).unwrap();
+        let span = PathSpan::new(src).unwrap();
         assert_eq!(span.span_of(src), "test.com/path");
     }
 }

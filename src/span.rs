@@ -67,13 +67,9 @@ impl core::ops::Add<usize> for Length<'_> {
 }
 
 impl TryFrom<Length<'_>> for Span<'_> {
-    type Error = ();
-    fn try_from(optional_span: Length) -> Result<Self, Self::Error> {
-        if optional_span.0 > 0 {
-            Ok(Self::new(optional_span.0))
-        } else {
-            Err(())
-        }
+    type Error = (); // TODO: use kind?
+    fn try_from(len: Length) -> Result<Self, Self::Error> {
+        len.into_option().map(|l| Self::new(l.0)).ok_or(())
     }
 }
 
@@ -82,7 +78,7 @@ impl From<Span<'_>> for usize {
         span.0 as usize // U is always a small, valid usize
     }
 }
-// This conversion is safe since Span<'_> is guaranteed to be a valid OptionalSpan<'_>
+
 impl From<Span<'_>> for Length<'_> {
     fn from(span: Span) -> Self {
         Self::new(span.0)

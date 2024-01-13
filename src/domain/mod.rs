@@ -13,10 +13,10 @@ pub(crate) mod host;
 pub(crate) mod ipv6;
 pub(crate) mod port;
 use crate::{
-    ambiguous::{host_or_path::OptionalHostOrPath, port_or_tag::PortOrTag},
+    ambiguous::{host_or_path::HostOrPathSpan, port_or_tag::PortOrTagSpan},
     domain::{
-        host::{HostStr, OptionalHostSpan},
-        port::OptionalPortSpan,
+        host::{HostSpan, HostStr},
+        port::PortSpan,
     },
     err::{self, Error, Kind as ErrorKind},
     span::{IntoOption, Lengthy, Short},
@@ -24,93 +24,66 @@ use crate::{
 
 /// a definite host and an optional port
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) struct OptionalDomainSpan<'src> {
-    host: OptionalHostSpan<'src>,          // cannot be zero-length
-    optional_port: OptionalPortSpan<'src>, // can be 0-length, indicating missing
+pub(super) struct DomainSpan<'src> {
+    /// required: cannot be zero-length
+    host: HostSpan<'src>,
+    /// can be 0-length, indicating that the port is missing
+    port: PortSpan<'src>,
 }
 
-impl Lengthy<'_, Short> for OptionalDomainSpan<'_> {
+impl Lengthy<'_, Short> for DomainSpan<'_> {
     #[inline(always)]
     fn short_len(&self) -> Short {
         self.host().short_len() + self.port().short_len()
     }
 }
 
-impl<'src> IntoOption for OptionalDomainSpan<'src> {
+impl<'src> IntoOption for DomainSpan<'src> {
     fn is_some(&self) -> bool {
         self.short_len() > 0
     }
     fn none() -> Self {
         Self {
-            host: OptionalHostSpan::none(),
-            optional_port: OptionalPortSpan::none(),
+            host: HostSpan::none(),
+            port: PortSpan::none(),
         }
     }
 }
 
-impl<'src> OptionalDomainSpan<'src> {
-    pub(crate) fn host(&self) -> OptionalHostSpan<'src> {
+impl<'src> DomainSpan<'src> {
+    pub(crate) fn host(&self) -> HostSpan<'src> {
         self.host
     }
 
-    pub fn port(&self) -> OptionalPortSpan {
-        self.optional_port
+    pub fn port(&self) -> PortSpan {
+        self.port
     }
 
     pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
-        let host = OptionalHostSpan::try_from(src)?;
-        let optional_port =
-            OptionalPortSpan::new(&src[host.len()..]).map_err(|e| e + host.short_len())?;
-        Ok(Self {
-            host,
-            optional_port,
-        })
-    }
-    pub(crate) fn from_parts(
-        host: OptionalHostSpan<'src>,
-        optional_port: OptionalPortSpan<'src>,
-    ) -> Self {
-        Self {
-            host,
-            optional_port,
-        }
+        let host = HostSpan::try_from(src)?;
+        let port = PortSpan::new(&src[host.len()..]).map_err(|e| e + host.short_len())?;
+        Ok(Self { host, port })
     }
 
-    // pub(crate) fn from_ambiguous(
-    //     ambiguous: OptionalHostOrPath<'src>,
-    //     context: &'src str,
-    // ) -> Result<Self, Error> {
-    //     let host = OptionalHostSpan::try_from(ambiguous).map_err(disambiguate_error)?;
-    //     let optional_port =
-    //         OptionalPortSpan::new(&context[host.len()..]).map_err(|e| e + host.short_len())?;
-    //     Ok(Self {
-    //         host,
-    //         optional_port,
-    //     })
-    // }
     pub(crate) fn from_ambiguous_parts(
-        host: OptionalHostOrPath<'src>,
-        optional_port: PortOrTag<'src>,
+        host: HostOrPathSpan<'src>,
+        port: PortOrTagSpan<'src>,
         context: &'src str,
     ) -> Result<Self, Error> {
         debug_assert!(
-            host.len() + optional_port.len() <= context.len(),
+            host.len() + port.len() <= context.len(),
             "ambiguous.len() = {}, context.len() = {}, context = {}",
-            host.len() + optional_port.len(),
+            host.len() + port.len(),
             context.len(),
             context
         );
 
-        let host = OptionalHostSpan::from_ambiguous(host, context)?;
+        let host = HostSpan::from_ambiguous(host, context)?;
         if host.is_none() {
             return Err(Error(0, err::Kind::HostNoMatch));
         }
-        let optional_port =
-            OptionalPortSpan::from_ambiguous(optional_port, &context[host.len()..])?;
-        Ok(Self {
-            host,
-            optional_port,
-        })
+        let port = PortSpan::from_ambiguous(port, &context[host.len()..])?;
+        Ok(Self { host, port })
     }
 }
 
@@ -118,7 +91,7 @@ pub struct DomainStr<'src> {
     pub src: &'src str,
     /// the host part of the domain. It can be an IPv4 address, an IPv6 address,
     /// or a restricted, non-percent-encoded domain name.
-    span: OptionalDomainSpan<'src>,
+    span: DomainSpan<'src>,
 }
 impl<'src> DomainStr<'src> {
     #[inline(always)]
@@ -126,7 +99,7 @@ impl<'src> DomainStr<'src> {
         self.src.len()
     }
     pub fn from_prefix(src: &'src str) -> Result<Self, Error> {
-        let span = OptionalDomainSpan::new(src)?;
+        let span = DomainSpan::new(src)?;
         Ok(Self {
             src: &src[..span.len()],
             span,
@@ -144,7 +117,7 @@ impl<'src> DomainStr<'src> {
         HostStr::from_span_of(self.src, self.span.host)
     }
     pub fn port(&self) -> Option<&str> {
-        self.span.optional_port.into_option().map(|port| {
+        self.span.port.into_option().map(|port| {
             let start = self.span.host.len();
             &self.src[start..start + port.len()]
         })

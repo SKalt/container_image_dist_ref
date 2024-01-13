@@ -19,12 +19,12 @@
 
 use crate::{
     ambiguous::{
-        host_or_path::{Kind as HostOrPathKind, OptionalHostOrPath},
-        port_or_tag::{Kind as PortOrTagKind, PortOrTag},
+        host_or_path::{HostOrPathSpan, Kind as HostOrPathKind},
+        port_or_tag::{Kind as PortOrTagKind, PortOrTagSpan},
     },
-    domain::OptionalDomainSpan,
+    domain::DomainSpan,
     err::{self, Error},
-    path::OptionalPathSpan,
+    path::PathSpan,
     span::{IntoOption, Lengthy, Short},
     tag::TagSpan,
 };
@@ -33,8 +33,8 @@ use PortOrTagKind::{Either as EitherPortOrTag, Port, Tag};
 
 /// represents a colon-delimited string of the form "left:right"
 pub(crate) enum DomainOrRefSpan<'src> {
-    Domain(OptionalDomainSpan<'src>),
-    TaggedRef((OptionalPathSpan<'src>, TagSpan<'src>)),
+    Domain(DomainSpan<'src>),
+    TaggedRef((PathSpan<'src>, TagSpan<'src>)),
 }
 
 pub(crate) enum Kind {
@@ -51,11 +51,11 @@ impl Lengthy<'_, Short> for DomainOrRefSpan<'_> {
 }
 impl<'src> DomainOrRefSpan<'src> {
     pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
-        let left = OptionalHostOrPath::new(src, EitherHostPathOrIpv6)?;
+        let left = HostOrPathSpan::new(src, EitherHostPathOrIpv6)?;
         let right_src = &src[left.len()..];
         let right = match right_src.bytes().next() {
-            Some(b':') => PortOrTag::new(right_src, EitherPortOrTag),
-            Some(b'/') | Some(b'@') | None => Ok(PortOrTag::none()),
+            Some(b':') => PortOrTagSpan::new(right_src, EitherPortOrTag),
+            Some(b'/') | Some(b'@') | None => Ok(PortOrTagSpan::none()),
             Some(_) => Error::at(0, err::Kind::HostOrPathInvalidChar).into(),
         }
         .map_err(|e: Error| e + left.short_len())?;
@@ -71,8 +71,8 @@ impl<'src> DomainOrRefSpan<'src> {
         }
     }
     pub(crate) fn from_parts(
-        left: OptionalHostOrPath<'src>,
-        right: PortOrTag<'src>,
+        left: HostOrPathSpan<'src>,
+        right: PortOrTagSpan<'src>,
         target: Kind,
         context: &'src str,
     ) -> Result<Self, Error> {
@@ -92,11 +92,11 @@ impl<'src> DomainOrRefSpan<'src> {
             .narrow(right_kind, &context[left.len()..])
             .map_err(|e| e + left.short_len())?;
         match target {
-            Kind::Domain => Ok(Self::Domain(OptionalDomainSpan::from_ambiguous_parts(
+            Kind::Domain => Ok(Self::Domain(DomainSpan::from_ambiguous_parts(
                 left, right, context,
             )?)),
             Kind::TaggedRef => Ok(Self::TaggedRef((
-                OptionalPathSpan::from_ambiguous(left, context)?,
+                PathSpan::from_ambiguous(left, context)?,
                 right.into(),
             ))),
         }

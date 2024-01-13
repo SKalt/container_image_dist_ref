@@ -160,11 +160,10 @@ impl From<&Scan> for DebugScan {
     }
 }
 
-// FIXME: use Span<'src> instead of OptionalSpan<'src>
 #[derive(Clone, Copy)]
-pub(crate) struct OptionalHostOrPath<'src>(Length<'src>, Kind);
-impl_span_methods_on_tuple!(OptionalHostOrPath, Short);
-impl<'src> IntoOption for OptionalHostOrPath<'src> {
+pub(crate) struct HostOrPathSpan<'src>(Length<'src>, Kind);
+impl_span_methods_on_tuple!(HostOrPathSpan, Short);
+impl<'src> IntoOption for HostOrPathSpan<'src> {
     fn is_some(&self) -> bool {
         self.short_len() > 0
     }
@@ -172,7 +171,7 @@ impl<'src> IntoOption for OptionalHostOrPath<'src> {
         Self(0.into(), Kind::Either)
     }
 }
-impl<'src> OptionalHostOrPath<'src> {
+impl<'src> HostOrPathSpan<'src> {
     pub(crate) fn narrow(self, target_kind: Kind, context: &'src str) -> Result<Self, Error> {
         // TODO: consider moving this fn into DomainOrRef
         use Kind::*;
@@ -310,8 +309,8 @@ impl<'src> OptionalHostOrPath<'src> {
 mod tests {
     use super::*;
     use crate::span::Lengthy;
-    fn should_parse(src: &str) -> super::OptionalHostOrPath<'_> {
-        super::OptionalHostOrPath::new(src, super::Kind::Either)
+    fn should_parse(src: &str) -> super::HostOrPathSpan<'_> {
+        super::HostOrPathSpan::new(src, super::Kind::Either)
             .map_err(|e| {
                 assert!(
                     false,
@@ -348,7 +347,7 @@ mod tests {
     }
 
     fn should_fail_with(src: &str, err_kind: err::Kind, bad_char_index: u8) {
-        let err = super::OptionalHostOrPath::new(src, super::Kind::Either)
+        let err = super::HostOrPathSpan::new(src, super::Kind::Either)
             .map(|e| {
                 assert!(
                     false,

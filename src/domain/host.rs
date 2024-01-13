@@ -1,5 +1,5 @@
 use crate::{
-    ambiguous::host_or_path::{Kind as HostKind, OptionalHostOrPath},
+    ambiguous::host_or_path::{HostOrPathSpan, Kind as HostKind},
     err::{self, Error},
     span::{impl_span_methods_on_tuple, IntoOption, Length, Lengthy, Short},
 };
@@ -28,13 +28,13 @@ pub(crate) enum Kind {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) struct OptionalHostSpan<'src>(pub(crate) Length<'src>, pub(crate) Kind);
-impl_span_methods_on_tuple!(OptionalHostSpan, Short);
-impl<'src> TryFrom<OptionalHostOrPath<'src>> for OptionalHostSpan<'_> {
+pub(crate) struct HostSpan<'src>(pub(crate) Length<'src>, pub(crate) Kind);
+impl_span_methods_on_tuple!(HostSpan, Short);
+impl<'src> TryFrom<HostOrPathSpan<'src>> for HostSpan<'_> {
     type Error = Error;
-    fn try_from(ambiguous: OptionalHostOrPath) -> Result<Self, Error> {
+    fn try_from(ambiguous: HostOrPathSpan) -> Result<Self, Error> {
         match ambiguous.into_option() {
-            None => Ok(OptionalHostSpan::none()),
+            None => Ok(HostSpan::none()),
             Some(_) => {
                 use HostKind::*;
                 match ambiguous.kind() {
@@ -47,10 +47,10 @@ impl<'src> TryFrom<OptionalHostOrPath<'src>> for OptionalHostSpan<'_> {
     }
 }
 
-impl<'src> TryFrom<&'src str> for OptionalHostSpan<'src> {
+impl<'src> TryFrom<&'src str> for HostSpan<'src> {
     type Error = Error;
     fn try_from(src: &'src str) -> Result<Self, Error> {
-        OptionalHostOrPath::new(src, HostKind::Either)
+        HostOrPathSpan::new(src, HostKind::Either)
             .map_err(disambiguate_err)?
             .try_into()
             .map_err(|e: Error| match e.kind() {
@@ -66,18 +66,18 @@ impl<'src> TryFrom<&'src str> for OptionalHostSpan<'src> {
     }
 }
 
-impl<'src> OptionalHostSpan<'src> {
+impl<'src> HostSpan<'src> {
     pub(crate) fn kind(&self) -> Kind {
         self.1
     }
     pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
         // handle bracketed ipv6 addresses
-        OptionalHostOrPath::new(src, HostKind::Either)
+        HostOrPathSpan::new(src, HostKind::Either)
             .map_err(disambiguate_err)?
             .try_into()
     }
     pub(crate) fn from_ambiguous(
-        ambiguous: OptionalHostOrPath<'src>,
+        ambiguous: HostOrPathSpan<'src>,
         context: &'src str,
     ) -> Result<Self, Error> {
         match ambiguous.kind() {
@@ -96,13 +96,13 @@ impl<'src> OptionalHostSpan<'src> {
         }
     }
 }
-impl<'src> From<Ipv6Span<'src>> for OptionalHostSpan<'src> {
+impl<'src> From<Ipv6Span<'src>> for HostSpan<'src> {
     fn from(ipv6: Ipv6Span<'src>) -> Self {
         Self(ipv6.short_len().into(), Kind::Ipv6)
     }
 }
 
-impl<'src> IntoOption for OptionalHostSpan<'src> {
+impl<'src> IntoOption for HostSpan<'src> {
     fn is_some(&self) -> bool {
         self.short_len() > 0
     }
@@ -126,14 +126,11 @@ impl<'src> HostStr<'src> {
     fn short_len(&self) -> Short {
         self.len().try_into().unwrap() // this is safe since the length of a HostStr is always <= U::MAX
     }
-    pub(super) fn from_span_of(
-        src: &'src str,
-        OptionalHostSpan(span, kind): OptionalHostSpan<'src>,
-    ) -> Self {
+    pub(super) fn from_span_of(src: &'src str, HostSpan(span, kind): HostSpan<'src>) -> Self {
         Self(kind, span.span_of(src))
     }
     pub fn from_prefix(src: &'src str) -> Result<Self, Error> {
-        let span = OptionalHostSpan::new(src)?;
+        let span = HostSpan::new(src)?;
         Ok(HostStr::from_span_of(src, span))
     }
     pub fn from_exact_match(src: &'src str) -> Result<Self, Error> {

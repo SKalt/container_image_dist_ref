@@ -9,7 +9,6 @@ with lib.fileset;
 let
 
   fileHasAnySuffix = fileSuffixes: file: (lib.lists.any (s: lib.hasSuffix s file.name) fileSuffixes);
-  # TODO: go filter?
   rust = basePath: (
     let
       mainFilter = fileFilter
@@ -18,7 +17,23 @@ let
     in
     unions [ mainFilter (basePath + "/Cargo.toml") (basePath + "/Cargo.lock") ]
   );
+  go = basePath: (
+    let
+      mainFilter = fileFilter
+        (fileHasAnySuffix [ ".go"])
+        basePath;
+    in
+    unions [ mainFilter (basePath + "/go.mod") (basePath + "/go.sum") ]
+  );
+  tsv = basePath: (
+    let
+      mainFilter = fileFilter
+        (fileHasAnySuffix [ ".tsv"])
+        basePath;
+    in
+    unions [ mainFilter ]
+  );
   in
 {
-  inherit rust;
+  inherit rust go tsv;
 }

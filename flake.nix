@@ -30,9 +30,9 @@
             # https://nixos.org/manual/nixpkgs/stable/#compiling-rust-applications-with-cargo
             inherit version;
             pname = info.package.name;
-            src = pkgs.lib.fileset.toSource {
+            src = with pkgs.lib.fileset; toSource {
               root = ./. ;
-              fileset = filters.rust ./. ;
+              fileset = unions [ (filters.rust ./.) (./tests) (./src/domain/valid_ipv6.tsv) ];
               # ^ see https://johns.codes/blog/efficient-nix-derivations-with-file-sets
               # see https://github.com/JRMurr/roc2nix/blob/main/lib/languageFilters.nix
             };

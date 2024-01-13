@@ -7,7 +7,7 @@ pub(crate) const MAX_USIZE: usize = Short::MAX as usize; // FIXME: deprecate
 /// To avoid lugging around an entire &str (which costs 2 pointer-sizes), we can
 /// use a span to represent a length of string with a lifetime tied to the original
 /// string slice.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Length<'src, Size = Short>(
     Size,
     PhantomData<&'src str>, // tie Span to the lifetime of a string slice

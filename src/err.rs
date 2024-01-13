@@ -62,14 +62,13 @@ pub enum Kind {
     EncodingTooLong,
     // reference ----------------------------------------
     RefNoMatch,
-    RefTooLong,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Error<Size = Short>(pub(crate) Kind, pub(crate) Size);
+pub struct Error<Size = Short>(pub(crate) Size, pub(crate) Kind); // TODO: reverse order of fields
 impl From<Error<Short>> for Error<Long> {
     fn from(e: Error<Short>) -> Self {
-        Self(e.0, e.1.into())
+        Self(e.0.into(), e.1)
     }
 }
 
@@ -78,15 +77,16 @@ where
     Size: Copy,
 {
     #[inline(always)]
-    pub(crate) fn kind(&self) -> Kind {
+    pub(crate) fn index(&self) -> Size {
         self.0
     }
     #[inline(always)]
-    pub(crate) fn index(&self) -> Size {
+    pub(crate) fn kind(&self) -> Kind {
         self.1
     }
-    pub(crate) fn at<T>(index: Size, kind: Kind) -> Result<T, Self> {
-        Err(Self(kind, index))
+
+    pub(crate) fn at(index: Size, kind: Kind) -> Self {
+        Self(index, kind)
     }
 }
 
@@ -97,6 +97,13 @@ where
 {
     type Output = Self;
     fn add(self, rhs: Int) -> Self {
-        Self(self.0, self.1 + rhs.into())
+        Self(self.0 + rhs.into(), self.1)
+    }
+}
+
+impl<T, Size> Into<Result<T, Error<Size>>> for Error<Size> {
+    #[inline(always)]
+    fn into(self) -> Result<T, Error<Size>> {
+        Err(self)
     }
 }

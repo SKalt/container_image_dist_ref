@@ -25,7 +25,7 @@ use crate::{
 };
 
 use super::Compliance;
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) struct AlgorithmSpan<'src>(ShortLength<'src>);
 impl_span_methods_on_tuple!(AlgorithmSpan, Short);
 use err::Kind::{
@@ -53,7 +53,7 @@ impl<'src> AlgorithmSpan<'src> {
         if span.len() == src.len() {
             Ok((span, compliance))
         } else {
-            Err(Error(AlgorithmNoMatch, span.short_len()))
+            Err(Error(span.short_len(), AlgorithmNoMatch))
         }
     }
 }
@@ -117,7 +117,7 @@ fn is_separator(c: u8) -> bool {
 fn component(src: &str, compliance: Compliance) -> Result<(Short, Compliance), Error> {
     use Compliance::*;
     if src.len() == 0 {
-        return Err(Error(AlgorithmNoMatch, 0));
+        return Err(Error(0, AlgorithmNoMatch));
     }
     debug_assert!(src.len() <= 256, "algorithm component too long"); // HACK: arbitrary limit
 
@@ -129,7 +129,7 @@ fn component(src: &str, compliance: Compliance) -> Result<(Short, Compliance), E
             //  but not the OCI image spec
             if compliance == Distribution {
                 // this is not a valid OCI algorithm
-                Err(Error(AlgorithmInvalidNumericPrefix, len))
+                Err(Error(len, AlgorithmInvalidNumericPrefix))
             } else {
                 Ok(Oci)
             }
@@ -139,12 +139,12 @@ fn component(src: &str, compliance: Compliance) -> Result<(Short, Compliance), E
             // but not the OCI image spec
             if compliance == Oci {
                 // this is not a valid OCI algorithm
-                Err(Error(InvalidOciAlgorithm, len))
+                Err(Error(len, InvalidOciAlgorithm))
             } else {
                 Ok(Distribution)
             }
         }
-        _ => Err(Error(AlgorithmInvalidChar, len)),
+        _ => Err(Error(len, AlgorithmInvalidChar)),
     }?;
     len += 1;
     while (len as usize) < src.len() {
@@ -158,13 +158,13 @@ fn component(src: &str, compliance: Compliance) -> Result<(Short, Compliance), E
                 // but not the OCI image spec
                 if compliance == Oci {
                     // this is not a valid OCI algorithm
-                    Err(Error(InvalidOciAlgorithm, len))
+                    Err(Error(len, InvalidOciAlgorithm))
                 } else {
                     Ok(len + 1)
                 }
             }
             b':' | b'+' | b'.' | b'_' | b'-' => break,
-            _ => Err(Error(AlgorithmInvalidChar, len)),
+            _ => Err(Error(len, AlgorithmInvalidChar)),
         }?;
     }
     Ok((len, compliance))

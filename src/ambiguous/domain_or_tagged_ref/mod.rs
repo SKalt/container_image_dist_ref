@@ -56,7 +56,7 @@ impl<'src> DomainOrRefSpan<'src> {
         let right = match right_src.bytes().next() {
             Some(b':') => PortOrTag::new(right_src, EitherPortOrTag),
             Some(b'/') | Some(b'@') | None => Ok(PortOrTag::none()),
-            Some(_) => Err(Error(err::Kind::HostOrPathInvalidChar, 0)),
+            Some(_) => Error::at(0, err::Kind::HostOrPathInvalidChar).into(),
         }
         .map_err(|e: Error| e + left.short_len())?;
 
@@ -67,7 +67,7 @@ impl<'src> DomainOrRefSpan<'src> {
         match next_ascii_char {
             Some(b'/') => Ok(Kind::Domain),
             None | Some(b'@') => Ok(Kind::TaggedRef),
-            Some(_) => Err(Error(err::Kind::HostOrPathInvalidChar, 0)),
+            Some(_) => Error::at(0, err::Kind::HostOrPathInvalidChar).into(),
         }
     }
     pub(crate) fn from_parts(

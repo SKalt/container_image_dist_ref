@@ -56,7 +56,7 @@ impl Compliance {
 
 // Note: DigestSpan doesn't own a leading '@'; that's only implied when DigestSpan
 // is part of a larger ReferenceSpan.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) struct OptionalDigestSpan<'src> {
     algorithm: AlgorithmSpan<'src>,
     encoded: EncodedSpan<'src>,
@@ -67,7 +67,7 @@ impl<'src> OptionalDigestSpan<'src> {
     pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
         match src.len() {
             0 => return Ok(Self::none()),
-            MAX_USIZE => return Error::at(Short::MAX.into(), err::Kind::DigestTooLong),
+            MAX_USIZE => return Error::at(Short::MAX.into(), err::Kind::DigestTooLong).into(),
             _ => {}
         }
         let (algorithm, compliance) = AlgorithmSpan::new(src)?;
@@ -75,8 +75,8 @@ impl<'src> OptionalDigestSpan<'src> {
         let rest = &src[len as usize..];
         len = match rest.bytes().next() {
             Some(b':') => Ok(len + 1),
-            None => Error::at(len.into(), err::Kind::AlgorithmNoMatch),
-            _ => Error::at(len.into(), err::Kind::AlgorithmInvalidChar),
+            None => Error::at(len.into(), err::Kind::AlgorithmNoMatch).into(),
+            _ => Error::at(len.into(), err::Kind::AlgorithmInvalidChar).into(),
         }?;
         let rest = &src[len as usize..];
         let (encoded, compliance) = EncodedSpan::new(rest, compliance)?;

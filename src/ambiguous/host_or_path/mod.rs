@@ -5,7 +5,7 @@ use crate::{
 };
 use err::Kind::{
     HostOrPathInvalidChar as InvalidChar, HostOrPathInvalidComponentEnd as InvalidComponentEnd,
-    HostOrPathNoMatch as NoMatch, HostOrPathTooLong as TooLong,
+    HostOrPathNoMatch as NoMatch,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -183,8 +183,8 @@ impl<'src> OptionalHostOrPath<'src> {
             }
             (Either, _) => Ok(Self(self.0, target_kind)),
             (IpV6, IpV6) | (Path, Path) | (Host, Host) => Ok(self),
-            (_, IpV6) => Err(Error(InvalidChar, 0)),
-            (IpV6, Path) | (IpV6, Host) => Error::at(0, InvalidChar), // 0 must be an opening [, which is invalid for a Host or Path
+            (_, IpV6) => Error::at(0, InvalidChar).into(),
+            (IpV6, Path) | (IpV6, Host) => Error::at(0, InvalidChar).into(), // 0 must be an opening [, which is invalid for a Host or Path
             (Host, Path) => {
                 let i = {
                     let underscore_index = self
@@ -200,7 +200,7 @@ impl<'src> OptionalHostOrPath<'src> {
                     underscore_index.unwrap() // !?!? safe since this self.kind() == Path means there must have been an underscore
                 };
                 let i = i.try_into().unwrap(); // safe since self.span_of(context) must be short
-                Err(Error(err::Kind::PathInvalidChar, i))
+                Error::at(i, err::Kind::PathInvalidChar).into()
             }
             (_, Host) => {
                 let offending_uppercase_index = self.span_of(context)
@@ -209,7 +209,7 @@ impl<'src> OptionalHostOrPath<'src> {
                     .unwrap() // safe since this self.kind() == Host means there must have been an uppercase letter
                     .try_into()
                     .unwrap();
-                Err(Error(InvalidChar, offending_uppercase_index))
+                Err(Error(offending_uppercase_index, InvalidChar))
             }
         }
     }
@@ -224,7 +224,7 @@ impl<'src> OptionalHostOrPath<'src> {
 
     pub(crate) fn new(src: &'src str, kind: Kind) -> Result<Self, Error> {
         if src.is_empty() {
-            return Err(Error(NoMatch, 0));
+            return Error::at(0, NoMatch).into();
         }
         let mut len = 0;
         let ascii = src.as_bytes();
@@ -235,17 +235,17 @@ impl<'src> OptionalHostOrPath<'src> {
         len += match c {
             b'a'..=b'z' | b'0'..=b'9' => Ok(1),
             b'A'..=b'Z' => {
-                scan.set_upper().map_err(|kind| Error(kind, 0))?;
+                scan.set_upper().map_err(|kind| Error(0, kind))?;
                 Ok(1)
             }
             b'[' => {
                 // TODO: ensure this is unreachable
                 return match kind {
                     Kind::Either | Kind::IpV6 => Self::from_ipv6(src),
-                    _ => Err(Error(InvalidChar, 0)),
+                    _ => Error::at(0, InvalidChar).into(),
                 };
             }
-            _ => Err(Error(InvalidChar, 0)),
+            _ => Err(Error(0, InvalidChar)),
         }?;
 
         while (len < (Short::MAX - 1)) && (len as usize) < ascii.len() {
@@ -261,7 +261,7 @@ impl<'src> OptionalHostOrPath<'src> {
                 b':' | b'/' | b'@' => break,
                 _ => Err(InvalidChar),
             }
-            .map_err(|err_kind| Error(err_kind, len))?;
+            .map_err(|err_kind| Error::at(len, err_kind))?;
             #[cfg(test)]
             {
                 let _post = DebugScan::from(&scan);
@@ -289,13 +289,13 @@ impl<'src> OptionalHostOrPath<'src> {
         if len == Short::MAX {
             match ascii[len as usize..].iter().next() {
                 Some(b':') | Some(b'@') => Ok(()),
-                _ => Error::at(len, err::Kind::HostTooLong),
+                _ => Error::at(len, err::Kind::HostTooLong).into(),
             }?;
         }
         #[cfg(test)]
         let _scan = DebugScan::from(&scan);
         if scan.last_was_dash() || scan.last_was_dot() || scan.underscore_count() > 0 {
-            Err(Error(err::Kind::HostOrPathInvalidComponentEnd, len - 1))?;
+            Err(Error(len - 1, err::Kind::HostOrPathInvalidComponentEnd))?;
         }
         debug_assert!(
             len as usize <= src.len(),

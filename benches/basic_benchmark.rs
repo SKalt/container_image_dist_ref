@@ -1,4 +1,4 @@
-use container_image_dist_ref::Reference;
+use container_image_dist_ref::RefStr;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 fn parse_test_corpus(c: &mut Criterion) {
     const VALID: &str = include_str!("../tests/fixtures/references/valid/inputs.txt");
@@ -11,7 +11,7 @@ fn parse_test_corpus(c: &mut Criterion) {
     c.bench_function("entire_test_suite", |b| {
         b.iter(|| {
             for input in inputs.iter() {
-                let _parse = Reference::new(black_box(input));
+                let _parse = RefStr::new(black_box(input));
             }
         })
     });

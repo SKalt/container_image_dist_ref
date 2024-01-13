@@ -5,7 +5,7 @@
 //        1   5    0    5    0    5    0    5   9
 
 use crate::{
-    err::{Error, Kind as ErrorKind},
+    err::{self, Error},
     span::{impl_span_methods_on_tuple, Length},
     Short,
 };
@@ -32,7 +32,7 @@ impl State {
 
     // setters -------------------------------------------------------------
     #[inline(always)]
-    fn increment_position_in_group(&mut self) -> Result<(), Error> {
+    fn increment_position_in_group(&mut self) -> Result<(), err::Kind> {
         let pos = if self.last_was_colon() {
             self.position_in_group() + 1
         } else {
@@ -42,7 +42,7 @@ impl State {
         self.set_position_in_group(pos)
     }
     #[inline(always)]
-    fn set_colon_count(&mut self, count: u8) -> Result<(), Error> {
+    fn set_colon_count(&mut self, count: u8) -> Result<(), err::Kind> {
         match count {
             0 => Ok(self.set_last_was_colon(false)),
             1 => Ok(self.set_last_was_colon(true)),
@@ -50,50 +50,50 @@ impl State {
                 self.set_last_was_colon(true);
                 self.set_double_colon()
             }
-            _ => Err(Error(ErrorKind::Ipv6BadColon, 0)),
+            _ => Err(err::Kind::Ipv6BadColon),
         }?;
         self.0 &= !Self::COLON_COUNT; // clear the colon count
         Ok(self.0 |= count << 5) // update the colon count
     }
     #[inline(always)]
-    fn increment_colon_count(&mut self) -> Result<(), Error> {
+    fn increment_colon_count(&mut self) -> Result<(), err::Kind> {
         self.set_colon_count(self.colon_count() + 1)
     }
     #[inline(always)]
-    fn set_position_in_group(&mut self, pos: u8) -> Result<(), Error> {
+    fn set_position_in_group(&mut self, pos: u8) -> Result<(), err::Kind> {
         match pos {
             0..=3 => {
                 self.0 &= !Self::POSITION_IN_GROUP; // clear the position in group
                 self.0 |= pos << 3; // update the position in group
                 Ok(())
             }
-            _ => Err(Error(ErrorKind::Ipv6TooManyHexDigits, 0)),
+            _ => Err(err::Kind::Ipv6TooManyHexDigits),
         }
     }
     #[inline(always)]
-    fn set_group(&mut self, group: u8) -> Result<(), Error> {
+    fn set_group(&mut self, group: u8) -> Result<(), err::Kind> {
         match group {
             0..=7 => {
                 self.0 &= !Self::CURRENT_GROUP; // clear the current group
                 Ok(self.0 |= group & Self::CURRENT_GROUP) // update the current group
             }
-            _ => Err(Error(ErrorKind::Ipv6TooManyGroups, 0)),
+            _ => Err(err::Kind::Ipv6TooManyGroups),
         }
     }
     #[inline(always)]
-    fn increment_group(&mut self) -> Result<(), Error> {
+    fn increment_group(&mut self) -> Result<(), err::Kind> {
         self.set_group(self.current_group() + 1)
     }
     #[inline(always)]
-    fn set_colon(&mut self) -> Result<(), Error> {
+    fn set_colon(&mut self) -> Result<(), err::Kind> {
         self.increment_colon_count()?;
         self.increment_group()?;
         self.set_position_in_group(0) // <- position=0 is always valid
     }
     #[inline(always)]
-    fn set_double_colon(&mut self) -> Result<(), Error> {
+    fn set_double_colon(&mut self) -> Result<(), err::Kind> {
         if self.double_colon_already_seen() {
-            Err(Error(ErrorKind::Ipv6BadColon, 0))
+            Err(err::Kind::Ipv6BadColon)
         } else {
             Ok(self.0 |= Self::DOUBLE_COLON)
         }
@@ -128,18 +128,18 @@ impl State {
 impl<'src> Ipv6Span<'src> {
     pub(crate) fn new(ascii_bytes: &[u8]) -> Result<Self, Error> {
         let mut index: Short = if ascii_bytes.len() == 0 {
-            Err(Error(ErrorKind::Ipv6NoMatch, 0))
+            Err(Error(0, err::Kind::Ipv6NoMatch))
         } else if ascii_bytes[0] != b'[' {
-            Err(Error(ErrorKind::Ipv6NoMatch, 0))
+            Err(Error(0, err::Kind::Ipv6NoMatch))
         } else {
             Ok(0) // consume the opening bracket
         }?;
         let mut state = State(0);
         loop {
             index = if (ascii_bytes.len() - 1) == index as usize {
-                Err(Error(ErrorKind::Ipv6MissingClosingBracket, index))
+                Err(Error(index, err::Kind::Ipv6MissingClosingBracket))
             } else if index == Short::MAX {
-                Err(Error(ErrorKind::Ipv6TooLong, index))
+                Err(Error(index, err::Kind::Ipv6TooLong))
             } else {
                 Ok(index + 1)
             }?;
@@ -147,9 +147,9 @@ impl<'src> Ipv6Span<'src> {
                 b'a'..=b'f' | b'A'..=b'F' | b'0'..=b'9' => state.increment_position_in_group(),
                 b':' => state.set_colon(),
                 b']' => break, // done!
-                _ => return Err(Error(ErrorKind::Ipv6MissingClosingBracket, 0)),
+                _ => return Err(Error(0, err::Kind::Ipv6MissingClosingBracket)),
             }
-            .map_err(|e| e + index)?;
+            .map_err(|kind| Error(index, kind))?;
         }
         debug_assert!(ascii_bytes[0] == b'[');
         debug_assert!(ascii_bytes[index as usize] == b']');
@@ -159,7 +159,7 @@ impl<'src> Ipv6Span<'src> {
                 if state.double_colon_already_seen() {
                     Ok(Self(len.into()))
                 } else {
-                    Err(Error(ErrorKind::Ipv6TooFewGroups, index))
+                    Err(Error(index, err::Kind::Ipv6TooFewGroups))
                 }
             }
             7 => Ok(Self(len.into())),
@@ -183,9 +183,9 @@ mod test {
             Err(e) => assert!(
                 false,
                 "failed to parse\n{ip}\n{}^\n{:?} @ {}",
-                &ip[0..e.1 as usize + 1],
+                &ip[0..e.index() as usize + 1],
                 e.0,
-                e.1
+                e.index(),
             ),
         }
     }

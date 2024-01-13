@@ -37,10 +37,10 @@ fn adapt_error(e: Error) -> Error {
         err::Kind::HostOrPathTooLong => err::Kind::PathTooLong,
         _ => e.kind(),
     };
-    Error(kind, e.index())
+    Error(e.index(), kind)
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) struct OptionalPathSpan<'src>(Length<'src>);
 impl_span_methods_on_tuple!(OptionalPathSpan, Short);
 
@@ -56,7 +56,7 @@ impl<'src> TryFrom<OptionalHostOrPath<'src>> for OptionalPathSpan<'src> {
             } else {
                 Self::none()
             }),
-            Host => Err(Error(err::Kind::PathInvalidChar, ambiguous.short_len())),
+            Host => Err(Error(ambiguous.short_len(), err::Kind::PathInvalidChar)),
             IpV6 => Ok(Self(Length::new(ambiguous.short_len()))),
         }
     }
@@ -85,7 +85,7 @@ impl<'src> OptionalPathSpan<'src> {
             index = match next {
                 None | Some(b':') | Some(b'@') => break,
                 Some(b'/') => Ok(index + 1),
-                Some(_) => Err(Error(err::Kind::PathInvalidChar, index + 1)),
+                Some(_) => Err(Error(index + 1, err::Kind::PathInvalidChar)),
             }?;
             let rest = &src[index as usize..];
             let section = Self::parse_component(rest).map_err(|e| e + index)?;
@@ -113,13 +113,13 @@ impl<'src> OptionalPathSpan<'src> {
                 Self::none()
             }),
             PathKind::Host => Err(Error(
-                err::Kind::PathInvalidChar,
                 ambiguous.span_of(context)
                     .bytes()
                     .find(|b| b.is_ascii_uppercase())
                     .unwrap() // safe since ambiguous.kind == Host, which means there must be an uppercase letter
                     .try_into()
                     .unwrap(), // safe since ambiguous.span_of(context) must be short
+                err::Kind::PathInvalidChar,
             )),
             PathKind::IpV6 => Ok(Self(ambiguous.into_span())),
         }
@@ -140,7 +140,7 @@ impl<'src> PathStr<'src> {
     pub fn from_exact_match(src: &'src str) -> Result<Self, Error> {
         let span = OptionalPathSpan::new(src)?;
         if span.len() != src.len() {
-            return Err(Error(err::Kind::PathNoMatch, span.short_len()));
+            return Err(Error(span.short_len(), err::Kind::PathNoMatch));
         }
         Ok(PathStr::from_span(src, span))
     }

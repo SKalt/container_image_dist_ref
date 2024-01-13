@@ -1,9 +1,9 @@
 use crate::{
     ambiguous::port_or_tag::{Kind as TagKind, PortOrTag},
     err::{self, Error},
-    span::{impl_span_methods_on_tuple, IntoOption, Lengthy, Short, ShortLength},
+    span::{impl_span_methods_on_tuple, IntoOption, Lengthy, ShortLength},
 };
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TagSpan<'src>(ShortLength<'src>);
 impl_span_methods_on_tuple!(TagSpan, Short);
 impl<'src> IntoOption for TagSpan<'src> {
@@ -26,9 +26,10 @@ fn disambiguate_error(e: Error) -> Error {
         err::Kind::PortOrTagInvalidChar => err::Kind::TagInvalidChar,
         _ => e.kind(),
     };
-    Error(kind, e.index())
+    Error(e.index(), kind)
 }
 impl<'src> TagSpan<'src> {
+    /// can match an empty span if the first character in `src` is a `/` or `@`
     pub(crate) fn new(src: &str) -> Result<Self, Error> {
         let span = PortOrTag::new(src, TagKind::Tag).map_err(disambiguate_error)?;
         debug_assert!(span.kind() == TagKind::Tag);

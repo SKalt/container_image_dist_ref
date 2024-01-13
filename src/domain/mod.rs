@@ -23,7 +23,7 @@ use crate::{
 };
 
 /// a definite host and an optional port
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) struct OptionalDomainSpan<'src> {
     host: OptionalHostSpan<'src>,          // cannot be zero-length
     optional_port: OptionalPortSpan<'src>, // can be 0-length, indicating missing
@@ -103,7 +103,7 @@ impl<'src> OptionalDomainSpan<'src> {
 
         let host = OptionalHostSpan::from_ambiguous(host, context)?;
         if host.is_none() {
-            return Err(Error(err::Kind::HostNoMatch, 0));
+            return Err(Error(0, err::Kind::HostNoMatch));
         }
         let optional_port =
             OptionalPortSpan::from_ambiguous(optional_port, &context[host.len()..])?;
@@ -136,7 +136,7 @@ impl<'src> DomainStr<'src> {
         let result = DomainStr::from_prefix(src)?;
         if result.len() != src.len() {
             // TODO: better error type?
-            return Err(Error(ErrorKind::HostNoMatch, result.span.short_len()));
+            return Err(Error(result.span.short_len(), ErrorKind::HostNoMatch));
         }
         Ok(result)
     }

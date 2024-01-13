@@ -34,6 +34,7 @@ impl<'src> PortOrTag<'src> {
     pub(crate) fn kind(&self) -> Kind {
         self.1
     }
+    /// can match an empty span if the first character in src is a `/` or `@`
     pub(crate) fn new(src: &str, kind: Kind) -> Result<Self, Error> {
         if src.is_empty() {
             return Ok(Self::none());
@@ -43,7 +44,7 @@ impl<'src> PortOrTag<'src> {
         len += match ascii[len as usize] {
             b':' => Ok(1), // consume the starting colon
             b'/' | b'@' => return Ok(Self(0.into(), kind)),
-            _ => Err(Error(err::Kind::PortOrTagInvalidChar, len)),
+            _ => Err(Error(len, err::Kind::PortOrTagInvalidChar)),
         }?;
 
         let mut kind = kind;
@@ -54,19 +55,19 @@ impl<'src> PortOrTag<'src> {
             kind = match c {
                 b'a'..=b'z' | b'A'..=b'Z' | b'.' | b'-' => match kind {
                     Kind::Tag | Kind::Either => Ok(Kind::Tag),
-                    Kind::Port => Err(Error(err::Kind::PortInvalidChar, len + 1)),
+                    Kind::Port => Err(Error(len + 1, err::Kind::PortInvalidChar)),
                 },
                 b'0'..=b'9' => match kind {
                     Kind::Tag | Kind::Port => Ok(kind),
                     Kind::Either => Ok(Kind::Port),
                 },
                 b'/' | b'@' => break,
-                _ => return Err(Error(err::Kind::PortOrTagInvalidChar, len + 1)),
+                _ => return Err(Error(len + 1, err::Kind::PortOrTagInvalidChar)),
             }?;
             len += 1;
         }
         if len >= 128 {
-            return Err(Error(err::Kind::PortOrTagTooLong, len));
+            return Err(Error(len, err::Kind::PortOrTagTooLong));
         }
         Ok(Self(len.into(), kind))
     }
@@ -78,13 +79,13 @@ impl<'src> PortOrTag<'src> {
 
             (Kind::Port, Kind::Tag) => Ok(Self(self.span(), Kind::Tag)), // all ports are valid tags
             (Kind::Tag, Kind::Port) => Err(Error(
-                err::Kind::PortInvalidChar,
                 self.span_of(context)
                     .bytes()
                     .find(|b| !b.is_ascii_digit())
                     .unwrap() // safe since self.kind == Tag, which means there must be a non-digit char
                     .try_into()
                     .unwrap(), // safe since self.span_of(context) must be short
+                err::Kind::PortInvalidChar,
             )),
         }
     }

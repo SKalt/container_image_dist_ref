@@ -27,14 +27,14 @@ use crate::err::Kind::{
 };
 type Error = crate::err::Error<Long>;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) struct EncodedSpan<'src>(LongLength<'src>);
 impl_span_methods_on_tuple!(EncodedSpan, Long);
 impl<'src> EncodedSpan<'src> {
     pub(crate) fn new(src: &'src str, compliance: Compliance) -> Result<(Self, Compliance), Error> {
         use Compliance::*;
         if src.is_empty() {
-            return Error::at(0, EncodedNoMatch);
+            return Error::at(0, EncodedNoMatch).into();
         }
         let mut len = 0;
         let mut compliance = compliance;
@@ -47,10 +47,10 @@ impl<'src> EncodedSpan<'src> {
                     if compliance != Distribution {
                         Ok(Oci)
                     } else {
-                        Error::at(len, EncodedNonLowerHex)
+                        Error::at(len, EncodedNonLowerHex).into()
                     }
                 }
-                _ => Error::at(len, EncodedInvalidChar),
+                _ => Error::at(len, EncodedInvalidChar).into(),
             }?;
             len += 1;
         }
@@ -98,7 +98,7 @@ impl<'src> EncodedStr<'src> {
             if c.is_ascii_lowercase() && c.is_ascii_hexdigit() {
                 Ok(())
             } else {
-                Error::at(i.try_into().unwrap(), OciRegisteredDigestInvalidChar)
+                Error::at(i.try_into().unwrap(), OciRegisteredDigestInvalidChar).into()
             }
         })
     }
@@ -112,7 +112,8 @@ impl<'src> EncodedStr<'src> {
                     (_, _) => Error::at(
                         self.len().try_into().unwrap(),
                         OciRegisteredAlgorithmWrongDigestLength,
-                    ),
+                    )
+                    .into(),
                 }
             }
             _ => Ok(()), // non-registered algorithm
@@ -121,9 +122,9 @@ impl<'src> EncodedStr<'src> {
 
     fn validate_distribution(&self) -> Result<(), Error> {
         match self.len() {
-            0..=31 => Error::at(self.short_len().into(), EncodingTooShort),
+            0..=31 => Error::at(self.short_len().into(), EncodingTooShort).into(),
             32..=MAX_LENGTH => Ok(()),
-            _ => Error::at(self.short_len().into(), EncodingTooLong),
+            _ => Error::at(self.short_len().into(), EncodingTooLong).into(),
         }
     }
     /// Note: `validate_algorithm` doesn't check character sets since that's handled

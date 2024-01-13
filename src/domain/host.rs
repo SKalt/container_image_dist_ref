@@ -11,12 +11,12 @@ fn disambiguate_err(e: Error) -> Error {
         err::Kind::HostOrPathNoMatch => err::Kind::HostNoMatch,
         _ => e.kind(),
     };
-    Error(kind, e.index())
+    Error(e.index(), kind)
 }
 
 use super::ipv6::Ipv6Span;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Kind {
     /// a span of characters that represents a restricted domain name, e.g. "Example.com".
     /// TODO: note the restrictions
@@ -27,7 +27,7 @@ pub(crate) enum Kind {
     Empty,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) struct OptionalHostSpan<'src>(pub(crate) Length<'src>, pub(crate) Kind);
 impl_span_methods_on_tuple!(OptionalHostSpan, Short);
 impl<'src> TryFrom<OptionalHostOrPath<'src>> for OptionalHostSpan<'_> {
@@ -40,7 +40,7 @@ impl<'src> TryFrom<OptionalHostOrPath<'src>> for OptionalHostSpan<'_> {
                 match ambiguous.kind() {
                     Either | Host => Ok(Self(Length::new(ambiguous.short_len()), Kind::Domain)),
                     IpV6 => Ok(Self(Length::new(ambiguous.short_len()), Kind::Ipv6)),
-                    Path => Err(Error(crate::err::Kind::HostInvalidChar, 0)), // <- needs the source str to find the index of the first underscore
+                    Path => Err(Error(0, crate::err::Kind::HostInvalidChar)), // <- needs the source str to find the index of the first underscore
                 }
             }
         }
@@ -53,13 +53,13 @@ impl<'src> TryFrom<&'src str> for OptionalHostSpan<'src> {
         OptionalHostOrPath::new(src, HostKind::Either)
             .map_err(disambiguate_err)?
             .try_into()
-            .map_err(|e: Error| match e.0 {
+            .map_err(|e: Error| match e.kind() {
                 crate::err::Kind::HostInvalidChar => Error(
+                    src.find('_').unwrap().try_into().unwrap(),
                     // this error only occurs if there was an underscore in the source str,
                     // it doesn't carry the location of the offending character.
                     // Here, we find the index of the first underscore using the source str.
                     crate::err::Kind::HostInvalidChar,
-                    src.find('_').unwrap().try_into().unwrap(),
                 ),
                 _ => e,
             })
@@ -84,14 +84,14 @@ impl<'src> OptionalHostSpan<'src> {
             HostKind::Host | HostKind::Either => Ok(Self(ambiguous.into_span(), Kind::Domain)),
             HostKind::IpV6 => Ok(Self(ambiguous.into_span(), Kind::Ipv6)),
             HostKind::Path => Err(Error(
-                err::Kind::HostInvalidChar,
                 ambiguous
-                    .span_of(context)
-                    .bytes()
-                    .find(|b| b == &b'_')
-                    .unwrap() // safe since a Path must have at least one underscore
-                    .try_into()
-                    .unwrap(), // safe since ambiguous.span_of(context) must be short
+                .span_of(context)
+                .bytes()
+                .find(|b| b == &b'_')
+                .unwrap() // safe since a Path must have at least one underscore
+                .try_into()
+                .unwrap(), // safe since ambiguous.span_of(context) must be short
+                err::Kind::HostInvalidChar,
             )),
         }
     }
@@ -139,7 +139,7 @@ impl<'src> HostStr<'src> {
     pub fn from_exact_match(src: &'src str) -> Result<Self, Error> {
         let result = HostStr::from_prefix(src)?;
         if result.len() != src.len() {
-            return Err(Error(crate::err::Kind::HostNoMatch, result.short_len()));
+            return Err(Error(result.short_len(), crate::err::Kind::HostNoMatch));
         }
         Ok(result)
     }

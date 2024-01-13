@@ -6,7 +6,7 @@ use crate::{
 
 // pub(crate) use crate::ambiguous::port_or_tag::Error;
 /// a span representing a port number **WITH** the leading colon. Can be empty.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) struct OptionalPortSpan<'src>(Length<'src>);
 impl_span_methods_on_tuple!(OptionalPortSpan, Short);
 
@@ -16,7 +16,7 @@ fn disambiguate_err(e: Error) -> Error {
         err::Kind::PortOrTagInvalidChar => err::Kind::PortInvalidChar,
         _ => e.kind(),
     };
-    Error(kind, e.index())
+    Error(e.index(), kind)
 }
 impl<'src> IntoOption for OptionalPortSpan<'src> {
     fn is_some(&self) -> bool {
@@ -46,13 +46,13 @@ impl<'src> OptionalPortSpan<'src> {
                 Self::none()
             }),
             PortKind::Tag => Err(Error(
-                err::Kind::PortInvalidChar,
                 ambiguous.span_of(context)
                     .bytes()
                     .find(|b| !b.is_ascii_digit())
                     .unwrap() // safe since ambiguous.kind == Tag, which means there must be a non-digit char
                     .try_into()
                     .unwrap(), // safe since ambiguous.span_of(context) must be short
+                err::Kind::PortInvalidChar,
             )),
         }
     }

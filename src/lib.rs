@@ -423,7 +423,7 @@ mod tests {
             src.push_str(&long);
             should_fail_with(
                 &src,
-                Error::at(Short::MAX as u16 + 1 + 128, err::Kind::PortTooLong),
+                Error::at(Short::MAX as u16 + 1 + 128, err::Kind::TagTooLong),
                 // Short::MAX == max name length
                 //          1 == the ':' of the tag
                 //        128 == max length of tag characters
@@ -471,6 +471,13 @@ mod tests {
             None,
             Some("algo:bbbb"),
         );
+        {
+            let mut src = String::with_capacity(2 + 256);
+            src.push_str("0");
+            src.push('@');
+            src.push_str(&"0".repeat(256)); // too long
+            should_fail_with(&src, Error::at(2 + 255, err::Kind::AlgorithmTooLong));
+        };
     }
 
     #[derive(Debug, PartialEq, Eq)]

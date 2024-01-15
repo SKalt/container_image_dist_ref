@@ -52,6 +52,7 @@ pub enum Kind {
     AlgorithmInvalidNumericPrefix,
     OciRegisteredAlgorithmWrongDigestLength,
     AlgorithmInvalidChar,
+    AlgorithmTooLong,
     // digest::encoded ------------------------------------------
     DigestTooLong,
     EncodedNoMatch,

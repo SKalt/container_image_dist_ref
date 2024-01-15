@@ -151,6 +151,9 @@ fn component(src: &str, compliance: Compliance) -> Result<(Short, Compliance), E
     }?;
     len += 1;
     while (len as usize) < src.len() {
+        if len == Short::MAX {
+            return Error::at(len, err::Kind::AlgorithmTooLong).into();
+        }
         let c = src.as_bytes()[len as usize];
         #[cfg(debug_assertions)]
         let _c = c as char;

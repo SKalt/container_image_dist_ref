@@ -59,6 +59,8 @@ impl<'src> DomainOrRefSpan<'src> {
             Some(b':') => PortOrTagSpan::new(
                 right_src,
                 if left.short_len() == Short::MAX {
+                    // no room left for a port in the name, since name is bounded at 255 chars
+                    // thus, the right side must be a Tag
                     Tag
                 } else {
                     EitherPortOrTag

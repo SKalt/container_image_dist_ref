@@ -158,14 +158,11 @@ fn component(src: &str, compliance: Compliance) -> Result<(Short, Compliance), E
     }?;
     len += 1;
     while (len as usize) < src.len() {
-        if len == Short::MAX {
-            return Error::at(len.into(), err::Kind::AlgorithmTooLong).into();
-        }
         let c = src.as_bytes()[len as usize];
         #[cfg(debug_assertions)]
         let _c = c as char;
-        len = match c {
-            b'a'..=b'z' | b'0'..=b'9' => Ok(len + 1),
+        match c {
+            b'a'..=b'z' | b'0'..=b'9' => Ok(()),
             b'A'..=b'Z' => {
                 // acceptable according to distribution/reference
                 // but not the OCI image spec
@@ -173,12 +170,16 @@ fn component(src: &str, compliance: Compliance) -> Result<(Short, Compliance), E
                     // this is not a valid OCI algorithm
                     Error::at(len.into(), InvalidOciAlgorithm).into()
                 } else {
-                    Ok(len + 1)
+                    Ok(())
                 }
             }
             b':' | b'+' | b'.' | b'_' | b'-' => break,
             _ => Error::at(len.into(), AlgorithmInvalidChar).into(),
         }?;
+        if len == Short::MAX {
+            return Error::at(len.into(), err::Kind::AlgorithmTooLong).into();
+        }
+        len += 1;
     }
     Ok((len, compliance))
 }

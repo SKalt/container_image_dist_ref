@@ -77,7 +77,9 @@ impl<'src> DigestSpan<'src> {
         let mut len = algorithm.short_len();
         let rest = &src[len as usize..];
         len = match rest.bytes().next() {
-            Some(b':') => Ok(len + 1),
+            Some(b':') => len
+                .checked_add(1)
+                .ok_or_else(|| Error::at(len.into(), err::Kind::DigestTooLong)),
             None => Error::at(len.into(), err::Kind::AlgorithmNoMatch).into(),
             _ => Error::at(len.into(), err::Kind::AlgorithmInvalidChar).into(),
         }?;

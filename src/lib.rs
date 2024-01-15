@@ -503,6 +503,13 @@ mod tests {
                 ;
             should_fail_with(&src, Error::at(too_long, err::Kind::AlgorithmTooLong));
         };
+        {
+            let mut src = String::with_capacity(2 + 256);
+            src.push_str("0@");
+            src.push_str(&"0".repeat(255));
+            src.push_str(":");
+            should_fail_with(&src, Error::at(257, err::Kind::DigestTooLong))
+        };
     }
 
     #[derive(Debug, PartialEq, Eq)]

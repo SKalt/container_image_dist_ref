@@ -57,10 +57,7 @@ impl<'src> PortOrTagSpan<'src> {
                     Kind::Tag | Kind::Either => Ok(Kind::Tag),
                     Kind::Port => Err(Error(len + 1, err::Kind::PortInvalidChar)),
                 },
-                b'0'..=b'9' => match kind {
-                    Kind::Tag | Kind::Port => Ok(kind),
-                    Kind::Either => Ok(Kind::Port),
-                },
+                b'0'..=b'9' => Ok(kind), // both ports and tags can have digits
                 b'/' | b'@' => break,
                 _ => return Err(Error(len + 1, err::Kind::PortOrTagInvalidChar)),
             }?;

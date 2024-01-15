@@ -380,6 +380,7 @@ mod tests {
     fn test_tagged_ref() {
         should_parse_as("test.com:tag", None, Some("test.com"), Some("tag"), None);
         should_parse_as("test.com:5000", None, Some("test.com"), Some("5000"), None);
+        should_parse_as("0:0A", None, Some("0"), Some("0A"), None)
     }
     #[test]
     fn test_with_path() {

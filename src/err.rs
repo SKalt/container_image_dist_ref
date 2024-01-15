@@ -77,11 +77,11 @@ where
     Size: Copy,
 {
     #[inline(always)]
-    pub(crate) fn index(&self) -> Size {
+    pub fn index(&self) -> Size {
         self.0
     }
     #[inline(always)]
-    pub(crate) fn kind(&self) -> Kind {
+    pub fn kind(&self) -> Kind {
         self.1
     }
 

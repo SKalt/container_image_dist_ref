@@ -386,8 +386,16 @@ mod tests {
                 as_test_case(&r)
             ),
             Err(e) => {
-                assert_eq!(e.index(), expected.index(), "wrong index in {src:?}",);
-                assert_eq!(e.kind(), expected.kind(), "wrong error kind for {src:?}",);
+                assert_eq!(
+                    e.index(),
+                    expected.index(),
+                    "expected {expected:?}, got {e:?} when parsing {src:?}",
+                );
+                assert_eq!(
+                    e.kind(),
+                    expected.kind(),
+                    "expected {expected:?}, got {e:?} when parsing {src:?}",
+                );
             }
         }
     }
@@ -476,7 +484,24 @@ mod tests {
             src.push_str("0");
             src.push('@');
             src.push_str(&"0".repeat(256)); // too long
-            should_fail_with(&src, Error::at(2 + 255, err::Kind::AlgorithmTooLong));
+            let too_long = 1 // '0', the name
+                + 1 // '@'
+                + 255 // max allowed algorithm length
+                ;
+            should_fail_with(&src, Error::at(too_long, err::Kind::AlgorithmTooLong));
+        };
+        {
+            let mut src = String::with_capacity(2 + 257);
+            src.push_str("0");
+            src.push('@');
+            src.push_str(&"0".repeat(128));
+            src.push_str("+");
+            src.push_str(&"0".repeat(128)); // too long!
+            let too_long = 1 // '0', the name
+                + 1 // '@'
+                + 255 // max allowed algorithm length
+                ;
+            should_fail_with(&src, Error::at(too_long, err::Kind::AlgorithmTooLong));
         };
     }
 

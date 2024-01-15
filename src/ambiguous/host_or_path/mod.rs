@@ -270,7 +270,7 @@ impl<'src> HostOrPathSpan<'src> {
                 let _post = DebugScan::from(&scan);
                 if _c == '.' {
                     debug_assert!(
-                        _pre.last_was_dot == false && _post.last_was_dot == true,
+                        !_pre.last_was_dot && _post.last_was_dot,
                         "last_was_dot changed from {} to {} @ {}",
                         _pre.last_was_dot,
                         _post.last_was_dot,

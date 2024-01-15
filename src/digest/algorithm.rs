@@ -20,17 +20,24 @@
 //!
 
 use crate::{
-    err::{self, Error},
-    span::{impl_span_methods_on_tuple, IntoOption, Lengthy, Short, ShortLength},
+    err,
+    span::{impl_span_methods_on_tuple, IntoOption, Lengthy, Long, Short, ShortLength},
 };
 
 use super::Compliance;
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) struct AlgorithmSpan<'src>(ShortLength<'src>);
 impl_span_methods_on_tuple!(AlgorithmSpan, Short);
+
+type Error = err::Error<Long>;
 use err::Kind::{
     AlgorithmInvalidChar, AlgorithmInvalidNumericPrefix, AlgorithmNoMatch, InvalidOciAlgorithm,
 };
+fn try_add(a: Short, b: Short) -> Result<Short, Error> {
+    a.checked_add(b)
+        .ok_or_else(|| Error::at(Short::MAX.into(), err::Kind::AlgorithmTooLong))
+}
+
 impl<'src> AlgorithmSpan<'src> {
     pub(crate) fn new(src: &'src str) -> Result<(Self, Compliance), Error> {
         use Compliance::*;
@@ -40,10 +47,11 @@ impl<'src> AlgorithmSpan<'src> {
             if !is_separator(next) {
                 break;
             }
-            len += 1; // consume the separator
+            // TODO: check for overflow
+            len = try_add(len, 1)?; // consume the separator
             let (component_len, component_compliance) =
                 component(&src[len as usize..], compliance)?;
-            len += component_len;
+            len = try_add(len, component_len)?;
             compliance = component_compliance; // narrow compliance from Universal -> (Oci | Distribution)
         }
         Ok((Self(len.into()), compliance))
@@ -53,7 +61,7 @@ impl<'src> AlgorithmSpan<'src> {
         if span.len() == src.len() {
             Ok((span, compliance))
         } else {
-            Err(Error(span.short_len(), AlgorithmNoMatch))
+            Error::at(span.short_len().into(), AlgorithmNoMatch).into()
         }
     }
 }
@@ -120,10 +128,10 @@ fn is_separator(c: u8) -> bool {
 fn component(src: &str, compliance: Compliance) -> Result<(Short, Compliance), Error> {
     use Compliance::*;
     if src.is_empty() {
-        return Err(Error(0, AlgorithmNoMatch));
+        return Error::at(0, AlgorithmNoMatch).into();
     }
 
-    let mut len = 0;
+    let mut len: Short = 0;
     let compliance = match src.as_bytes()[len as usize] {
         b'a'..=b'z' => Ok(compliance), // universally compatible first character
         b'0'..=b'9' => {
@@ -131,7 +139,7 @@ fn component(src: &str, compliance: Compliance) -> Result<(Short, Compliance), E
             //  but not the OCI image spec
             if compliance == Distribution {
                 // this is not a valid OCI algorithm
-                Err(Error(len, AlgorithmInvalidNumericPrefix))
+                Error::at(len.into(), AlgorithmInvalidNumericPrefix).into()
             } else {
                 Ok(Oci)
             }
@@ -141,17 +149,17 @@ fn component(src: &str, compliance: Compliance) -> Result<(Short, Compliance), E
             // but not the OCI image spec
             if compliance == Oci {
                 // this is not a valid OCI algorithm
-                Err(Error(len, InvalidOciAlgorithm))
+                Error::at(len.into(), InvalidOciAlgorithm).into()
             } else {
                 Ok(Distribution)
             }
         }
-        _ => Err(Error(len, AlgorithmInvalidChar)),
+        _ => Error::at(len.into(), AlgorithmInvalidChar).into(),
     }?;
     len += 1;
     while (len as usize) < src.len() {
         if len == Short::MAX {
-            return Error::at(len, err::Kind::AlgorithmTooLong).into();
+            return Error::at(len.into(), err::Kind::AlgorithmTooLong).into();
         }
         let c = src.as_bytes()[len as usize];
         #[cfg(debug_assertions)]
@@ -163,13 +171,13 @@ fn component(src: &str, compliance: Compliance) -> Result<(Short, Compliance), E
                 // but not the OCI image spec
                 if compliance == Oci {
                     // this is not a valid OCI algorithm
-                    Err(Error(len, InvalidOciAlgorithm))
+                    Error::at(len.into(), InvalidOciAlgorithm).into()
                 } else {
                     Ok(len + 1)
                 }
             }
             b':' | b'+' | b'.' | b'_' | b'-' => break,
-            _ => Err(Error(len, AlgorithmInvalidChar)),
+            _ => Error::at(len.into(), AlgorithmInvalidChar).into(),
         }?;
     }
     Ok((len, compliance))

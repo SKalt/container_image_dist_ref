@@ -70,7 +70,7 @@ impl<'src> DigestSpan<'src> {
     pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
         match src.len() {
             0 => return Ok(Self::none()),
-            MAX_USIZE => return Error::at(Long::MAX.into(), err::Kind::DigestTooLong).into(),
+            MAX_USIZE => return Error::at(Long::MAX, err::Kind::DigestTooLong).into(),
             _ => {}
         }
         let (algorithm, compliance) = AlgorithmSpan::new(src)?;

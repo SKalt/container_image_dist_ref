@@ -122,7 +122,6 @@ fn component(src: &str, compliance: Compliance) -> Result<(Short, Compliance), E
     if src.is_empty() {
         return Err(Error(0, AlgorithmNoMatch));
     }
-    debug_assert!(src.len() <= 256, "algorithm component too long"); // HACK: arbitrary limit
 
     let mut len = 0;
     let compliance = match src.as_bytes()[len as usize] {

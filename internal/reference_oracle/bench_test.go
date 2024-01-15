@@ -16,7 +16,7 @@ import (
 var rawInputs string
 var inputs = strings.Split(rawInputs, "\n")
 
-func BenchmarkOracle(b *testing.B) {
+func BenchmarkOracleEntireTestSuite(b *testing.B) {
 	filtered := make([]string, 0, len(inputs))
 	for _, ref := range inputs {
 		if ref != "" {

@@ -1,36 +1,59 @@
 # container_image_dist_ref
 
-A library of types represent docker/OCI image references.
+An unnecessarily optimized docker/OCI image reference parser.
 
-A rust port of https://github.com/distribution/reference
+This library is oracle-tested against the authoritative image reference implementation, https://github.com/distribution/reference.
 
 ## Motivation
 
-(1) fidelity to the original flagship image reference implementation and (2) fun optimizations.
+<!-- TODO: rewrite -->
+
+I had a rust project and wanted to use `distribution/reference`, but didn't want to deal with FFI into `go`.
+
+## Goals
+
+1. fidelity to the `distribution/reference`'s parser
+1. fun optimizations!
+<!-- 1. The eventual ability to re-use the parser in other languages -->
+
+More about these goals and design choices in [`./ARCHITECTURE.md`](./ARCHITECTURE.md).
 
 ## Benchmarks
 
-Compared to distribution/reference, this achieves a 25x speedup:
+Based on some naive benchmarking, this library achieves at least a 10x speedup compared to distribution/reference.
+
+<details open><summary>Running the benchmarks</summary>
+
+```sh
+cargo bench # rust
+( # go
+  cd internal/reference_oracle &&
+  go test -bench=.
+)
+```
+
+</details>
+
+<details><summary>Benchmarks on my machine</summary>
+
+distribution/reference:
 
 ```
 goos: linux
 goarch: amd64
-pkg: github.com/skalt/container_image_dist_ref/scripts/bench_oracle
+pkg: github.com/skalt/container_image_dist_ref/internal/reference_oracle
 cpu: Intel(R) Core(TM) i7-4770 CPU @ 3.40GHz
-BenchmarkOracle-8           8851            123423 ns/op
-PASS
-ok      github.com/skalt/container_image_dist_ref/scripts/bench_oracle  1.111s
+BenchmarkOracleEntireTestSuite-8            9218            148438 ns/op
+```
+
+This crate:
+
+```
+entire_test_suite       time:   [5.0737 µs 5.1349 µs 5.2047 µs]
 ```
 
 ```
-entire_test_suite       time:   [4.9178 µs 4.9369 µs 4.9592 µs]
-Found 7 outliers among 100 measurements (7.00%)
-  3 (3.00%) high mild
-  4 (4.00%) high severe
+speedup = (148438 ns) / ((5.1349 µs) * (1000 ns / µs)) = 28.908
 ```
 
-<!--
-A note on regex: I chose not to use the excellent github.com/rust-lang/regex since:
-  1. this kind of parsing isn't really regex-shaped: we're parsing strings from start to finish, not looking for needles in haystacks.
-  2. writing the parser as a pure function avoids all issues of cross-thread resource contention (https://docs.rs/regex/latest/regex/#sharing-a-regex-across-threads-can-result-in-contention) and lets me use the smallest unsigned int size possible for each section of the reference string.
--->
+</details>

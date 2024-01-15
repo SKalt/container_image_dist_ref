@@ -50,7 +50,7 @@ impl<'src> PortSpan<'src> {
                     .bytes().enumerate()
                     .find(|(_, b)| !b.is_ascii_digit())
                     .map(|(i, _)| i)
-                    .unwrap() // safe since ambiguous.kind == Tag, which means there must be a non-digit char
+                    .unwrap() // safe since ambiguous.kind == Tag, which means there must be a non-digit ascii character
                     .try_into()
                     .unwrap(), // safe since ambiguous.span_of(context) must be short
                 err::Kind::PortInvalidChar,

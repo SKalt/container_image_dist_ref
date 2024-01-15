@@ -25,9 +25,10 @@
       in
       {
         packages = {
-          # For `nix build` & `nix run`:
+          # For `nix build`:
           default = pkgs.rustPlatform.buildRustPackage {
             # https://nixos.org/manual/nixpkgs/stable/#compiling-rust-applications-with-cargo
+            # TODO: figure out how to avoid the benchmarks being run
             inherit version;
             pname = info.package.name;
             src = with pkgs.lib.fileset; toSource {

@@ -152,7 +152,7 @@ fn component(src: &str, compliance: Compliance) -> Result<(Short, Compliance), E
     len += 1;
     while (len as usize) < src.len() {
         let c = src.as_bytes()[len as usize];
-        #[cfg(test)]
+        #[cfg(debug_assertions)]
         let _c = c as char;
         len = match c {
             b'a'..=b'z' | b'0'..=b'9' => Ok(len + 1),

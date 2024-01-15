@@ -18,7 +18,7 @@ use super::ipv6::Ipv6Span;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
-    /// a span of characters that represents a restricted domain name, e.g. "Example.com".
+    /// a span of ascii characters that represents a restricted domain name, e.g. "Example.com".
     /// Must match the regex `^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]$`
     Domain,
     /// a restricted IPv6 address wrapped in square brackets, e.g. `[2001:db8::1]`

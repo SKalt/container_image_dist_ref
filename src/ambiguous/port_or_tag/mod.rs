@@ -50,7 +50,7 @@ impl<'src> PortOrTagSpan<'src> {
         let mut kind = kind;
         while (len <= 128) && (len as usize) < src.len() {
             let c = ascii[len as usize];
-            #[cfg(test)]
+            #[cfg(debug_assertions)]
             let _c = c as char;
             kind = match c {
                 b'a'..=b'z' | b'A'..=b'Z' | b'.' | b'-' => match kind {

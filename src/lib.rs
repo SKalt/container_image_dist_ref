@@ -381,7 +381,10 @@ mod tests {
         let result = RefStr::new(src);
 
         match result {
-            Ok(_) => panic!("expected parsing {src:?} to fail, but it succeeded"),
+            Ok(r) => panic!(
+                "expected parsing {src:?} to fail, but it succeeded as {:#?}",
+                as_test_case(&r)
+            ),
             Err(e) => {
                 assert_eq!(e.index(), expected.index(), "wrong index in {src:?}",);
                 assert_eq!(e.kind(), expected.kind(), "wrong error kind for {src:?}",);
@@ -411,6 +414,14 @@ mod tests {
             let tag = &"0".repeat(128); // max tag length
             src.push_str(&tag);
             should_parse_as(&src, None, Some("0"), Some(&tag), None);
+        }
+        {
+            let mut src = String::with_capacity(Short::MAX as usize * 2 + 1);
+            let long = "0".repeat(Short::MAX as usize);
+            src.push_str(&long);
+            src.push(':');
+            src.push_str(&long);
+            should_parse_as(&src, None, Some(&long), Some(&long), None)
         }
     }
     #[test]
@@ -456,63 +467,62 @@ mod tests {
         );
     }
 
+    #[derive(Debug, PartialEq, Eq)]
+    struct TestCase<'src> {
+        input: &'src str,
+        name: Option<&'src str>,
+        domain: Option<&'src str>,
+        path: Option<&'src str>,
+        tag: Option<&'src str>,
+        digest_algo: Option<&'src str>,
+        digest_encoded: Option<&'src str>,
+        err: Option<&'src str>,
+    }
+    impl<'src> From<&'src str> for TestCase<'src> {
+        fn from(line: &'src str) -> Self {
+            fn maybe(s: &str) -> Option<&str> {
+                if s.is_empty() {
+                    None
+                } else {
+                    Some(s)
+                }
+            }
+            let mut cols = line.split('\t');
+            let input = cols.next().unwrap();
+            let name = maybe(cols.next().unwrap());
+            let domain = maybe(cols.next().unwrap());
+            let path = maybe(cols.next().unwrap());
+            let tag = maybe(cols.next().unwrap());
+            let digest_algo = maybe(cols.next().unwrap());
+            let digest_encoded = maybe(cols.next().unwrap());
+            let err = maybe(cols.next().unwrap());
+            Self {
+                input,
+                name,
+                domain,
+                path,
+                tag,
+                digest_algo,
+                digest_encoded,
+                err,
+            }
+        }
+    }
+    fn as_test_case<'s>(span: &'s RefStr<'s>) -> TestCase<'s> {
+        let digest = span.digest();
+        TestCase {
+            input: span.src,
+            name: span.name(),
+            domain: span.domain(),
+            path: span.path(),
+            tag: span.tag(),
+            digest_algo: digest.as_ref().map(|d| d.algorithm().src()),
+            digest_encoded: digest.map(|d| d.encoded().src()),
+            err: None,
+        }
+    }
     #[test]
     fn basic_corpus() {
-        #[derive(Debug, PartialEq, Eq)]
-        struct TestCase<'src> {
-            input: &'src str,
-            name: Option<&'src str>,
-            domain: Option<&'src str>,
-            path: Option<&'src str>,
-            tag: Option<&'src str>,
-            digest_algo: Option<&'src str>,
-            digest_encoded: Option<&'src str>,
-            err: Option<&'src str>,
-        }
-        impl<'src> From<&'src str> for TestCase<'src> {
-            fn from(line: &'src str) -> Self {
-                fn maybe(s: &str) -> Option<&str> {
-                    if s.is_empty() {
-                        None
-                    } else {
-                        Some(s)
-                    }
-                }
-                let mut cols = line.split('\t');
-                let input = cols.next().unwrap();
-                let name = maybe(cols.next().unwrap());
-                let domain = maybe(cols.next().unwrap());
-                let path = maybe(cols.next().unwrap());
-                let tag = maybe(cols.next().unwrap());
-                let digest_algo = maybe(cols.next().unwrap());
-                let digest_encoded = maybe(cols.next().unwrap());
-                let err = maybe(cols.next().unwrap());
-                Self {
-                    input,
-                    name,
-                    domain,
-                    path,
-                    tag,
-                    digest_algo,
-                    digest_encoded,
-                    err,
-                }
-            }
-        }
-        fn as_test_case<'s>(span: &'s RefStr<'s>) -> TestCase<'s> {
-            let digest = span.digest();
-            TestCase {
-                input: span.src,
-                name: span.name(),
-                domain: span.domain(),
-                path: span.path(),
-                tag: span.tag(),
-                digest_algo: digest.as_ref().map(|d| d.algorithm().src()),
-                digest_encoded: digest.map(|d| d.encoded().src()),
-                err: None,
-            }
-        }
-
         fn expect(src: &str, expected: TestCase) {
             let parsed = RefStr::new(src);
             match (expected.err, parsed) {

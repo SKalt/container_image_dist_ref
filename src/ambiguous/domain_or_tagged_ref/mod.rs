@@ -23,14 +23,15 @@ use crate::{
         port_or_tag::{Kind as PortOrTagKind, PortOrTagSpan},
     },
     domain::DomainSpan,
-    err::{self, Error},
+    err,
     path::PathSpan,
-    span::{IntoOption, Lengthy, Short},
+    span::{IntoOption, Lengthy, Long, Short},
     tag::TagSpan,
 };
 use HostOrPathKind::{Either as EitherHostPathOrIpv6, Host, IpV6, Path};
 use PortOrTagKind::{Either as EitherPortOrTag, Port, Tag};
 
+pub(crate) type Error = err::Error<Long>;
 /// represents a colon-delimited string of the form "left:right"
 pub(crate) enum DomainOrRefSpan<'src> {
     Domain(DomainSpan<'src>),
@@ -49,6 +50,14 @@ impl Lengthy<'_, Short> for DomainOrRefSpan<'_> {
         }
     }
 }
+// fn check_overflow(left: Short, right: Short) -> Result<Short, Error> {
+//     let sum = left as u16 + right as u16;
+//     if sum > Short::MAX as u16 {
+//         Err(Error::at(Short::MAX, err::Kind::HostOrPathTooLong))
+//     } else {
+//         Ok(sum.try_into().unwrap())
+//     }
+// }
 impl<'src> DomainOrRefSpan<'src> {
     pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
         let left = HostOrPathSpan::new(src, EitherHostPathOrIpv6)?;
@@ -56,9 +65,10 @@ impl<'src> DomainOrRefSpan<'src> {
         let right = match right_src.bytes().next() {
             Some(b':') => PortOrTagSpan::new(right_src, EitherPortOrTag),
             Some(b'/') | Some(b'@') | None => Ok(PortOrTagSpan::none()),
-            Some(_) => Error::at(0, err::Kind::HostOrPathInvalidChar).into(),
+            Some(_) => err::Error::<Short>::at(0, err::Kind::HostOrPathInvalidChar).into(),
         }
-        .map_err(|e: Error| e + left.short_len())?;
+        .map_err(|e: err::Error<Short>| -> Error { e.into() })
+        .map_err(|e| e + left.short_len())?;
 
         let kind = Self::infer_kind_from_suffix(src[left.len() + right.len()..].bytes().next())?;
         Self::from_parts(left, right, kind, src)

@@ -1,7 +1,7 @@
 use crate::{
     domain::ipv6,
     err::{self, Error},
-    span::{impl_span_methods_on_tuple, IntoOption, Length, Lengthy, Short},
+    span::{impl_span_methods_on_tuple, IntoOption, Lengthy, Short, ShortLength},
 };
 use err::Kind::{
     HostOrPathInvalidChar as InvalidChar, HostOrPathInvalidComponentEnd as InvalidComponentEnd,
@@ -164,7 +164,7 @@ impl From<&Scan> for DebugScan {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct HostOrPathSpan<'src>(Length<'src>, Kind);
+pub(crate) struct HostOrPathSpan<'src>(ShortLength<'src>, Kind);
 impl_span_methods_on_tuple!(HostOrPathSpan, Short);
 impl<'src> IntoOption for HostOrPathSpan<'src> {
     fn is_some(&self) -> bool {
@@ -282,15 +282,14 @@ impl<'src> HostOrPathSpan<'src> {
             }
             if len == Short::MAX {
                 match ascii[len as usize..].iter().next() {
-                    Some(b':') | Some(b'@') => Ok(()),
-                    _ => Error::at(len, TooLong).into(),
-                }?;
-                break;
+                    Some(b':') | Some(b'@') => break,
+                    _ => return Error::at(len, TooLong).into(),
+                };
             }
             len += 1;
         }
 
-        #[cfg(test)]
+        #[cfg(debug_assertions)]
         let _scan = DebugScan::from(&scan);
         if scan.last_was_dash() || scan.last_was_dot() || scan.underscore_count() > 0 {
             Err(Error(len - 1, err::Kind::HostOrPathInvalidComponentEnd))?;

@@ -13,3 +13,7 @@ criterion = "0.4"
 [[bench]]
 name = "basic_benchmark"
 harness = false
+
+[[example]]
+name = "parse_stdin"
+crate-type = ["bin"]

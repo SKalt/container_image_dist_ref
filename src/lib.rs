@@ -421,7 +421,13 @@ mod tests {
             src.push_str(&long);
             src.push(':');
             src.push_str(&long);
-            should_parse_as(&src, None, Some(&long), Some(&long), None)
+            should_fail_with(
+                &src,
+                Error::at(Short::MAX as u16 + 1 + 128, err::Kind::PortTooLong),
+                // Short::MAX == max name length
+                //          1 == the ':' of the tag
+                //        128 == max length of tag characters
+            );
         }
     }
     #[test]

@@ -50,20 +50,20 @@ impl Lengthy<'_, Short> for DomainOrRefSpan<'_> {
         }
     }
 }
-// fn check_overflow(left: Short, right: Short) -> Result<Short, Error> {
-//     let sum = left as u16 + right as u16;
-//     if sum > Short::MAX as u16 {
-//         Err(Error::at(Short::MAX, err::Kind::HostOrPathTooLong))
-//     } else {
-//         Ok(sum.try_into().unwrap())
-//     }
-// }
+
 impl<'src> DomainOrRefSpan<'src> {
     pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
         let left = HostOrPathSpan::new(src, EitherHostPathOrIpv6)?;
         let right_src = &src[left.len()..];
         let right = match right_src.bytes().next() {
-            Some(b':') => PortOrTagSpan::new(right_src, EitherPortOrTag),
+            Some(b':') => PortOrTagSpan::new(
+                right_src,
+                if left.short_len() == Short::MAX {
+                    Tag
+                } else {
+                    EitherPortOrTag
+                },
+            ),
             Some(b'/') | Some(b'@') | None => Ok(PortOrTagSpan::none()),
             Some(_) => err::Error::<Short>::at(0, err::Kind::HostOrPathInvalidChar).into(),
         }

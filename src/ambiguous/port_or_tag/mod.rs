@@ -62,7 +62,14 @@ impl<'src> PortOrTagSpan<'src> {
                 _ => return Err(Error(len + 1, err::Kind::PortOrTagInvalidChar)),
             }?;
             if len > 128 {
-                return Err(Error(len, err::Kind::PortOrTagTooLong));
+                return Err(Error(
+                    len,
+                    match kind {
+                        Kind::Port => err::Kind::PortTooLong,
+                        Kind::Tag => err::Kind::TagTooLong,
+                        Kind::Either => err::Kind::PortOrTagTooLong,
+                    },
+                ));
             }
             len += 1;
         }

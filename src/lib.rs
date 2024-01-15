@@ -460,7 +460,8 @@ mod tests {
             Some("repo"),
             Some("tag"),
             None,
-        )
+        );
+        should_fail_with("0_0/", Error::at(1, err::Kind::HostInvalidChar))
     }
     #[test]
     fn test_with_digest() {

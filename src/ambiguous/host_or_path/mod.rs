@@ -198,20 +198,20 @@ impl<'src> HostOrPathSpan<'src> {
                         underscore_index.is_some(),
                         "unable to find _ in {context:?}"
                     );
-                    underscore_index.unwrap() // !?!? safe since this self.kind() == Path means there must have been an underscore
+                    underscore_index.unwrap() // safe since this self.kind() == Host means there must have been an uppercase letter
                 };
                 let i = i.try_into().unwrap(); // safe since self.span_of(context) must be short
                 Error::at(i, err::Kind::PathInvalidChar).into()
             }
-            (_, Host) => {
+            (Path, Host) => {
                 let offending_uppercase_index = self.span_of(context)
                     .bytes().enumerate()
-                    .find(|(_, b)| b.is_ascii_uppercase())
+                    .find(|(_, b)| b == &b'_')
                     .map(|(i, _)| i)
-                    .unwrap() // safe since this self.kind() == Host means there must have been an uppercase letter
+                    .unwrap() // safe since this self.kind() == Path means there must have been an underscore
                     .try_into()
                     .unwrap();
-                Err(Error(offending_uppercase_index, InvalidChar))
+                Err(Error(offending_uppercase_index, err::Kind::HostInvalidChar))
             }
         }
     }
@@ -234,6 +234,7 @@ impl<'src> HostOrPathSpan<'src> {
         #[cfg(test)]
         let _c = c as char;
         len += match c {
+            // safe since len is going from 0 -> 1
             b'a'..=b'z' | b'0'..=b'9' => Ok(1),
             b'A'..=b'Z' => {
                 scan.set_upper().map_err(|kind| Error(0, kind))?;
@@ -286,7 +287,7 @@ impl<'src> HostOrPathSpan<'src> {
                     _ => return Error::at(len, TooLong).into(),
                 };
             }
-            len += 1;
+            len += 1; // safe due to the above length-guard
         }
 
         #[cfg(debug_assertions)]

@@ -19,7 +19,7 @@
 use super::algorithm::AlgorithmStr;
 use super::Compliance;
 use crate::span::{impl_span_methods_on_tuple, IntoOption, Lengthy, Long, LongLength};
-const MAX_LENGTH: usize = Long::MAX as usize;
+const MAX_LENGTH: u16 = 1024; // arbitrary but realistic limit
 
 use crate::err::Kind::{
     EncodedInvalidChar, EncodedNoMatch, EncodedNonLowerHex, EncodingTooLong, EncodingTooShort,
@@ -52,6 +52,9 @@ impl<'src> EncodedSpan<'src> {
                 }
                 _ => Error::at(len, EncodedInvalidChar).into(),
             }?;
+            if len == MAX_LENGTH {
+                return Error::at(len, EncodingTooLong).into();
+            }
             len += 1;
         }
         debug_assert!(len as usize == src.len(), "must have consume all src");
@@ -124,9 +127,10 @@ impl<'src> EncodedStr<'src> {
     }
     /// check that the encoded string is an appropriate length according to distribution/reference
     fn validate_distribution(&self) -> Result<(), Error> {
+        const MAX: usize = MAX_LENGTH as usize;
         match self.len() {
             0..=31 => Error::at(self.short_len(), EncodingTooShort).into(),
-            32..=MAX_LENGTH => Ok(()),
+            32..=MAX => Ok(()),
             _ => Error::at(self.short_len(), EncodingTooLong).into(),
         }
     }

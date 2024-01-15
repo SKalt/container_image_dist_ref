@@ -25,10 +25,10 @@
 
 use crate::{
     ambiguous::host_or_path::{HostOrPathSpan, Kind as PathKind},
-    err::{self, Error},
+    err,
     span::{impl_span_methods_on_tuple, IntoOption, Length, Lengthy, Short},
 };
-
+type Error = err::Error<Short>;
 fn adapt_error(e: Error) -> Error {
     let kind = match e.kind() {
         err::Kind::HostOrPathNoMatch => err::Kind::PathNoMatch,
@@ -37,7 +37,7 @@ fn adapt_error(e: Error) -> Error {
         err::Kind::HostOrPathTooLong => err::Kind::PathTooLong,
         _ => e.kind(),
     };
-    Error(e.index(), kind)
+    Error::at(e.index(), kind)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -56,7 +56,7 @@ impl<'src> TryFrom<HostOrPathSpan<'src>> for PathSpan<'src> {
             } else {
                 Self::none()
             }),
-            Host => Err(Error(ambiguous.short_len(), err::Kind::PathInvalidChar)),
+            Host => Err(Error::at(ambiguous.short_len(), err::Kind::PathInvalidChar)),
             IpV6 => Ok(Self(Length::new(ambiguous.short_len()))),
         }
     }
@@ -82,15 +82,20 @@ impl<'src> PathSpan<'src> {
         let mut index: Short = 0;
         loop {
             let next = src[index as usize..].bytes().next();
-            index = match next {
+            match next {
                 None | Some(b':') | Some(b'@') => break,
-                Some(b'/') => Ok(index + 1),
-                Some(_) => Err(Error(index + 1, err::Kind::PathInvalidChar)),
+                Some(b'/') => Ok(()),
+                Some(_) => Err(Error::at(index, err::Kind::PathInvalidChar)),
             }?;
+            index = index
+                .checked_add(1)
+                .ok_or(Error::at(index, err::Kind::PathTooLong))?;
             let rest = &src[index as usize..];
             let section = Self::parse_component(rest).map_err(|e| e + index)?;
-            match section.into_option() {
-                Some(p) => index += p.short_len(),
+            index = match section.into_option() {
+                Some(p) => index
+                    .checked_add(p.short_len())
+                    .ok_or(Error::at(Short::MAX, err::Kind::PathTooLong))?,
                 None => break,
             }
         }
@@ -98,9 +103,17 @@ impl<'src> PathSpan<'src> {
     }
     pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
         let index = Self::parse_component(src)?.short_len();
-        Self::parse_from_slash(&src[index as usize..])
-            .map(|p| Self(Length::new(p.short_len() + index)))
-            .map_err(|e| e + index)
+        let result = Self::parse_from_slash(&src[index as usize..]).map_err(|e| {
+            index
+                .checked_add(e.index())
+                .map(|i| Error::at(i, e.kind()))
+                .unwrap_or(Error::at(Short::MAX, err::Kind::PathTooLong))
+        })?;
+        let len = result
+            .short_len()
+            .checked_add(index)
+            .ok_or(Error::at(Short::MAX, err::Kind::PathTooLong))?;
+        Ok(Self(Length::new(len)))
     }
     pub(crate) fn from_ambiguous(
         ambiguous: HostOrPathSpan<'src>,
@@ -112,7 +125,7 @@ impl<'src> PathSpan<'src> {
             } else {
                 Self::none()
             }),
-            PathKind::Host => Err(Error(
+            PathKind::Host => Error::at(
                 ambiguous.span_of(context)
                     .bytes().enumerate()
                     .find(|(_, b)| b.is_ascii_uppercase())
@@ -121,7 +134,8 @@ impl<'src> PathSpan<'src> {
                     .try_into()
                     .unwrap(), // safe since ambiguous.span_of(context) must be short
                 err::Kind::PathInvalidChar,
-            )),
+            )
+            .into(),
             PathKind::IpV6 => Ok(Self(ambiguous.into_length())),
         }
     }
@@ -141,7 +155,7 @@ impl<'src> PathStr<'src> {
     pub fn from_exact_match(src: &'src str) -> Result<Self, Error> {
         let span = PathSpan::new(src)?;
         if span.len() != src.len() {
-            return Err(Error(span.short_len(), err::Kind::PathNoMatch));
+            return Error::at(span.short_len(), err::Kind::PathNoMatch).into();
         }
         Ok(PathStr::from_span(src, span))
     }

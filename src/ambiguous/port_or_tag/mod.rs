@@ -41,6 +41,7 @@ impl<'src> PortOrTagSpan<'src> {
         }
         let mut len = 0;
         let ascii = src.as_bytes();
+        // safe since len is going from 0 -> 1
         len += match ascii[len as usize] {
             b':' => Ok(1), // consume the starting colon
             b'/' | b'@' => return Ok(Self(0.into(), kind)),

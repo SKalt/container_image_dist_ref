@@ -2,8 +2,6 @@ use core::marker::PhantomData;
 pub type Short = u8;
 pub type Long = u16;
 
-pub(crate) const MAX_USIZE: usize = Short::MAX as usize; // FIXME: deprecate
-
 /// To avoid lugging around an entire &str (which costs 2 pointer-sizes), we can
 /// use a span to represent a length of string with a lifetime tied to the original
 /// string slice.
@@ -39,49 +37,17 @@ impl<Size: Into<usize>> From<Length<'_, Size>> for usize {
     }
 }
 
-/// A span that is guaranteed to be non-zero length
-#[derive(Clone, Copy)]
-pub(crate) struct Span<'src>(Short, PhantomData<&'src str>);
-impl<'src> Span<'src> {
-    pub(crate) fn new(len: Short) -> Self {
-        debug_assert!(len > 0);
-        Self(len, PhantomData)
-    }
-}
-
-impl core::ops::Add<Short> for Span<'_> {
-    type Output = Self;
-    fn add(self, rhs: Short) -> Self {
-        Self(self.0 + rhs, PhantomData)
-    }
-}
-
-impl core::ops::Add<usize> for Length<'_> {
+impl<Size> core::ops::Add<usize> for Length<'_, Size>
+where
+    Size: TryFrom<usize>,
+    Size: core::ops::Add<Size, Output = Size>,
+    <Size as TryFrom<usize>>::Error: core::fmt::Debug,
+{
     type Output = Self;
     fn add(self, rhs: usize) -> Self {
-        debug_assert!((rhs + self.0 as usize) <= MAX_USIZE);
-        let small: Short = rhs.try_into().unwrap();
-        let result: Short = self.0 + small; //+ rhs.try_into().unwrap();
+        let small: Size = rhs.try_into().unwrap();
+        let result = self.0 + small; //+ rhs.try_into().unwrap();
         Self(result, PhantomData)
-    }
-}
-
-impl TryFrom<Length<'_>> for Span<'_> {
-    type Error = (); // TODO: use kind?
-    fn try_from(len: Length) -> Result<Self, Self::Error> {
-        len.into_option().map(|l| Self::new(l.0)).ok_or(())
-    }
-}
-
-impl From<Span<'_>> for usize {
-    fn from(span: Span) -> Self {
-        span.0 as usize // U is always a small, valid usize
-    }
-}
-
-impl From<Span<'_>> for Length<'_> {
-    fn from(span: Span) -> Self {
-        Self::new(span.0)
     }
 }
 

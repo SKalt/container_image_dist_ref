@@ -35,7 +35,7 @@ use err::Kind::{
 };
 fn try_add(a: Short, b: Short) -> Result<Short, Error> {
     a.checked_add(b)
-        .ok_or_else(|| Error::at(Short::MAX.into(), err::Kind::AlgorithmTooLong))
+        .ok_or(Error::at(Short::MAX.into(), err::Kind::AlgorithmTooLong))
 }
 
 impl<'src> AlgorithmSpan<'src> {
@@ -47,7 +47,6 @@ impl<'src> AlgorithmSpan<'src> {
             if !is_separator(next) {
                 break;
             }
-            // TODO: check for overflow
             len = try_add(len, 1)?; // consume the separator
             let (component_len, component_compliance) =
                 component(&src[len as usize..], compliance)?;

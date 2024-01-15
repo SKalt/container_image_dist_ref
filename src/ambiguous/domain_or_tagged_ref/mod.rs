@@ -69,8 +69,8 @@ impl<'src> DomainOrRefSpan<'src> {
             Some(b'/') | Some(b'@') | None => Ok(PortOrTagSpan::none()),
             Some(_) => err::Error::<Short>::at(0, err::Kind::HostOrPathInvalidChar).into(),
         }
-        .map_err(|e: err::Error<Short>| -> Error { e.into() })
-        .map_err(|e| e + left.short_len())?;
+        .map_err(|e: err::Error<Short>| e.into())
+        .map_err(|e: err::Error<Long>| e + left.short_len())?;
 
         let kind = Self::infer_kind_from_suffix(src[left.len() + right.len()..].bytes().next())?;
         Self::from_parts(left, right, kind, src)
@@ -102,7 +102,8 @@ impl<'src> DomainOrRefSpan<'src> {
         };
         let right = right
             .narrow(right_kind, &context[left.len()..])
-            .map_err(|e| e + left.short_len())?;
+            .map_err(|e: err::Error<Short>| e.into())
+            .map_err(|e: err::Error<Long>| e + left.short_len())?;
         match target {
             Kind::Domain => Ok(Self::Domain(DomainSpan::from_ambiguous_parts(
                 left, right, context,

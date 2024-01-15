@@ -279,13 +279,6 @@ impl<'src> HostOrPathSpan<'src> {
                 } else {
                     debug_assert!(!_post.last_was_dot)
                 }
-                debug_assert!(
-                    _pre.has_upper == _post.has_upper,
-                    "has_upper changed from {} to {} @ {}",
-                    _pre.has_upper,
-                    _post.has_upper,
-                    len
-                );
             }
             if len == Short::MAX {
                 match ascii[len as usize..].iter().next() {

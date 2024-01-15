@@ -53,7 +53,7 @@ impl<'src> PortOrTagSpan<'src> {
             #[cfg(debug_assertions)]
             let _c = c as char;
             kind = match c {
-                b'a'..=b'z' | b'A'..=b'Z' | b'.' | b'-' => match kind {
+                b'a'..=b'z' | b'A'..=b'Z' | b'.' | b'-' | b'_' => match kind {
                     Kind::Tag | Kind::Either => Ok(Kind::Tag),
                     Kind::Port => Err(Error(len + 1, err::Kind::PortInvalidChar)),
                 },

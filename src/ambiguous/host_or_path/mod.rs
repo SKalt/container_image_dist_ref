@@ -5,7 +5,7 @@ use crate::{
 };
 use err::Kind::{
     HostOrPathInvalidChar as InvalidChar, HostOrPathInvalidComponentEnd as InvalidComponentEnd,
-    HostOrPathNoMatch as NoMatch,
+    HostOrPathNoMatch as NoMatch, HostOrPathTooLong as TooLong,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -136,7 +136,7 @@ impl Scan {
     }
 }
 
-#[cfg(test)]
+#[cfg(debug_assertions)]
 struct DebugScan {
     #[allow(dead_code)]
     has_upper: bool,
@@ -150,7 +150,7 @@ struct DebugScan {
     has_underscore: bool,
 }
 
-#[cfg(test)]
+#[cfg(debug_assertions)]
 impl From<&Scan> for DebugScan {
     fn from(scan: &Scan) -> Self {
         Self {
@@ -248,9 +248,9 @@ impl<'src> HostOrPathSpan<'src> {
             _ => Err(Error(0, InvalidChar)),
         }?;
 
-        while (len < (Short::MAX - 1)) && (len as usize) < ascii.len() {
+        while (len as usize) < ascii.len() {
             let c = ascii[len as usize];
-            #[cfg(test)]
+            #[cfg(debug_assertions)]
             let (_c, _pre) = (c as char, DebugScan::from(&scan));
             match c {
                 b'a'..=b'z' | b'0'..=b'9' => {
@@ -265,7 +265,7 @@ impl<'src> HostOrPathSpan<'src> {
                 _ => Err(InvalidChar),
             }
             .map_err(|err_kind| Error::at(len, err_kind))?;
-            #[cfg(test)]
+            #[cfg(debug_assertions)]
             {
                 let _post = DebugScan::from(&scan);
                 if _c == '.' {
@@ -287,14 +287,16 @@ impl<'src> HostOrPathSpan<'src> {
                     len
                 );
             }
+            if len == Short::MAX {
+                match ascii[len as usize..].iter().next() {
+                    Some(b':') | Some(b'@') => Ok(()),
+                    _ => Error::at(len, TooLong).into(),
+                }?;
+                break;
+            }
             len += 1;
         }
-        if len == Short::MAX {
-            match ascii[len as usize..].iter().next() {
-                Some(b':') | Some(b'@') => Ok(()),
-                _ => Error::at(len, err::Kind::HostTooLong).into(),
-            }?;
-        }
+
         #[cfg(test)]
         let _scan = DebugScan::from(&scan);
         if scan.last_was_dash() || scan.last_was_dot() || scan.underscore_count() > 0 {

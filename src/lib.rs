@@ -371,16 +371,35 @@ mod tests {
         let expected = (domain, path, tag, digest);
         assert_eq!(actual, expected, "failed to parse {:?}", src);
     }
+
+    fn should_fail_with(src: &'_ str, expected: Error) {
+        let result = RefStr::new(src);
+
+        match result {
+            Ok(_) => panic!("expected parsing {src:?} to fail, but it succeeded"),
+            Err(e) => {
+                assert_eq!(e.index(), expected.index(), "wrong index in {src:?}",);
+                assert_eq!(e.kind(), expected.kind(), "wrong error kind for {src:?}",);
+            }
+        }
+    }
     #[test]
     fn test_name_only() {
         should_parse_as("test_com", None, Some("test_com"), None, None);
-        should_parse_as("test.com", None, Some("test.com"), None, None)
+        should_parse_as("test.com", None, Some("test.com"), None, None);
+        let s = "0".repeat(255);
+        should_parse_as(&s, None, Some(&s), None, None);
     }
     #[test]
     fn test_tagged_ref() {
         should_parse_as("test.com:tag", None, Some("test.com"), Some("tag"), None);
         should_parse_as("test.com:5000", None, Some("test.com"), Some("5000"), None);
-        should_parse_as("0:0A", None, Some("0"), Some("0A"), None)
+        should_parse_as("0:0A", None, Some("0"), Some("0A"), None);
+        should_parse_as("0:_", None, Some("0"), Some("_"), None);
+        should_fail_with(
+            "bad:port/path:tag",
+            err::Error::at(3, err::Kind::PortInvalidChar),
+        );
     }
     #[test]
     fn test_with_path() {

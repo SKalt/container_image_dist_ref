@@ -339,6 +339,11 @@ impl<'src> TryInto<CanonicalStr<'src>> for RefStr<'src> {
 }
 #[cfg(test)]
 mod tests {
+
+    extern crate alloc;
+
+    use alloc::string::String;
+
     use super::*;
     fn should_parse(src: &'_ str) -> RefStr<'_> {
         let result = RefStr::new(src);
@@ -400,6 +405,13 @@ mod tests {
             "bad:port/path:tag",
             err::Error::at(3, err::Kind::PortInvalidChar),
         );
+        {
+            let mut src = String::with_capacity(130);
+            src.push_str("0:");
+            let tag = &"0".repeat(128); // max tag length
+            src.push_str(&tag);
+            should_parse_as(&src, None, Some("0"), Some(&tag), None);
+        }
     }
     #[test]
     fn test_with_path() {

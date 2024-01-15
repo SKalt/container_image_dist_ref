@@ -48,7 +48,7 @@ impl<'src> PortOrTagSpan<'src> {
         }?;
 
         let mut kind = kind;
-        while (len <= 128) && (len as usize) < src.len() {
+        while (len as usize) < src.len() {
             let c = ascii[len as usize];
             #[cfg(debug_assertions)]
             let _c = c as char;
@@ -61,11 +61,12 @@ impl<'src> PortOrTagSpan<'src> {
                 b'/' | b'@' => break,
                 _ => return Err(Error(len + 1, err::Kind::PortOrTagInvalidChar)),
             }?;
+            if len > 128 {
+                return Err(Error(len, err::Kind::PortOrTagTooLong));
+            }
             len += 1;
         }
-        if len >= 128 {
-            return Err(Error(len, err::Kind::PortOrTagTooLong));
-        }
+
         Ok(Self(len.into(), kind))
     }
     pub(super) fn narrow(self, target: Kind, context: &'src str) -> Result<Self, Error> {

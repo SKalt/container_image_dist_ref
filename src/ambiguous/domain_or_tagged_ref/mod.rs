@@ -49,6 +49,10 @@ impl Lengthy<'_, Long> for DomainOrRefSpan<'_> {
     }
 }
 
+fn adapt_err(e: err::Error<Short>) -> err::Error<Long> {
+    e.into()
+}
+
 impl<'src> DomainOrRefSpan<'src> {
     pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
         let left = HostOrPathSpan::new(src, HostOrPathKind::Any)?
@@ -63,8 +67,8 @@ impl<'src> DomainOrRefSpan<'src> {
             Port
         };
         let right = PortOrTagSpan::new(right_src, right_kind)
-            .map_err(|e: err::Error<Short>| e.into())
-            .map_err(|e: err::Error<Long>| e + left.short_len())?;
+            .map_err(adapt_err)
+            .map_err(|e| e + left.short_len())?;
 
         let len = left.len() + right.len();
         let rest = &src[len..];
@@ -73,25 +77,27 @@ impl<'src> DomainOrRefSpan<'src> {
             Some(b'@') | None => {
                 return PathSpan::from_ambiguous(left)
                     .map(|p| Self::TaggedRef((p, right.into())))
-                    .map_err(|e| e.into())
+                    .map_err(adapt_err)
             } // needs to be a tagged ref no matter what
             Some(b'/') => match right.into_option().map(|r| r.kind()) {
                 Some(_) => {
                     return DomainSpan::from_ambiguous(left, right, src)
                         .map(Self::Domain)
-                        .map_err(|e: err::Error<Short>| e.into())
+                        .map_err(adapt_err)
                 }
                 None => match left.kind() {
                     Path => {
                         // need to extend the path
-                        let path = PathSpan::from_ambiguous(left)?;
-                        let path = path.extend(rest).map_err(|e| e + path.short_len())?; // FIXME: check addition
+                        let path = PathSpan::from_ambiguous(left)?
+                            .extend(rest)
+                            .map_err(adapt_err)
+                            .map_err(|e| e + left.short_len())?;
                         return Ok(Self::TaggedRef((path, right.into())));
                     }
                     Host | IpV6 | HostOrPath => {
                         return DomainSpan::from_ambiguous(left, right, src)
                             .map(Self::Domain)
-                            .map_err(|e| e.into())
+                            .map_err(adapt_err)
                     }
                     Any => unreachable!(
                         "HostOrPathSpan::new should always refine to a more specific kind"

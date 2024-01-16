@@ -22,7 +22,7 @@ use crate::{
     span::{IntoOption, Lengthy, Short},
 };
 
-/// a definite host and an optional port
+/// a definite host and an optional port. Combined length MUST be under 255 chars.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) struct DomainSpan<'src> {
     /// required: cannot be zero-length
@@ -50,19 +50,32 @@ impl<'src> IntoOption for DomainSpan<'src> {
     }
 }
 
+/// accessor functions
 impl<'src> DomainSpan<'src> {
-    pub(crate) fn host(&self) -> HostSpan<'src> {
+    pub fn host(&self) -> HostSpan<'src> {
         self.host
     }
 
     pub fn port(&self) -> PortSpan {
         self.port
     }
+}
 
-    pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
-        let host = HostSpan::try_from(src)?;
-        let port = PortSpan::new(&src[host.len()..]).map_err(|e| e + host.short_len())?;
+/// constructor methods
+impl<'src> DomainSpan<'src> {
+    /// check that a given HostSpan and PortSpan can be combined into a DomainSpan
+    /// without overflowing the 255 char limit
+    fn from_parts(host: HostSpan<'src>, port: PortSpan<'src>) -> Result<Self, Error> {
+        host.short_len()
+            .checked_add(port.short_len())
+            .ok_or(Error::at(Short::MAX, err::Kind::PortTooLong))?;
         Ok(Self { host, port })
+    }
+    /// parse a domain from the start of a string.
+    pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
+        let host = HostSpan::new(src)?;
+        let port = PortSpan::new(&src[host.len()..]).map_err(|e| e + host.short_len())?;
+        Self::from_parts(host, port)
     }
 
     pub(crate) fn from_ambiguous(
@@ -75,7 +88,7 @@ impl<'src> DomainSpan<'src> {
             return Err(Error::at(0, err::Kind::HostNoMatch));
         }
         let port = PortSpan::from_ambiguous(port, &context[host.len()..])?;
-        Ok(Self { host, port })
+        Self::from_parts(host, port)
     }
 }
 

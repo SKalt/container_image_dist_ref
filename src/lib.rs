@@ -89,7 +89,9 @@ impl<'src> RefSpan<'src> {
             .map_err(|e: err::Error<Long>| e + prefix.short_len()),
             Some(b'@') | None => match prefix {
                 DomainOrRefSpan::TaggedRef((name, _)) => Ok(name),
-                DomainOrRefSpan::Domain(_) => unreachable!("~~~"), // FIXME: add explanation
+                DomainOrRefSpan::Domain(_) => {
+                    unreachable!("if the left segment peeked an '@', it would parse as a TaggedRef")
+                }
             },
             Some(_) => Err(Error::at(0, err::Kind::PathInvalidChar)),
         }

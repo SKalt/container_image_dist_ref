@@ -52,31 +52,12 @@ impl<'src> TryFrom<HostOrPathSpan<'src>> for HostSpan<'_> {
     }
 }
 
-impl<'src> TryFrom<&'src str> for HostSpan<'src> {
-    type Error = Error;
-    fn try_from(src: &'src str) -> Result<Self, Error> {
-        HostOrPathSpan::new(src, HostKind::Any)
-            .map_err(disambiguate_err)?
-            .try_into()
-            .map_err(|e: Error| match e.kind() {
-                crate::err::Kind::HostInvalidChar => Error::at(
-                    src.find('_').unwrap().try_into().unwrap(),
-                    // this error only occurs if there was an underscore in the source str,
-                    // it doesn't carry the location of the offending character.
-                    // Here, we find the index of the first underscore using the source str.
-                    crate::err::Kind::HostInvalidChar,
-                ),
-                _ => e,
-            })
-    }
-}
-
 impl<'src> HostSpan<'src> {
     pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
         // handle bracketed ipv6 addresses
-        HostOrPathSpan::new(src, HostKind::HostOrPath)
-            .map_err(disambiguate_err)?
-            .try_into()
+        Self::from_ambiguous(
+            HostOrPathSpan::new(src, HostKind::HostOrPath).map_err(disambiguate_err)?,
+        )
     }
     pub(crate) fn from_ambiguous(ambiguous: HostOrPathSpan<'src>) -> Result<Self, Error> {
         let kind = match ambiguous.kind() {

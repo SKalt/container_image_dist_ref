@@ -72,7 +72,12 @@ impl<'src> PathSpan<'src> {
             }?;
             let rest = &src[index as usize..];
             let update = Self::parse_component(rest)
-                .map_err(|e| e + index)?
+                .map_err(|e| {
+                    e.index()
+                        .checked_add(index)
+                        .map(|i| Error::at(i, e.kind()))
+                        .unwrap_or(Error::at(Short::MAX, err::Kind::PathTooLong))
+                })?
                 .into_option()
                 .map(|p| p.short_len())
                 .map(|len| {

@@ -38,11 +38,13 @@ pub(crate) enum DomainOrRefSpan<'src> {
     TaggedRef((PathSpan<'src>, TagSpan<'src>)),
 }
 
-impl Lengthy<'_, Short> for DomainOrRefSpan<'_> {
-    fn short_len(&self) -> Short {
+impl Lengthy<'_, Long> for DomainOrRefSpan<'_> {
+    fn short_len(&self) -> Long {
         match self {
-            DomainOrRefSpan::Domain(d) => d.short_len(),
-            DomainOrRefSpan::TaggedRef((left, right)) => left.short_len() + right.short_len(),
+            DomainOrRefSpan::Domain(d) => d.short_len().into(),
+            DomainOrRefSpan::TaggedRef((left, right)) => {
+                left.short_len() as Long + right.short_len() as Long
+            }
         }
     }
 }

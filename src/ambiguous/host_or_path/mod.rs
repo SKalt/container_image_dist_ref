@@ -228,7 +228,7 @@ impl<'src> HostOrPathSpan<'src> {
     }
     fn from_ipv6(src: &'src str) -> Result<Self, Error> {
         let span = ipv6::Ipv6Span::new(src)?;
-        Ok(Self(span.short_len().into(), Kind::IpV6.into(), 0))
+        Ok(Self(span.short_len().into(), Kind::IpV6, 0))
     }
 
     /// can return 0-length spans if at EOF or the first character is a `/` or `@`
@@ -247,7 +247,7 @@ impl<'src> HostOrPathSpan<'src> {
                 None => return Ok(Self(0.into(), kind, 0)),
                 Some(b'[') => {
                     return match kind {
-                        Kind::IpV6 | Kind::Any => Self::from_ipv6(&src),
+                        Kind::IpV6 | Kind::Any => Self::from_ipv6(src),
                         _ => Err(Error::at(0, InvalidChar)),
                     }
                 }

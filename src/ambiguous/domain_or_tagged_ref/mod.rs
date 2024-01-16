@@ -78,7 +78,7 @@ impl<'src> DomainOrRefSpan<'src> {
             Some(b'/') => match right.into_option().map(|r| r.kind()) {
                 Some(_) => {
                     return DomainSpan::from_ambiguous(left, right, src)
-                        .map(|d| Self::Domain(d))
+                        .map(Self::Domain)
                         .map_err(|e: err::Error<Short>| e.into())
                 }
                 None => match left.kind() {
@@ -90,7 +90,7 @@ impl<'src> DomainOrRefSpan<'src> {
                     }
                     Host | IpV6 | HostOrPath => {
                         return DomainSpan::from_ambiguous(left, right, src)
-                            .map(|d| Self::Domain(d))
+                            .map(Self::Domain)
                             .map_err(|e| e.into())
                     }
                     Any => unreachable!(

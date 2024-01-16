@@ -24,6 +24,38 @@ impl<'src> IntoOption for PortOrTagSpan<'src> {
         Self(0.into(), Kind::Port) // port is compatible with both ports and tags
     }
 }
+struct State {
+    len: Short,
+    kind: Kind,
+    first_tag_char: Short,
+}
+impl State {
+    fn update_kind(&mut self, other: Kind) -> Result<(), Error> {
+        match (self.kind, other) {
+            (Kind::Port, Kind::Port) | (Kind::Tag, Kind::Tag) => Ok(()),
+            (Kind::Port, Kind::Tag) => {
+                self.first_tag_char = self.len;
+                self.kind = Kind::Tag;
+                Ok(())
+            } // all ports are valid tags
+            (Kind::Tag, Kind::Port) => {
+                Error::at(self.first_tag_char, err::Kind::PortInvalidChar).into()
+            } // Kind::Tag is not compatible with Kind::Port
+        }
+    }
+    fn advance(&mut self) -> Result<(), Error> {
+        if self.len > 128 && self.kind == Kind::Tag {
+            Error::at(self.len, err::Kind::TagTooLong).into()
+        } else {
+            self.len = self
+                .len
+                .checked_add(1)
+                .ok_or(Error::at(self.len, err::Kind::PortTooLong))?;
+            Ok(())
+        }
+    }
+}
+
 impl<'src> PortOrTagSpan<'src> {
     #[inline(always)]
     pub(crate) fn span(&self) -> ShortLength<'src> {
@@ -37,50 +69,32 @@ impl<'src> PortOrTagSpan<'src> {
     pub(crate) fn new(src: &str, kind: Kind) -> Result<Self, Error> {
         let ascii = src.as_bytes();
         // safe since len is going from 0 -> 1
-        match ascii.iter().next() {
+        let mut bytes = src.bytes();
+        match bytes.next() {
             Some(b':') => Ok(()), // consume the starting colon
             None | Some(b'/') | Some(b'@') => return Ok(Self::none()),
             _ => Err(Error::at(0, err::Kind::PortOrTagInvalidChar)),
         }?;
-        struct State {
-            len: Short,
-            kind: Kind,
-            first_tag_char: Short,
-        }
-        impl State {
-            fn update_kind(&mut self, other: Kind) -> Result<(), Error> {
-                match (self.kind, other) {
-                    (Kind::Port, Kind::Port) | (Kind::Tag, Kind::Tag) => Ok(()),
-                    (Kind::Port, Kind::Tag) => {
-                        self.first_tag_char = self.len;
-                        self.kind = Kind::Tag;
-                        Ok(())
-                    } // all ports are valid tags
-                    (Kind::Tag, Kind::Port) => {
-                        Error::at(self.first_tag_char, err::Kind::PortInvalidChar).into()
-                    } // Kind::Tag is not compatible with Kind::Port
-                }
-            }
-            fn advance(&mut self) -> Result<(), Error> {
-                if self.len > 128 && self.kind == Kind::Tag {
-                    Error::at(self.len, err::Kind::TagTooLong).into()
-                } else {
-                    self.len = self
-                        .len
-                        .checked_add(1)
-                        .ok_or(Error::at(self.len, err::Kind::PortTooLong))?;
-                    Ok(())
-                }
-            }
-        }
+
         let mut state = State {
             len: 1,
             kind,
             first_tag_char: Short::MAX, // <- since ports/tags are limited to 127 ch, this is 255 is a niche
         };
 
-        while (state.len as usize) < src.len() {
-            let c = ascii[state.len as usize];
+        // the first character after the colon must be alphanumeric or an underscore
+        match bytes.next() {
+            None | Some(b'/') | Some(b'@') => Error::at(1, err::Kind::PortOrTagMissing).into(),
+            Some(b'0'..=b'9') => {
+                // both ports and tags can have digits
+                state.update_kind(state.kind)
+            }
+            Some(b'a'..=b'z') | Some(b'A'..=b'Z') | Some(b'_') => state.update_kind(Kind::Tag),
+            Some(_) => Error::at(1, err::Kind::PortOrTagInvalidChar).into(),
+        }?;
+        state.advance()?;
+
+        for c in bytes {
             #[cfg(debug_assertions)]
             let _c = c as char;
             match c {

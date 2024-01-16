@@ -251,6 +251,7 @@ impl<'src> HostOrPathSpan<'src> {
                         _ => Err(Error::at(0, InvalidChar)),
                     }
                 }
+                Some(b'.') | Some(b'-') | Some(b'_') => return Error::at(0, InvalidChar).into(),
                 _ => {}
             };
         };

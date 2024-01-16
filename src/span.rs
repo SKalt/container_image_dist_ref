@@ -24,30 +24,9 @@ impl<Size> From<Size> for Length<'_, Size> {
 pub type ShortLength<'src> = Length<'src, Short>;
 pub type LongLength<'src> = Length<'src, u16>;
 
-impl core::ops::Add<Short> for Length<'_> {
-    type Output = Self;
-    fn add(self, rhs: Short) -> Self {
-        Self::new(self.0 + rhs)
-    }
-}
-
 impl<Size: Into<usize>> From<Length<'_, Size>> for usize {
-    fn from(span: Length<Size>) -> Self {
+    fn from(span: Length<Size>) -> usize {
         span.0.into()
-    }
-}
-
-impl<Size> core::ops::Add<usize> for Length<'_, Size>
-where
-    Size: TryFrom<usize>,
-    Size: core::ops::Add<Size, Output = Size>,
-    <Size as TryFrom<usize>>::Error: core::fmt::Debug,
-{
-    type Output = Self;
-    fn add(self, rhs: usize) -> Self {
-        let small: Size = rhs.try_into().unwrap();
-        let result = self.0 + small; //+ rhs.try_into().unwrap();
-        Self(result, PhantomData)
     }
 }
 
@@ -60,9 +39,6 @@ where
     fn len(&self) -> usize {
         self.short_len().into()
     }
-    // fn is_empty(&self) -> bool {
-    //     self.len() == 0
-    // }
     fn span_of(&self, src: &'src str) -> &'src str {
         &src[..self.len()]
     }
@@ -121,17 +97,7 @@ where
         }
     }
 }
-// impl<T> IntoOption for T where T: Lengthy + Sized + Copy + Clone {
-//     fn is_some(&self) -> bool {
-//         self.short_len() > 0
-//     }
-//     fn none() -> Self
-//     where
-//         Self: Sized,
-//     {
-//         Self::new(0)
-//     }
-// }
+
 impl<'src> IntoOption for Length<'src> {
     fn none() -> Self {
         Self::new(0)

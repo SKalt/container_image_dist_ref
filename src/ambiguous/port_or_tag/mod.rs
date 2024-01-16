@@ -62,17 +62,13 @@ impl<'src> PortOrTagSpan<'src> {
                 }
             }
             fn advance(&mut self) -> Result<(), Error> {
-                if self.len > 128 {
-                    Error::at(
-                        self.len,
-                        match self.kind {
-                            Kind::Port => err::Kind::PortTooLong,
-                            Kind::Tag => err::Kind::TagTooLong,
-                        },
-                    )
-                    .into()
+                if self.len > 128 && self.kind == Kind::Tag {
+                    Error::at(self.len, err::Kind::TagTooLong).into()
                 } else {
-                    self.len += 1;
+                    self.len = self
+                        .len
+                        .checked_add(1)
+                        .ok_or(Error::at(self.len, err::Kind::PortTooLong))?;
                     Ok(())
                 }
             }

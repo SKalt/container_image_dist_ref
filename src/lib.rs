@@ -141,6 +141,7 @@ impl<'src> RefSpan<'src> {
             digest,
         })
     }
+
     fn path_index(&self) -> usize {
         self.domain.len()
     }
@@ -297,9 +298,15 @@ impl<'src> CanonicalStr<'src> {
         path
     }
     pub fn name(&self) -> &str {
-        &self.src[self.span.0.name_range().unwrap()]
+        let result = &self.src[self.span.0.name_range().unwrap()];
+        debug_assert!(
+            !result.is_empty(),
+            "canonical refs should have non-empty names by construction"
+        );
+        result
     }
     pub fn tag(&self) -> Option<&str> {
+        // tags aren't required for canonical refs
         self.span
             .0
             .tag
@@ -336,8 +343,8 @@ impl<'src> TryInto<CanonicalSpan<'src>> for RefSpan<'src> {
             err::Kind::PathNoMatch,
         ))?;
         self.digest.into_option().ok_or(Error::at(
-            self.digest_index().try_into().unwrap(),
-            err::Kind::AlgorithmNoMatch, // TODO: more specific error?
+            self.digest_index().try_into().unwrap(), // safe to unwrap since host + path + tag + algorithm MUST be under u16::MAX
+            err::Kind::AlgorithmNoMatch,             // TODO: more specific error?
         ))?;
 
         Ok(CanonicalSpan(self))

@@ -17,9 +17,11 @@ pub(crate) enum Kind {
 pub(crate) struct PortOrTagSpan<'src>(pub(crate) ShortLength<'src>, pub(crate) Kind);
 impl_span_methods_on_tuple!(PortOrTagSpan, Short);
 impl<'src> IntoOption for PortOrTagSpan<'src> {
+    #[inline(always)]
     fn is_some(&self) -> bool {
         self.short_len() > 0
     }
+    #[inline(always)]
     fn none() -> Self {
         Self(0.into(), Kind::Port) // port is compatible with both ports and tags
     }

@@ -126,38 +126,35 @@ fn is_separator(c: u8) -> bool {
 /// with what standard(s) the component is compliant with.
 fn component(src: &str, compliance: Compliance) -> Result<(Short, Compliance), Error> {
     use Compliance::*;
-    if src.is_empty() {
-        return Error::at(0, AlgorithmNoMatch).into();
-    }
-
-    let mut len: Short = 0;
-    let compliance = match src.as_bytes()[len as usize] {
-        b'a'..=b'z' => Ok(compliance), // universally compatible first character
-        b'0'..=b'9' => {
+    let mut bytes = src.bytes();
+    let compliance = match bytes.next() {
+        Some(b'a'..=b'z') => Ok(compliance), // universally compatible first character
+        Some(b'0'..=b'9') => {
             // acceptable according to OCI spec, but not distribution/reference
             //  but not the OCI image spec
             if compliance == Distribution {
                 // this is not a valid OCI algorithm
-                Error::at(len.into(), AlgorithmInvalidNumericPrefix).into()
+                Error::at(0, AlgorithmInvalidNumericPrefix).into()
             } else {
                 Ok(Oci)
             }
         }
-        b'A'..=b'Z' => {
+        Some(b'A'..=b'Z') => {
             // acceptable according to distribution/reference
             // but not the OCI image spec
             if compliance == Oci {
                 // this is not a valid OCI algorithm
-                Error::at(len.into(), InvalidOciAlgorithm).into()
+                Error::at(0, InvalidOciAlgorithm).into()
             } else {
                 Ok(Distribution)
             }
         }
-        _ => Error::at(len.into(), AlgorithmInvalidChar).into(),
+        None => Error::at(0, AlgorithmNoMatch).into(),
+        _ => Error::at(0, AlgorithmInvalidChar).into(),
     }?;
-    len += 1;
-    while (len as usize) < src.len() {
-        let c = src.as_bytes()[len as usize];
+
+    let mut len: Short = 1;
+    for c in bytes {
         #[cfg(debug_assertions)]
         let _c = c as char;
         match c {
@@ -175,10 +172,9 @@ fn component(src: &str, compliance: Compliance) -> Result<(Short, Compliance), E
             b':' | b'+' | b'.' | b'_' | b'-' => break,
             _ => Error::at(len.into(), AlgorithmInvalidChar).into(),
         }?;
-        if len == Short::MAX {
-            return Error::at(len.into(), err::Kind::AlgorithmTooLong).into();
-        }
-        len += 1;
+        len = len
+            .checked_add(1)
+            .ok_or(Error::at(len.into(), err::Kind::AlgorithmTooLong))?;
     }
     Ok((len, compliance))
 }

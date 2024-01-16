@@ -65,22 +65,14 @@ impl<'src> DomainSpan<'src> {
         Ok(Self { host, port })
     }
 
-    pub(crate) fn from_ambiguous_parts(
+    pub(crate) fn from_ambiguous(
         host: HostOrPathSpan<'src>,
         port: PortOrTagSpan<'src>,
         context: &'src str,
     ) -> Result<Self, Error> {
-        debug_assert!(
-            host.len() + port.len() <= context.len(),
-            "ambiguous.len() = {}, context.len() = {}, context = {}",
-            host.len() + port.len(),
-            context.len(),
-            context
-        );
-
-        let host = HostSpan::from_ambiguous(host, context)?;
+        let host = HostSpan::from_ambiguous(host)?;
         if host.is_none() {
-            return Err(Error(0, err::Kind::HostNoMatch));
+            return Err(Error::at(0, err::Kind::HostNoMatch));
         }
         let port = PortSpan::from_ambiguous(port, &context[host.len()..])?;
         Ok(Self { host, port })
@@ -113,7 +105,7 @@ impl<'src> DomainStr<'src> {
     pub fn from_exact_match(src: &'src str) -> Result<Self, Error> {
         let result = DomainStr::from_prefix(src)?;
         if result.len() != src.len() {
-            return Err(Error(result.span.short_len(), ErrorKind::HostNoMatch));
+            return Err(Error::at(result.span.short_len(), ErrorKind::HostNoMatch));
         }
         Ok(result)
     }

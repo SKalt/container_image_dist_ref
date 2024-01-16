@@ -32,7 +32,6 @@ type Error = err::Error<Short>;
 fn adapt_error(e: Error) -> Error {
     let kind = match e.kind() {
         err::Kind::HostOrPathNoMatch => err::Kind::PathNoMatch,
-        // err::Kind::HostOrPathInvalidChar => err::Kind::PathComponentInvalidEnd,
         err::Kind::HostOrPathInvalidChar => err::Kind::PathInvalidChar,
         err::Kind::HostOrPathTooLong => err::Kind::PathTooLong,
         _ => e.kind(),
@@ -44,23 +43,6 @@ fn adapt_error(e: Error) -> Error {
 pub(crate) struct PathSpan<'src>(Length<'src>);
 impl_span_methods_on_tuple!(PathSpan, Short);
 
-impl<'src> TryFrom<HostOrPathSpan<'src>> for PathSpan<'src> {
-    type Error = Error;
-    fn try_from(ambiguous: HostOrPathSpan) -> Result<Self, Error> {
-        use PathKind::*;
-        // since 0-length HostOrPath will always have type Either, we can
-        // safely downcast to the more specific PathSpan
-        match ambiguous.kind() {
-            Either | Path => Ok(if ambiguous.is_some() {
-                Self(Length::new(ambiguous.short_len()))
-            } else {
-                Self::none()
-            }),
-            Host => Err(Error::at(ambiguous.short_len(), err::Kind::PathInvalidChar)),
-            IpV6 => Ok(Self(Length::new(ambiguous.short_len()))),
-        }
-    }
-}
 impl IntoOption for PathSpan<'_> {
     fn is_some(&self) -> bool {
         self.short_len() > 0
@@ -70,36 +52,47 @@ impl IntoOption for PathSpan<'_> {
     }
 }
 impl<'src> PathSpan<'src> {
-    fn none() -> Self {
-        Self(Length::new(0))
-    }
     fn parse_component(src: &'src str) -> Result<Self, Error> {
-        HostOrPathSpan::new(src, PathKind::Path)
-            .map_err(adapt_error)?
-            .try_into()
+        let parsed =
+            Self::from_ambiguous(HostOrPathSpan::new(src, PathKind::Path).map_err(adapt_error)?)?;
+        parsed
+            .into_option()
+            .ok_or(Error::at(0, err::Kind::PathComponentInvalidEnd))
     }
     pub(crate) fn parse_from_slash(src: &'src str) -> Result<Self, Error> {
         let mut index: Short = 0;
         loop {
             let next = src[index as usize..].bytes().next();
-            match next {
+            index = match next {
+                Some(b'/') => index
+                    .checked_add(1)
+                    .ok_or(Error::at(index, err::Kind::PathTooLong)),
                 None | Some(b':') | Some(b'@') => break,
-                Some(b'/') => Ok(()),
                 Some(_) => Err(Error::at(index, err::Kind::PathInvalidChar)),
             }?;
-            index = index
-                .checked_add(1)
-                .ok_or(Error::at(index, err::Kind::PathTooLong))?;
             let rest = &src[index as usize..];
-            let section = Self::parse_component(rest).map_err(|e| e + index)?;
-            index = match section.into_option() {
-                Some(p) => index
-                    .checked_add(p.short_len())
-                    .ok_or(Error::at(Short::MAX, err::Kind::PathTooLong))?,
+            let update = Self::parse_component(rest)
+                .map_err(|e| e + index)?
+                .into_option()
+                .map(|p| p.short_len())
+                .map(|len| {
+                    index
+                        .checked_add(len)
+                        .ok_or(Error::at(Short::MAX, err::Kind::PathTooLong))
+                });
+            index = match update {
                 None => break,
-            }
+                Some(new_len) => new_len,
+            }?;
         }
         Ok(Self(Length::new(index)))
+    }
+    pub(crate) fn extend(&self, rest: &'src str) -> Result<Self, Error> {
+        let len = Self::parse_from_slash(rest)?
+            .short_len()
+            .checked_add(self.short_len())
+            .ok_or(Error::at(Short::MAX, err::Kind::PathTooLong))?;
+        Ok(Self(Length::new(len)))
     }
     pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
         let index = Self::parse_component(src)?.short_len();
@@ -115,29 +108,15 @@ impl<'src> PathSpan<'src> {
             .ok_or(Error::at(Short::MAX, err::Kind::PathTooLong))?;
         Ok(Self(Length::new(len)))
     }
-    pub(crate) fn from_ambiguous(
-        ambiguous: HostOrPathSpan<'src>,
-        context: &'src str,
-    ) -> Result<Self, Error> {
-        match ambiguous.kind() {
-            PathKind::Either | PathKind::Path => Ok(if ambiguous.is_some() {
-                Self(ambiguous.into_length())
-            } else {
-                Self::none()
-            }),
-            PathKind::Host => Error::at(
-                ambiguous.span_of(context)
-                    .bytes().enumerate()
-                    .find(|(_, b)| b.is_ascii_uppercase())
-                    .map(|(i, _)| i)
-                    .unwrap() // safe since ambiguous.kind == Host, which means there must be an uppercase letter
-                    .try_into()
-                    .unwrap(), // safe since ambiguous.span_of(context) must be short
-                err::Kind::PathInvalidChar,
-            )
-            .into(),
-            PathKind::IpV6 => Ok(Self(ambiguous.into_length())),
-        }
+    pub(crate) fn from_ambiguous(ambiguous: HostOrPathSpan<'src>) -> Result<Self, Error> {
+        ambiguous
+            .into_option()
+            .map(|ambiguous| {
+                ambiguous
+                    .narrow(PathKind::Path)
+                    .map(|disambiguated| Self(disambiguated.into_length()))
+            })
+            .unwrap_or(Ok(Self::none()))
     }
 }
 

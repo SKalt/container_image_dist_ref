@@ -16,7 +16,7 @@ fn disambiguate_err(e: Error) -> Error {
         err::Kind::PortOrTagInvalidChar => err::Kind::PortInvalidChar,
         _ => e.kind(),
     };
-    Error(e.index(), kind)
+    Error::at(e.index(), kind)
 }
 impl<'src> IntoOption for PortSpan<'src> {
     fn is_some(&self) -> bool {
@@ -39,22 +39,23 @@ impl<'src> PortSpan<'src> {
         ambiguous: PortOrTagSpan<'src>,
         context: &'src str,
     ) -> Result<Self, Error> {
-        match ambiguous.kind() {
-            PortKind::Either | PortKind::Port => Ok(if ambiguous.is_some() {
-                Self(ambiguous.into_length())
-            } else {
-                Self::none()
-            }),
-            PortKind::Tag => Err(Error(
-                ambiguous.span_of(context)
-                    .bytes().enumerate()
-                    .find(|(_, b)| !b.is_ascii_digit())
-                    .map(|(i, _)| i)
-                    .unwrap() // safe since ambiguous.kind == Tag, which means there must be a non-digit ascii character
-                    .try_into()
-                    .unwrap(), // safe since ambiguous.span_of(context) must be short
-                err::Kind::PortInvalidChar,
-            )),
+        match ambiguous.into_option() {
+            None => Ok(Self::none()),
+            Some(ambiguous) => {
+                match ambiguous.kind() {
+                    PortKind::Port => Ok(Self(ambiguous.into_length())),
+                    PortKind::Tag => Err(Error::at(
+                        ambiguous.span_of(context)
+                            .bytes().enumerate()
+                            .find(|(_, b)| !b.is_ascii_digit())
+                            .map(|(i, _)| i)
+                            .unwrap() // safe since ambiguous.kind == Tag, which means there must be a non-digit ascii character
+                            .try_into()
+                            .unwrap(), // safe since ambiguous.span_of(context) must be short
+                        err::Kind::PortInvalidChar,
+                    )),
+                }
+            }
         }
     }
 }

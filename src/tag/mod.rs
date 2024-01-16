@@ -26,7 +26,7 @@ fn disambiguate_error(e: Error) -> Error {
         err::Kind::PortOrTagInvalidChar => err::Kind::TagInvalidChar,
         _ => e.kind(),
     };
-    Error(e.index(), kind)
+    Error::at(e.index(), kind)
 }
 impl<'src> TagSpan<'src> {
     /// can match an empty span if the first character in `src` is a `/` or `@`

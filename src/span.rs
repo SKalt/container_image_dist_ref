@@ -60,6 +60,9 @@ where
     fn len(&self) -> usize {
         self.short_len().into()
     }
+    // fn is_empty(&self) -> bool {
+    //     self.len() == 0
+    // }
     fn span_of(&self, src: &'src str) -> &'src str {
         &src[..self.len()]
     }
@@ -118,6 +121,17 @@ where
         }
     }
 }
+// impl<T> IntoOption for T where T: Lengthy + Sized + Copy + Clone {
+//     fn is_some(&self) -> bool {
+//         self.short_len() > 0
+//     }
+//     fn none() -> Self
+//     where
+//         Self: Sized,
+//     {
+//         Self::new(0)
+//     }
+// }
 impl<'src> IntoOption for Length<'src> {
     fn none() -> Self {
         Self::new(0)

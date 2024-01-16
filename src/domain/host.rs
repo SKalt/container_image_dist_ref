@@ -11,7 +11,7 @@ fn disambiguate_err(e: Error) -> Error {
         err::Kind::HostOrPathNoMatch => err::Kind::HostNoMatch,
         _ => e.kind(),
     };
-    Error(e.index(), kind)
+    Error::at(e.index(), kind)
 }
 
 use super::ipv6::Ipv6Span;
@@ -29,6 +29,7 @@ pub enum Kind {
     Empty,
 }
 
+/// can be ipv6
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) struct HostSpan<'src>(pub(crate) Length<'src>, pub(crate) Kind);
 impl_span_methods_on_tuple!(HostSpan, Short);
@@ -40,9 +41,11 @@ impl<'src> TryFrom<HostOrPathSpan<'src>> for HostSpan<'_> {
             Some(_) => {
                 use HostKind::*;
                 match ambiguous.kind() {
-                    Either | Host => Ok(Self(Length::new(ambiguous.short_len()), Kind::Domain)),
+                    HostOrPath | Any | Host => {
+                        Ok(Self(Length::new(ambiguous.short_len()), Kind::Domain))
+                    }
                     IpV6 => Ok(Self(Length::new(ambiguous.short_len()), Kind::Ipv6)),
-                    Path => Err(Error(0, crate::err::Kind::HostInvalidChar)), // <- needs the source str to find the index of the first underscore
+                    Path => Err(Error::at(0, crate::err::Kind::HostInvalidChar)), // <- needs the source str to find the index of the first underscore
                 }
             }
         }
@@ -52,11 +55,11 @@ impl<'src> TryFrom<HostOrPathSpan<'src>> for HostSpan<'_> {
 impl<'src> TryFrom<&'src str> for HostSpan<'src> {
     type Error = Error;
     fn try_from(src: &'src str) -> Result<Self, Error> {
-        HostOrPathSpan::new(src, HostKind::Either)
+        HostOrPathSpan::new(src, HostKind::Any)
             .map_err(disambiguate_err)?
             .try_into()
             .map_err(|e: Error| match e.kind() {
-                crate::err::Kind::HostInvalidChar => Error(
+                crate::err::Kind::HostInvalidChar => Error::at(
                     src.find('_').unwrap().try_into().unwrap(),
                     // this error only occurs if there was an underscore in the source str,
                     // it doesn't carry the location of the offending character.
@@ -71,29 +74,18 @@ impl<'src> TryFrom<&'src str> for HostSpan<'src> {
 impl<'src> HostSpan<'src> {
     pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
         // handle bracketed ipv6 addresses
-        HostOrPathSpan::new(src, HostKind::Either)
+        HostOrPathSpan::new(src, HostKind::HostOrPath)
             .map_err(disambiguate_err)?
             .try_into()
     }
-    pub(crate) fn from_ambiguous(
-        ambiguous: HostOrPathSpan<'src>,
-        context: &'src str,
-    ) -> Result<Self, Error> {
-        match ambiguous.kind() {
-            HostKind::Host | HostKind::Either => Ok(Self(ambiguous.into_length(), Kind::Domain)),
-            HostKind::IpV6 => Ok(Self(ambiguous.into_length(), Kind::Ipv6)),
-            HostKind::Path => Err(Error(
-                ambiguous
-                .span_of(context)
-                .bytes().enumerate()
-                .find(|(_, b)| b == &b'_')
-                .map(|(i, _)| i)
-                .unwrap() // safe since a Path must have at least one underscore
-                .try_into()
-                .unwrap(), // safe since ambiguous.span_of(context) must be short
-                err::Kind::HostInvalidChar,
-            )),
-        }
+    pub(crate) fn from_ambiguous(ambiguous: HostOrPathSpan<'src>) -> Result<Self, Error> {
+        let kind = match ambiguous.kind() {
+            HostKind::Host | HostKind::HostOrPath => Ok(Kind::Domain),
+            HostKind::IpV6 => Ok(Kind::Ipv6),
+            HostKind::Path => ambiguous.narrow(HostKind::Host).map(|_| unreachable!()),
+            HostKind::Any => unreachable!("HostKind::Any should have been disambiguated"),
+        }?;
+        Ok(Self(ambiguous.into_length(), kind))
     }
 }
 impl<'src> From<Ipv6Span<'src>> for HostSpan<'src> {
@@ -136,7 +128,7 @@ impl<'src> HostStr<'src> {
     pub fn from_exact_match(src: &'src str) -> Result<Self, Error> {
         let result = HostStr::from_prefix(src)?;
         if result.len() != src.len() {
-            return Err(Error(result.short_len(), crate::err::Kind::HostNoMatch));
+            return Err(Error::at(result.short_len(), crate::err::Kind::HostNoMatch));
         }
         Ok(result)
     }

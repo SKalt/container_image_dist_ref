@@ -1,7 +1,7 @@
 use crate::span::{Long, Short};
 
 // since ErrorKind can fit 256 unique errors, use it for all non-ambiguous cases
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     // ambiguous::host_or_path ---------------------------------
     HostOrPathNoMatch,
@@ -66,7 +66,7 @@ pub enum Kind {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Error<Size = Short>(pub(crate) Size, pub(crate) Kind);
+pub struct Error<Size = Short>(Size, Kind);
 impl From<Error<Short>> for Error<Long> {
     fn from(e: Error<Short>) -> Self {
         Self(e.0.into(), e.1)

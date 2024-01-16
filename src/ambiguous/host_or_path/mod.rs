@@ -5,42 +5,48 @@ use crate::{
 };
 use err::Kind::{
     HostOrPathInvalidChar as InvalidChar, HostOrPathInvalidComponentEnd as InvalidComponentEnd,
-    HostOrPathNoMatch as NoMatch, HostOrPathTooLong as TooLong,
+    HostOrPathTooLong as TooLong,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u8)]
 pub(crate) enum Kind {
-    /// could be either a host or a path
-    Either = 0,
     /// a path component that's incompatible with being a hostname, i.e. it
     /// contains underscore(s).
-    Path = Scan::HAS_UNDERSCORE,
+    Path,
     /// a hostname component that's incompatible with being a path. This variant means
-    /// the span contains uppercase letter(s), or is immediately followed by a '/'.
-    Host = Scan::HAS_UPPERCASE,
+    /// the span contains uppercase letter(s).
+    Host,
     /// Not ambiguous: an IPv6 address wrapped in square brackets, e.g. "[2001:db8::1]"
-    IpV6 = Scan::INVALID,
-}
-impl From<Kind> for Scan {
-    fn from(kind: Kind) -> Self {
-        Self(kind as u8)
-    }
+    IpV6,
+    /// could be either a path or a hostname since it contains neither underscores
+    /// nor uppercase letters
+    HostOrPath,
+    Any,
 }
 
-const MASK: u8 = Kind::Path as u8 | Kind::Host as u8;
 impl From<Scan> for Kind {
     fn from(scan: Scan) -> Self {
-        // TODO: compare performance of match vs if-else with inlined bit-ops
-        let raw = scan.0 & MASK;
-        match raw {
-            0 => Self::Either,
-            Scan::HAS_UNDERSCORE => Self::Path,
+        const ANY: u8 = Scan::IPV6 | Scan::HAS_UPPERCASE | Scan::HAS_UNDERSCORE;
+        match scan.0 & ANY {
+            0 => Self::HostOrPath,
             Scan::HAS_UPPERCASE => Self::Host,
-            _ => unreachable!("incompatible flags set: {raw:b}"),
+            Scan::HAS_UNDERSCORE => Self::Path,
+            _ => unreachable!(),
         }
     }
 }
+
+impl From<Kind> for Scan {
+    fn from(kind: Kind) -> Self {
+        match kind {
+            Kind::Host => Self(Self::HAS_UPPERCASE),
+            Kind::Path => Self(Self::HAS_UNDERSCORE),
+            Kind::IpV6 => Self(Self::IPV6),
+            Kind::HostOrPath | Kind::Any => Self(0),
+        }
+    }
+}
+
 struct Scan(u8);
 impl Scan {
     /// the number of underscores
@@ -49,7 +55,7 @@ impl Scan {
     const HAS_UPPERCASE: u8 = 1 << 3; //        0b00001000;
     const LAST_WAS_DOT: u8 = 1 << 4; //         0b00010000;
     const LAST_WAS_DASH: u8 = 1 << 5; //        0b00100000;
-    const INVALID: u8 = 1 << 6; //              0b01000000;
+    const IPV6: u8 = 1 << 6; //              0b01000000;
 
     // setters -----------------------------------------------------------------
     // all of which are fallible
@@ -75,18 +81,18 @@ impl Scan {
         if self.has_underscore() {
             Err(InvalidChar)
         } else {
-            self.reset();
             self.0 |= Self::HAS_UPPERCASE;
-            Ok(())
+            self.reset()
         }
     }
     fn set_underscore_count(&mut self, count: u8) -> Result<(), err::Kind> {
-        if count > 2 {
-            Err(InvalidChar)
-        } else {
-            self.0 &= !Self::UNDERSCORE_COUNT; // clear the count
-            self.0 |= count; // update the count
-            Ok(())
+        match count {
+            0..=2 => {
+                self.0 &= !Self::UNDERSCORE_COUNT; // clear the count
+                self.0 |= count; // update the count
+                Ok(())
+            }
+            _ => Err(InvalidChar),
         }
     }
     fn add_underscore(&mut self) -> Result<(), err::Kind> {
@@ -102,19 +108,21 @@ impl Scan {
 
     // resetters ---------------------------------------------------------------
     // all of these are infallible
-    fn reset(&mut self) {
-        self.reset_underscore();
-        self.unset_dash();
-        self.unset_dot();
+    fn reset(&mut self) -> Result<(), err::Kind> {
+        // for convenience
+        self.reset_underscore_count();
+        self.unset_last_was_dash();
+        self.unset_last_was_dot();
+        Ok(())
     }
-    fn unset_dot(&mut self) {
+    fn unset_last_was_dot(&mut self) {
         self.0 &= !Self::LAST_WAS_DOT;
     }
-    fn unset_dash(&mut self) {
+    fn unset_last_was_dash(&mut self) {
         self.0 &= !Self::LAST_WAS_DASH;
     }
 
-    fn reset_underscore(&mut self) {
+    fn reset_underscore_count(&mut self) {
         self.set_underscore_count(0).unwrap()
     }
 
@@ -136,6 +144,46 @@ impl Scan {
     }
 }
 
+struct State {
+    len: Short,
+    scan: Scan,
+    deciding_char: Option<Short>,
+}
+impl State {
+    fn advance(&mut self) -> Result<(), Error> {
+        self.len = self
+            .len
+            .checked_add(1)
+            .ok_or(Error::at(self.len, TooLong))?;
+        Ok(())
+    }
+    fn update_decider(&mut self) {
+        self.deciding_char = self.deciding_char.or(Some(self.len));
+    }
+    fn update(&mut self, ascii_char: u8) -> Result<(), Error> {
+        #[cfg(debug_assertions)]
+        let _c = ascii_char as char;
+
+        match ascii_char {
+            b'a'..=b'z' | b'0'..=b'9' => self.scan.reset(),
+            b'A'..=b'Z' => self.scan.set_upper().map(|_| self.update_decider()),
+            b'_' => self.scan.add_underscore().map(|_| self.update_decider()),
+            b'.' => self.scan.set_dot(),
+            b'-' => self.scan.set_dash(),
+            _ => Err(InvalidChar),
+        }
+        .map_err(|err_kind| Error::at(self.len, err_kind))
+    }
+    fn check_component_end(&self) -> Result<(), Error> {
+        let ok = !self.scan.last_was_dash()
+            && !self.scan.last_was_dot()
+            && self.scan.underscore_count() == 0;
+        match ok {
+            true => Ok(()),
+            false => Err(Error::at(self.len - 1, InvalidComponentEnd)),
+        }
+    }
+}
 #[cfg(debug_assertions)]
 struct DebugScan {
     #[allow(dead_code)]
@@ -164,143 +212,90 @@ impl From<&Scan> for DebugScan {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct HostOrPathSpan<'src>(ShortLength<'src>, Kind);
+pub(crate) struct HostOrPathSpan<'src>(ShortLength<'src>, Kind, Short);
 impl_span_methods_on_tuple!(HostOrPathSpan, Short);
 impl<'src> IntoOption for HostOrPathSpan<'src> {
     fn is_some(&self) -> bool {
         self.short_len() > 0
     }
     fn none() -> Self {
-        Self(0.into(), Kind::Either)
+        Self(0.into(), Kind::Any, 0)
     }
 }
 impl<'src> HostOrPathSpan<'src> {
-    pub(crate) fn narrow(self, target_kind: Kind, context: &'src str) -> Result<Self, Error> {
-        use Kind::*;
-        match (self.kind(), target_kind) {
-            (_, Either) => {
-                debug_assert!(false, "don't narrow to Either, that's broadening");
-                Ok(Self(self.0, Either))
-            }
-            (Either, _) => Ok(Self(self.0, target_kind)),
-            (IpV6, IpV6) | (Path, Path) | (Host, Host) => Ok(self),
-            (_, IpV6) => Error::at(0, InvalidChar).into(),
-            (IpV6, Path) | (IpV6, Host) => Error::at(0, InvalidChar).into(), // 0 must be an opening [, which is invalid for a Host or Path
-            (Host, Path) => {
-                let i = {
-                    let underscore_index = self
-                        .span_of(context)
-                        .bytes()
-                        .enumerate()
-                        .find(|(_, b)| b.is_ascii_uppercase())
-                        .map(|(i, _)| i);
-                    debug_assert!(
-                        underscore_index.is_some(),
-                        "unable to find _ in {context:?}"
-                    );
-                    underscore_index.unwrap() // safe since this self.kind() == Host means there must have been an uppercase letter
-                };
-                let i = i.try_into().unwrap(); // safe since self.span_of(context) must be short
-                Error::at(i, err::Kind::PathInvalidChar).into()
-            }
-            (Path, Host) => {
-                let offending_uppercase_index = self.span_of(context)
-                    .bytes().enumerate()
-                    .find(|(_, b)| b == &b'_')
-                    .map(|(i, _)| i)
-                    .unwrap() // safe since this self.kind() == Path means there must have been an underscore
-                    .try_into()
-                    .unwrap();
-                Err(Error(offending_uppercase_index, err::Kind::HostInvalidChar))
-            }
-        }
-    }
     pub(crate) fn kind(&self) -> Kind {
         self.1
     }
     fn from_ipv6(src: &'src str) -> Result<Self, Error> {
-        let span = ipv6::Ipv6Span::new(src.as_bytes())?;
-        Ok(Self(span.short_len().into(), Kind::IpV6))
+        let span = ipv6::Ipv6Span::new(src)?;
+        Ok(Self(span.short_len().into(), Kind::IpV6.into(), 0))
     }
 
+    /// can return 0-length spans if at EOF or the first character is a `/` or `@`
     pub(crate) fn new(src: &'src str, kind: Kind) -> Result<Self, Error> {
-        if src.is_empty() {
-            return Error::at(0, NoMatch).into();
-        }
-        let mut len = 0;
-        let ascii = src.as_bytes();
-        let mut scan: Scan = kind.into(); // <- scan's setters will enforce the kind's constraint(s)
-        let c = ascii[len as usize];
-        #[cfg(test)]
-        let _c = c as char;
-        len += match c {
-            // safe since len is going from 0 -> 1
-            b'a'..=b'z' | b'0'..=b'9' => Ok(1),
-            b'A'..=b'Z' => {
-                scan.set_upper().map_err(|kind| Error(0, kind))?;
-                Ok(1)
-            }
-            b'[' => {
-                return match kind {
-                    Kind::Either | Kind::IpV6 => Self::from_ipv6(src),
-                    _ => Error::at(0, InvalidChar).into(),
-                };
-            }
-            _ => Err(Error(0, InvalidChar)),
-        }?;
-
-        while (len as usize) < ascii.len() {
-            let c = ascii[len as usize];
-            #[cfg(debug_assertions)]
-            let (_c, _pre) = (c as char, DebugScan::from(&scan));
+        let mut state = State {
+            len: 0,
+            scan: kind.into(), // <- scan's setters will enforce the kind's constraint(s)
+            deciding_char: None,
+        };
+        {
+            // check the first character, if any
+            let c = src.bytes().next();
+            #[cfg(test)]
+            let _c = c.map(|c| c as char);
             match c {
-                b'a'..=b'z' | b'0'..=b'9' => {
-                    scan.reset();
-                    Ok(())
+                None => return Ok(Self(0.into(), kind, 0)),
+                Some(b'[') => {
+                    return match kind {
+                        Kind::IpV6 | Kind::Any => Self::from_ipv6(&src),
+                        _ => Err(Error::at(0, InvalidChar)),
+                    }
                 }
-                b'A'..=b'Z' => scan.set_upper(),
-                b'_' => scan.add_underscore(),
-                b'.' => scan.set_dot(),
-                b'-' => scan.set_dash(),
-                b':' | b'/' | b'@' => break,
-                _ => Err(InvalidChar),
-            }
-            .map_err(|err_kind| Error::at(len, err_kind))?;
-            #[cfg(debug_assertions)]
-            {
-                let _post = DebugScan::from(&scan);
-                if _c == '.' {
-                    debug_assert!(
-                        !_pre.last_was_dot && _post.last_was_dot,
-                        "last_was_dot changed from {} to {} @ {}",
-                        _pre.last_was_dot,
-                        _post.last_was_dot,
-                        len
-                    );
-                } else {
-                    debug_assert!(!_post.last_was_dot)
-                }
-            }
-            if len == Short::MAX {
-                match ascii[len as usize..].iter().next() {
-                    Some(b':') | Some(b'@') => break,
-                    _ => return Error::at(len, TooLong).into(),
-                };
-            }
-            len += 1; // safe due to the above length-guard
-        }
+                _ => {}
+            };
+        };
 
-        #[cfg(debug_assertions)]
-        let _scan = DebugScan::from(&scan);
-        if scan.last_was_dash() || scan.last_was_dot() || scan.underscore_count() > 0 {
-            Err(Error(len - 1, err::Kind::HostOrPathInvalidComponentEnd))?;
+        for c in src.bytes() {
+            #[cfg(debug_assertions)]
+            let (_pre, _ch) = (DebugScan::from(&state.scan), c as char);
+            match c {
+                b':' | b'/' | b'@' => break, // done!
+                _ => state.update(c),
+            }?;
+            #[cfg(debug_assertions)]
+            let _post = DebugScan::from(&state.scan);
+            state.advance()?;
         }
+        #[cfg(debug_assertions)]
+        let _done = DebugScan::from(&state.scan);
+
+        state.check_component_end()?;
         debug_assert!(
-            len as usize <= src.len(),
-            "len = {len}, src.len() = {} for {src:?}",
+            state.len as usize <= src.len(),
+            "len = {}, src.len() = {} for {src:?}",
+            state.len,
             src.len()
         );
-        Ok(Self(len.into(), scan.into()))
+        Ok(Self(
+            state.len.into(),
+            state.scan.into(),
+            state.deciding_char.unwrap_or(0),
+        ))
+    }
+    pub(crate) fn narrow(self, target_kind: Kind) -> Result<Self, Error> {
+        use Kind::*;
+        let decider = self.2;
+        match (self.kind(), target_kind) {
+            (_, Any) => unreachable!("calls to .narrow() must narrow, not broaden"),
+            (Path, HostOrPath) | (Host, HostOrPath) => Ok(self),
+            (Any, _) | (HostOrPath, Path) | (HostOrPath, Host) => {
+                Ok(Self(self.0, target_kind, decider))
+            }
+            (IpV6, IpV6) | (Path, Path) | (Host, Host) | (HostOrPath, HostOrPath) => Ok(self),
+            (_, IpV6) | (IpV6, _) => Error::at(0, InvalidChar).into(),
+            (Host, Path) => Error::at(decider, err::Kind::PathInvalidChar).into(),
+            (Path, Host) => Error::at(decider, err::Kind::HostInvalidChar).into(),
+        }
     }
 }
 
@@ -309,7 +304,7 @@ mod tests {
     use super::*;
     use crate::span::Lengthy;
     fn should_parse(src: &str) -> super::HostOrPathSpan<'_> {
-        super::HostOrPathSpan::new(src, super::Kind::Either)
+        HostOrPathSpan::new(src, Kind::Any)
             .map_err(|e| {
                 assert!(
                     false,
@@ -329,11 +324,8 @@ mod tests {
             consumed, expected,
             "incorrectly parsed {consumed:?} of {src:?}"
         );
-        assert_eq!(
-            host_or_path.kind(),
-            kind,
-            "incorrectly typed {src:?} as {kind:?}"
-        );
+        let output_kind = host_or_path.kind();
+        assert_eq!(output_kind, kind, "incorrectly typed {src:?} as {kind:?}");
     }
     fn should_parse_incomplete(src: &str, expected: &str) {
         let host_or_path = should_parse(src);
@@ -346,7 +338,7 @@ mod tests {
     }
 
     fn should_fail_with(src: &str, err_kind: err::Kind, bad_char_index: u8) {
-        let err = super::HostOrPathSpan::new(src, super::Kind::Either)
+        let err = super::HostOrPathSpan::new(src, Kind::Any)
             .map(|e| {
                 assert!(
                     false,
@@ -360,7 +352,7 @@ mod tests {
         assert_eq!(err.kind(), err_kind, "incorrect error kind");
         assert_eq!(
             err.index(),
-            bad_char_index.into(),
+            bad_char_index,
             "expected index of incorrect char to be {bad_char_index} in {src:?}; got {}, which is the index of {:?}",
             err.index(),
             src.as_bytes()[err.index() as usize] as char
@@ -370,13 +362,14 @@ mod tests {
     fn test_valid() {
         // should_parse_as("example.com", Kind::Either);
         // should_parse_as("example.com:tag", Kind::Either);
-        should_parse_as("127.0.0.1", "127.0.0.1", Kind::Either);
-        should_parse_as("123.456.789.101", "123.456.789.101", Kind::Either);
-        should_parse_as("0.0", "0.0", Kind::Either);
-        should_parse_as("1.2.3.4.5", "1.2.3.4.5", Kind::Either);
-        should_parse_as("sub_domain.ex.com", "sub_domain.ex.com", Kind::Path);
-        should_parse_as("Example.Com", "Example.Com", Kind::Host);
-        should_parse_as("example.com:tag", "example.com", Kind::Either);
+        use Kind::*;
+        should_parse_as("127.0.0.1", "127.0.0.1", HostOrPath);
+        should_parse_as("123.456.789.101", "123.456.789.101", HostOrPath);
+        should_parse_as("0.0", "0.0", HostOrPath);
+        should_parse_as("1.2.3.4.5", "1.2.3.4.5", HostOrPath);
+        should_parse_as("sub_domain.ex.com", "sub_domain.ex.com", Path.into());
+        should_parse_as("Example.Com", "Example.Com", Host.into());
+        should_parse_as("example.com:tag", "example.com", HostOrPath);
     }
     #[test]
     fn test_stopping() {

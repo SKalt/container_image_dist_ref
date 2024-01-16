@@ -68,22 +68,30 @@ impl<'src> RefSpan<'src> {
             return Error::at(0, err::Kind::RefNoMatch).into();
         };
         let prefix = DomainOrRefSpan::new(src)?;
+        let rest = &src[prefix.len()..];
         let domain = match prefix {
             DomainOrRefSpan::Domain(domain) => domain,
             DomainOrRefSpan::TaggedRef(_) => DomainSpan::none(),
         };
         let mut index: Long = domain.short_len().into();
-        let rest = &src[index as usize..];
-        let path = match prefix {
-            DomainOrRefSpan::TaggedRef((left, _)) => Ok(left),
-            DomainOrRefSpan::Domain(_) => match rest.bytes().next() {
-                Some(b'/') => {
-                    index += 1; // consume the leading '/'
-                    PathSpan::new(&src[index as usize..]).map_err(|e| e.into())
-                }
-                Some(b'@') | None => Ok(PathSpan::none()),
-                Some(_) => Error::at(0, err::Kind::PathInvalidChar).into(),
+        let path = match rest.bytes().next() {
+            Some(b'/') => match prefix {
+                DomainOrRefSpan::TaggedRef((path_start, tag)) => match tag.into_option() {
+                    Some(_) => {
+                        unreachable!("a:0/b should always be parsed as Domain(host=a, port=0)")
+                    }
+                    None => path_start.extend(rest),
+                    // e.g. "cant_be_host/more_path" needs to entirely match as path
+                },
+                DomainOrRefSpan::Domain(_) => PathSpan::parse_from_slash(rest),
+            }
+            .map_err(|e| e.into())
+            .map_err(|e: err::Error<Long>| e + prefix.short_len()),
+            Some(b'@') | None => match prefix {
+                DomainOrRefSpan::TaggedRef((name, _)) => Ok(name),
+                DomainOrRefSpan::Domain(_) => unreachable!("~~~"), // FIXME: add explanation
             },
+            Some(_) => Err(Error::at(0, err::Kind::PathInvalidChar)),
         }
         .map_err(|e| e + index)?;
         index += path.short_len() as Long;
@@ -132,11 +140,7 @@ impl<'src> RefSpan<'src> {
         })
     }
     fn path_index(&self) -> usize {
-        if let Some(d) = self.domain.into_option() {
-            d.len() + 1 // add the trailing '/'
-        } else {
-            0
-        }
+        self.domain.len()
     }
     fn tag_index(&self) -> usize {
         self.path_index() + self.path.len()
@@ -150,9 +154,15 @@ impl<'src> RefSpan<'src> {
         self.domain.into_option().map(|d| 0..d.len())
     }
     fn path_range(&self) -> Option<Range<usize>> {
-        self.path
-            .into_option()
-            .map(|p| self.path_index()..self.path_index() + p.len())
+        self.path.into_option().map(|p| {
+            let mut start = self.path_index();
+            let end = start + p.len();
+            if self.domain.is_some() {
+                // don't emit the leading '/'
+                start += 1;
+            }
+            start..end
+        })
     }
     fn name_range(&self) -> Option<Range<usize>> {
         let end = self.tag_index();
@@ -342,22 +352,24 @@ mod tests {
 
     extern crate alloc;
 
-    use alloc::string::String;
+    use alloc::{format, string::String};
 
     use super::*;
     fn should_parse(src: &'_ str) -> RefStr<'_> {
         let result = RefStr::new(src);
         if let Err(e) = result {
-            panic!(
-                "failed to parse {:?}: {:?} @ {} ({:?})",
-                src,
-                e,
-                e.index(),
-                src.as_bytes()[e.1 as usize] as char
-            );
+            panic!("{}", pretty_err(e, src));
         }
         let span = result.unwrap();
         span
+    }
+
+    fn pretty_err(e: Error, src: &str) -> String {
+        let kind = e.kind();
+        let index = e.index();
+        let msg = "failed to parse";
+        let padding = " ".repeat(msg.len() + 2 + index as usize);
+        format!("{msg} \"{src}\": {kind:?} @ {index}\n{padding}^")
     }
     fn should_parse_as<'src>(
         src: &'src str,
@@ -374,7 +386,7 @@ mod tests {
             span.digest().map(|d| d.src()),
         );
         let expected = (domain, path, tag, digest);
-        assert_eq!(actual, expected, "failed to parse {:?}", src);
+        assert_eq!(actual, expected, "differences parsing {:?}", src);
     }
 
     fn should_fail_with(src: &'_ str, expected: Error) {
@@ -394,7 +406,9 @@ mod tests {
                 assert_eq!(
                     e.kind(),
                     expected.kind(),
-                    "expected {expected:?}, got {e:?} when parsing {src:?}",
+                    "expected:\n{}\ngot:\n{}",
+                    pretty_err(expected, src),
+                    pretty_err(e, src),
                 );
             }
         }
@@ -414,7 +428,7 @@ mod tests {
         should_parse_as("0:_", None, Some("0"), Some("_"), None);
         should_fail_with(
             "bad:port/path:tag",
-            err::Error::at(3, err::Kind::PortInvalidChar),
+            err::Error::at(4, err::Kind::PortInvalidChar),
         );
         {
             let mut src = String::with_capacity(130);
@@ -461,7 +475,8 @@ mod tests {
             Some("tag"),
             None,
         );
-        should_fail_with("0_0/", Error::at(1, err::Kind::HostInvalidChar))
+        should_parse_as("0_0/0", None, Some("0_0/0"), None, None);
+        should_fail_with("0_0/", Error::at(4, err::Kind::PathComponentInvalidEnd));
     }
     #[test]
     fn test_with_digest() {
@@ -554,6 +569,60 @@ mod tests {
             }
         }
     }
+    impl<'src> TestCase<'src> {
+        fn diff(&self, other: &Self) -> Result<(), String> {
+            if self == other {
+                Ok(())
+            } else {
+                let mut diff = String::from("--- expected\n+++ actual\n");
+                debug_assert!(self.input == other.input);
+                diff.push_str(format!("  input: {}\n", self.input).as_str());
+                if self.name == other.name {
+                    diff.push_str(format!("  name: {:?}\n", self.name).as_str());
+                } else {
+                    diff.push_str(format!("- name: {:?}\n", self.name).as_str());
+                    diff.push_str(format!("+ name: {:?}\n", other.name).as_str());
+                }
+                if self.domain == other.domain {
+                    diff.push_str(format!("  domain: {:?}\n", self.domain).as_str());
+                } else {
+                    diff.push_str(format!("- domain: {:?}\n", self.domain).as_str());
+                    diff.push_str(format!("+ domain: {:?}\n", other.domain).as_str());
+                }
+                if self.path == other.path {
+                    diff.push_str(format!("  path: {:?}\n", self.path).as_str());
+                } else {
+                    diff.push_str(format!("- path: {:?}\n", self.path).as_str());
+                    diff.push_str(format!("+ path: {:?}\n", other.path).as_str());
+                }
+                if self.tag == other.tag {
+                    diff.push_str(format!("  tag: {:?}\n", self.tag).as_str());
+                } else {
+                    diff.push_str(format!("- tag: {:?}\n", self.tag).as_str());
+                    diff.push_str(format!("+ tag: {:?}\n", other.tag).as_str());
+                }
+                if self.digest_algo == other.digest_algo {
+                    diff.push_str(format!("  digest_algo: {:?}\n", self.digest_algo).as_str());
+                } else {
+                    diff.push_str(format!("- digest_algo: {:?}\n", self.digest_algo).as_str());
+                    diff.push_str(format!("+ digest_algo: {:?}\n", other.digest_algo).as_str());
+                }
+                if self.digest_encoded == other.digest_encoded {
+                    diff.push_str(
+                        format!("  digest_encoded: {:?}\n", self.digest_encoded).as_str(),
+                    );
+                } else {
+                    diff.push_str(
+                        format!("- digest_encoded: {:?}\n", self.digest_encoded).as_str(),
+                    );
+                    diff.push_str(
+                        format!("+ digest_encoded: {:?}\n", other.digest_encoded).as_str(),
+                    );
+                }
+                Err(diff)
+            }
+        }
+    }
     fn as_test_case<'s>(span: &'s RefStr<'s>) -> TestCase<'s> {
         let digest = span.digest();
         TestCase {
@@ -575,15 +644,18 @@ mod tests {
                 (Some(_err), Err(_e)) => {} // ok
                 (None, Ok(actual)) => {
                     let actual = as_test_case(&actual);
-                    assert!(
-                        actual == expected,
-                        "left: {actual:#?}\nright: {expected:#?}",
-                    );
+                    match expected.diff(&actual) {
+                        Ok(_) => {} // ok
+                        Err(diff) => panic!("{diff}"),
+                    }
                 }
                 (Some(err), Ok(_span)) => {
                     panic!("expected {src:?} to fail with {err:?}, but it succeeded")
                 }
-                (None, Err(e)) => panic!("expected {src:?} to succeed, but it failed with {e:?}"),
+                (None, Err(e)) => panic!(
+                    "expected {src:?} to succeed, but it failed with:\n{}",
+                    pretty_err(e, src)
+                ),
             }
         }
         let valid_inputs = include_str!("../tests/fixtures/references/valid/inputs.txt")

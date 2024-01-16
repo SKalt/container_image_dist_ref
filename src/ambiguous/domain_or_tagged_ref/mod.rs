@@ -28,8 +28,8 @@ use crate::{
     span::{IntoOption, Lengthy, Long, Short},
     tag::TagSpan,
 };
-use HostOrPathKind::{Either as EitherHostPathOrIpv6, Host, IpV6, Path};
-use PortOrTagKind::{Either as EitherPortOrTag, Port, Tag};
+use HostOrPathKind::{Any, Host, HostOrPath, IpV6, Path};
+use PortOrTagKind::{Port, Tag};
 
 pub(crate) type Error = err::Error<Long>;
 /// represents a colon-delimited string of the form "left:right"
@@ -38,10 +38,6 @@ pub(crate) enum DomainOrRefSpan<'src> {
     TaggedRef((PathSpan<'src>, TagSpan<'src>)),
 }
 
-pub(crate) enum Kind {
-    Domain,
-    TaggedRef,
-}
 impl Lengthy<'_, Short> for DomainOrRefSpan<'_> {
     fn short_len(&self) -> Short {
         match self {
@@ -53,66 +49,57 @@ impl Lengthy<'_, Short> for DomainOrRefSpan<'_> {
 
 impl<'src> DomainOrRefSpan<'src> {
     pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
-        let left = HostOrPathSpan::new(src, EitherHostPathOrIpv6)?;
+        let left = HostOrPathSpan::new(src, HostOrPathKind::Any)?
+            .into_option()
+            .ok_or(Error::at(0, err::Kind::HostOrPathNoMatch))?;
         let right_src = &src[left.len()..];
-        let right = match right_src.bytes().next() {
-            Some(b':') => PortOrTagSpan::new(
-                right_src,
-                if left.short_len() == Short::MAX {
-                    // no room left for a port in the name, since name is bounded at 255 chars
-                    // thus, the right side must be a Tag
-                    Tag
-                } else {
-                    EitherPortOrTag
-                },
-            ),
-            Some(b'/') | Some(b'@') | None => Ok(PortOrTagSpan::none()),
-            Some(_) => err::Error::<Short>::at(0, err::Kind::HostOrPathInvalidChar).into(),
-        }
-        .map_err(|e: err::Error<Short>| e.into())
-        .map_err(|e: err::Error<Long>| e + left.short_len())?;
-
-        let kind = Self::infer_kind_from_suffix(src[left.len() + right.len()..].bytes().next())?;
-        Self::from_parts(left, right, kind, src)
-    }
-    fn infer_kind_from_suffix(next_ascii_char: Option<u8>) -> Result<Kind, Error> {
-        match next_ascii_char {
-            Some(b'/') => Ok(Kind::Domain),
-            None | Some(b'@') => Ok(Kind::TaggedRef),
-            Some(_) => Error::at(0, err::Kind::HostOrPathInvalidChar).into(),
-        }
-    }
-    pub(crate) fn from_parts(
-        left: HostOrPathSpan<'src>,
-        right: PortOrTagSpan<'src>,
-        target: Kind,
-        context: &'src str,
-    ) -> Result<Self, Error> {
-        let left_kind = match target {
-            Kind::Domain => match left.kind() {
-                IpV6 => IpV6,
-                _ => Host,
-            },
-            Kind::TaggedRef => Path,
+        let right_kind = if left.short_len() == Short::MAX {
+            // no room left for a port in the name, since name is bounded at 255 chars
+            // thus, the right side must be a Tag
+            Tag
+        } else {
+            Port
         };
-        let left = left.narrow(left_kind, context)?;
-        let right_kind = match target {
-            Kind::Domain => Port,
-            Kind::TaggedRef => Tag,
-        };
-        let right = right
-            .narrow(right_kind, &context[left.len()..])
+        let right = PortOrTagSpan::new(right_src, right_kind)
             .map_err(|e: err::Error<Short>| e.into())
             .map_err(|e: err::Error<Long>| e + left.short_len())?;
-        match target {
-            Kind::Domain => Ok(Self::Domain(DomainSpan::from_ambiguous_parts(
-                left, right, context,
-            )?)),
-            Kind::TaggedRef => Ok(Self::TaggedRef((
-                PathSpan::from_ambiguous(left, context)?,
-                right.into(),
-            ))),
-        }
+
+        let len = left.len() + right.len();
+        let rest = &src[len..];
+        let next = rest.bytes().next();
+        match next {
+            Some(b'@') | None => {
+                return PathSpan::from_ambiguous(left)
+                    .map(|p| Self::TaggedRef((p, right.into())))
+                    .map_err(|e| e.into())
+            } // needs to be a tagged ref no matter what
+            Some(b'/') => match right.into_option().map(|r| r.kind()) {
+                Some(_) => {
+                    return DomainSpan::from_ambiguous(left, right, src)
+                        .map(|d| Self::Domain(d))
+                        .map_err(|e: err::Error<Short>| e.into())
+                }
+                None => match left.kind() {
+                    Path => {
+                        // need to extend the path
+                        let path = PathSpan::from_ambiguous(left)?;
+                        let path = path.extend(rest).map_err(|e| e + path.short_len())?; // FIXME: check addition
+                        return Ok(Self::TaggedRef((path, right.into())));
+                    }
+                    Host | IpV6 | HostOrPath => {
+                        return DomainSpan::from_ambiguous(left, right, src)
+                            .map(|d| Self::Domain(d))
+                            .map_err(|e| e.into())
+                    }
+                    Any => unreachable!(
+                        "HostOrPathSpan::new should always refine to a more specific kind"
+                    ),
+                },
+            }, // needs to be a name
+            _ => unreachable!(
+                "PortOrTagSpan::new() only terminates successfully at '/', '@', or EOF"
+            ),
+        };
     }
 }
 

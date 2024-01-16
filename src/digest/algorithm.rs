@@ -40,16 +40,22 @@ fn try_add(a: Short, b: Short) -> Result<Short, Error> {
 
 impl<'src> AlgorithmSpan<'src> {
     pub(crate) fn new(src: &'src str) -> Result<(Self, Compliance), Error> {
-        use Compliance::*;
-        let initial_compliance = Universal;
-        let (mut len, mut compliance) = component(src, initial_compliance)?;
-        while let Some(next) = src[len as usize..].bytes().next() {
-            if !is_separator(next) {
-                break;
+        let (mut len, mut compliance) = component(src, Compliance::Universal)?;
+        let max_len = src.len().try_into().unwrap_or(Short::MAX);
+        loop {
+            if len >= max_len {
+                break; // FIXME: handle overflow
+            } else {
+                match src.as_bytes()[len as usize] {
+                    b':' => break,
+                    b'+' | b'.' | b'_' | b'-' => {
+                        len = try_add(len, 1)?; // consume the separator
+                    }
+                    _ => return Error::at(len.into(), AlgorithmInvalidChar).into(),
+                }
             }
-            len = try_add(len, 1)?; // consume the separator
             let (component_len, component_compliance) =
-                component(&src[len as usize..], compliance)?;
+                component(&src[(len as usize)..], compliance)?;
             len = try_add(len, component_len)?;
             compliance = component_compliance; // narrow compliance from Universal -> (Oci | Distribution)
         }

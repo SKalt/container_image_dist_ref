@@ -99,7 +99,7 @@ impl<'src> EncodedStr<'src> {
     /// validates whether every ascii character is a lowercase hex digit
     fn is_lower_hex(&self) -> Result<(), Error> {
         self.src().bytes().enumerate().try_for_each(|(i, c)| {
-            if c.is_ascii_lowercase() && c.is_ascii_hexdigit() {
+            if matches!(c, b'a'..=b'f' | b'0'..=b'9') {
                 Ok(())
             } else {
                 Error::at(i.try_into().unwrap(), OciRegisteredDigestInvalidChar).into()

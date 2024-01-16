@@ -87,13 +87,13 @@ impl<'src> RefSpan<'src> {
             }
             .map_err(|e| e.into())
             .map_err(|e: err::Error<Long>| e + prefix.short_len()),
-            Some(b'@') | None => match prefix {
+            Some(b'@') | Some(b':') | None => match prefix {
                 DomainOrRefSpan::TaggedRef((name, _)) => Ok(name),
                 DomainOrRefSpan::Domain(_) => {
                     unreachable!("if the left segment peeked an '@', it would parse as a TaggedRef")
                 }
             },
-            Some(_) => Err(Error::at(0, err::Kind::PathInvalidChar)),
+            Some(_) => Error::at(0, err::Kind::PathInvalidChar).into(),
         }
         .map_err(|e| e + index)?;
         index += path.short_len() as Long;
@@ -431,10 +431,12 @@ mod tests {
     }
     #[test]
     fn test_tagged_ref() {
+        should_parse_as("0_0/0:0", None, Some("0_0/0"), Some("0"), None);
         should_parse_as("test.com:tag", None, Some("test.com"), Some("tag"), None);
         should_parse_as("test.com:5000", None, Some("test.com"), Some("5000"), None);
         should_parse_as("0:0A", None, Some("0"), Some("0A"), None);
         should_parse_as("0:_", None, Some("0"), Some("_"), None);
+
         should_fail_with(
             "bad:port/path:tag",
             err::Error::at(4, err::Kind::PortInvalidChar),

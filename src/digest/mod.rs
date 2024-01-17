@@ -1,11 +1,12 @@
 //! # Digest
 //!
-//! Parsers for digest strings according to either the [OCI image spec][image-spec]
-//! or the grammar used by [`distribution/reference`][ref].
+//! Parsers for digest strings according to either the [OCI image spec](https://github.com/opencontainers/image-spec/blob/v1.0.2/descriptor.md#digests)
+//! or the grammar used by [`distribution/reference`](https://github.com/distribution/reference/blob/v0.5.0/reference.go#L20-L24).
 //! These grammars differ slightly:
 
 // {{{sh
-//    echo; cat ../../grammars/digest.diff | sed 's#^#//!#g'; printf '\n// '
+//    echo; cat ../../grammars/digest.diff | sed 's#^#//!#g';
+//    printf '//! ```\n\n// '
 // }}}{{{out skip=2
 
 //!```diff
@@ -21,8 +22,6 @@
 //!+encoded              ::= [a-zA-Z0-9=_-]+
 
 // }}}
-//! [image-spec]: https://github.com/opencontainers/image-spec/blob/v1.0.2/descriptor.md#digests
-//! [ref]: https://github.com/distribution/reference/blob/v0.5.0/reference.go#L24
 
 pub mod algorithm;
 pub mod encoded;

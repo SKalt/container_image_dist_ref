@@ -1,11 +1,22 @@
+# See https://doc.rust-lang.org/cargo/reference/manifest.html
 [package]
 name = "container_image_dist_ref"
 description = "A library for parsing and validating container image references."
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
+repository = "https://github.com/skalt/container_image_dist_ref.git"
+readme = "README.md"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+exclude = [
+  "go.*",
+  "internal/*",
+  "flake.*",
+  "nix",
+  ".shellcheckrc",
+  ".envrc",
+  ".vscode",
+]
 
 
 [dev-dependencies]

@@ -9,3 +9,7 @@ cli:
 .PHONY: bench
 bench:
 	cargo bench
+
+.PHONY: test
+test:
+	cargo test

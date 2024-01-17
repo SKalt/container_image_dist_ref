@@ -3,3 +3,4 @@ target
 result*
 # ./result* is owned by `nix build`.
 # see https://nixos.org/manual/nix/stable/command-ref/new-cli/nix3-build
+**/testdata/fuzz/*

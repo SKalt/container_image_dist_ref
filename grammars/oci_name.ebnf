@@ -1,0 +1,3 @@
+path                ::= path-component ("/" path-component)*
+path-component      ::= [a-z0-9]+ (separator [a-z0-9]+)*
+separator           ::= [_.] | "__" | "-"+

@@ -1,8 +1,9 @@
 [package]
 name = "container_image_dist_ref"
-description = "A library for parsing and validating container image distribution references."
+description = "A library for parsing and validating container image references."
 version = "0.1.0"
 edition = "2021"
+license = "Apache-2.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

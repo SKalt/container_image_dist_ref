@@ -1,0 +1,22 @@
+{
+  "recommendations": [
+    // rust --------------------------------------------------------------------
+    "rust-lang.rust-analyzer",
+    "vadimcn.vscode-lldb",
+    "tamasfe.even-better-toml",
+
+    // go ----------------------------------------------------------------------
+    "golang.go",
+
+    // misc development environment setup  -------------------------------------
+    "EditorConfig.EditorConfig",
+    "mkhl.direnv",
+    "pinage404.nix-extension-pack",
+
+    // workflow tools ----------------------------------------------------------
+    "streetsidesoftware.code-spell-checker",
+    "Gruntfuggly.todo-tree", // finds TODOs, FIXMEs, etc.
+    "kalt-dot-cloud.git-conventional-commit-ls-basic"
+    // ^ shameless self-promotion lol
+  ]
+}

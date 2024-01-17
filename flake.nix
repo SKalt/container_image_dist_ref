@@ -49,16 +49,22 @@
           # see https://hoverbear.org/blog/rust-bindgen-in-nix/
           # see https://slightknack.dev/blog/nix-os-bindgen/
           # https://nixos.wiki/wiki/Rust#Installation_via_rustup
-          nativeBuildInputs = [ rust_toolchain ];
+          nativeBuildInputs = [
+            rust_toolchain
+            pkgs.go
+          ];
           buildInputs = with pkgs;
             [
               # rust tools
               rust-analyzer-unwrapped
-              cargo-bloat
+              cargo-flamegraph
 
               # nix support
               nixpkgs-fmt
               nil
+
+              # go tools
+              gopls
 
               # other
               lychee

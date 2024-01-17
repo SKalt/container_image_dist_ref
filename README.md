@@ -1,14 +1,14 @@
 # container_image_dist_ref
 
-An unnecessarily optimized docker/OCI image reference parser.
+A docker/OCI image reference parser.
 
-This library is oracle-tested against the authoritative image reference implementation, https://github.com/distribution/reference.
+This library is extensively tested against the authoritative image reference implementation, https://github.com/distribution/reference.
 
 ## Motivation
 
 <!-- TODO: rewrite -->
 
-I had a rust project and wanted to use `distribution/reference`, but didn't want to deal with FFI into `go`.
+I wanted to use `distribution/reference` in a rust project, but didn't want to deal with FFI into `go`.
 
 ## Goals
 
@@ -25,6 +25,7 @@ Based on some naive benchmarking, this library achieves at least a 10x speedup c
 <details open><summary>Running the benchmarks</summary>
 
 ```sh
+#!/bin/bash
 cargo bench # rust
 ( # go
   cd internal/reference_oracle &&

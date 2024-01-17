@@ -2,6 +2,8 @@
 
 A docker/OCI image reference parser.
 
+[![Crates.io](https://img.shields.io/crates/v/container_image_dist_ref.svg)](https://crates.io/crates/container_image_dist_ref)
+
 This library is extensively tested against the authoritative image reference implementation, https://github.com/distribution/reference.
 
 ## Motivation

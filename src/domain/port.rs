@@ -12,7 +12,6 @@ impl_span_methods_on_tuple!(PortSpan, Short);
 
 fn disambiguate_err(e: Error) -> Error {
     let kind = match e.kind() {
-        err::Kind::PortOrTagTooLong => err::Kind::PortTooLong,
         err::Kind::PortOrTagInvalidChar => err::Kind::PortInvalidChar,
         _ => e.kind(),
     };

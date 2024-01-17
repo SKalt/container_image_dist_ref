@@ -544,7 +544,7 @@ mod tests {
             src.push_str("0@");
             src.push_str(&"0".repeat(255));
             src.push_str(":");
-            should_fail_with(&src, Error::at(257, err::Kind::DigestTooLong))
+            should_fail_with(&src, Error::at(257, err::Kind::AlgorithmTooLong))
         };
     }
 

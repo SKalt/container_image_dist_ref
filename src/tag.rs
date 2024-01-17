@@ -22,7 +22,6 @@ impl<'src> From<PortOrTagSpan<'src>> for TagSpan<'src> {
 }
 fn disambiguate_error(e: Error) -> Error {
     let kind = match e.kind() {
-        err::Kind::PortOrTagTooLong => err::Kind::TagTooLong,
         err::Kind::PortOrTagInvalidChar => err::Kind::TagInvalidChar,
         _ => e.kind(),
     };

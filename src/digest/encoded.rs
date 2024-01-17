@@ -20,7 +20,7 @@
 use super::algorithm::AlgorithmStr;
 use super::Compliance;
 use crate::span::{impl_span_methods_on_tuple, IntoOption, Lengthy, Long, LongLength};
-const MAX_LENGTH: u16 = 1024; // arbitrary but realistic limit
+pub const MAX_LENGTH: u16 = 1024; // arbitrary but realistic limit
 
 use crate::err::Kind::{
     EncodedInvalidChar, EncodedNoMatch, EncodedNonLowerHex, EncodingTooLong, EncodingTooShort,

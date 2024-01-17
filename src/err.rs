@@ -2,20 +2,26 @@
 //! This module supplies the global error types for the crate.
 use crate::span::{Long, Short};
 
+// TODO: more docs
 // since ErrorKind can fit 256 unique errors, use it for all non-ambiguous cases
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     // ambiguous::host_or_path ---------------------------------
-    /// An empty string => no match
+    /// unable to match a host or path of length > 0. This is caused by
+    /// attempting to parse an empty string.
     HostOrPathNoMatch,
+    /// parsing the host or path section exceeded 255 characters.
     HostOrPathTooLong,
     HostOrPathInvalidChar,
+    /// Caused by two incompatible path-component separators in a row, such as
+    /// "..", "_.", "-.", etc.
     HostOrPathInvalidComponentEnd,
     // ambiguous::port_or_tag ----------------------------------
+    /// caused by a colon immediately followed by EOF, "/", or "@"
     PortOrTagMissing,
-    PortOrTagTooLong,
     PortOrTagInvalidChar,
     // name ----------------------------------------------------------
+    /// the name (including host, port, and path) is over 255 characters long.
     NameTooLong,
     // name::domain::host --------------------------------------------
     HostNoMatch,
@@ -42,29 +48,42 @@ pub enum Kind {
     PathInvalidChar,
     PathTooLong,
     // tag -----------------------------------------------------
+    /// 129 or more characters after the ":".
     TagTooLong,
     TagInvalidChar,
 
     // digest::algorithm ----------------------------------------
+    /// 0-length algorithm in an "algorithm:encoded" section detected
     AlgorithmNoMatch,
+    /// If parsing in OCI-digest mode, uppercase letters are not allowed.
     InvalidOciAlgorithm,
     /// At least one algorithm component starts with a number, which is allowed
     /// by the OCI image spec but not distribution/reference. Then, the algorithm
     /// includes uppercase letters, which is allowed by distribution/reference
     /// but not the OCI image spec.
     AlgorithmInvalidNumericPrefix,
+    /// Either a sha256 or sha512 algorithm was expected, but the digest was
+    /// not 64 or 128 hex digits long.
     OciRegisteredAlgorithmWrongDigestLength,
     AlgorithmInvalidChar,
+    /// 256 or more characters in the algorithm section.
     AlgorithmTooLong,
     // digest::encoded ------------------------------------------
-    DigestTooLong,
+    /// Nothing after the ":" in an "algorithm:encoded" section.
     EncodedNoMatch,
+    /// a non-base64 character was encountered.
     EncodedInvalidChar,
+    ///non-lower-hex characters are not allowed when parsing in `distribution/reference` mode
     EncodedNonLowerHex,
     OciRegisteredDigestInvalidChar,
+    /// less than 32 characters in the encoded section of the digest
     EncodingTooShort,
+    /// The digest was over 1024 bytes long. This is an arbitrary limit set in
+    /// this repository. However, it is reasonable: 1024 hex digits can encode
+    /// 4096-bit hashes, which is enough for an RSA key.
     EncodingTooLong,
     // reference ----------------------------------------
+    /// empty string or non-canonical reference
     RefNoMatch,
 }
 

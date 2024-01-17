@@ -81,13 +81,10 @@ pub(crate) struct DigestSpan<'src> {
     compliance: Compliance,
 }
 
-const MAX_USIZE: usize = Long::MAX as usize;
 impl<'src> DigestSpan<'src> {
     pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
-        match src.len() {
-            0 => return Ok(Self::none()),
-            1..=MAX_USIZE => {} // ok length
-            _ => return Error::at(Long::MAX, err::Kind::DigestTooLong).into(),
+        if src.is_empty() {
+            return Error::at(0, err::Kind::AlgorithmNoMatch).into();
         }
         let (algorithm, compliance) = AlgorithmSpan::new(src)?;
         let mut len = algorithm.short_len();
@@ -95,7 +92,7 @@ impl<'src> DigestSpan<'src> {
         len = match rest.bytes().next() {
             Some(b':') => len
                 .checked_add(1)
-                .ok_or_else(|| Error::at(len.into(), err::Kind::DigestTooLong)),
+                .ok_or_else(|| Error::at(len.into(), err::Kind::AlgorithmTooLong)),
             None => Error::at(len.into(), err::Kind::AlgorithmNoMatch).into(),
             _ => Error::at(len.into(), err::Kind::AlgorithmInvalidChar).into(),
         }?;

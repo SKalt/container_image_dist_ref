@@ -30,8 +30,7 @@ use crate::{
     span::{impl_span_methods_on_tuple, IntoOption, Lengthy, Short, ShortLength},
 };
 use err::Kind::{
-    HostOrPathInvalidChar as InvalidChar, HostOrPathInvalidComponentEnd as InvalidComponentEnd,
-    HostOrPathTooLong as TooLong,
+    HostOrPathInvalidChar as InvalidChar, HostOrPathInvalidComponentEnd, HostOrPathTooLong,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -87,7 +86,7 @@ impl Scan {
     // all of which are fallible
     fn set_dot(&mut self) -> Result<(), err::Kind> {
         if self.last_was_dot() || self.last_was_dash() || self.underscore_count() > 0 {
-            Err(InvalidComponentEnd)
+            Err(HostOrPathInvalidComponentEnd)
         } else {
             self.0 |= Self::LAST_WAS_DOT;
             Ok(())
@@ -96,7 +95,7 @@ impl Scan {
 
     fn set_dash(&mut self) -> Result<(), err::Kind> {
         if self.last_was_dot() || self.underscore_count() > 0 {
-            Err(InvalidComponentEnd)
+            Err(HostOrPathInvalidComponentEnd)
         } else {
             self.0 |= Self::LAST_WAS_DASH;
             Ok(())
@@ -125,7 +124,7 @@ impl Scan {
         if self.has_upper() {
             Err(InvalidChar)
         } else if self.last_was_dash() || self.last_was_dot() {
-            Err(InvalidComponentEnd)
+            Err(HostOrPathInvalidComponentEnd)
         } else {
             self.0 |= Self::HAS_UNDERSCORE;
             self.set_underscore_count(self.underscore_count() + 1)
@@ -180,7 +179,7 @@ impl State {
         self.len = self
             .len
             .checked_add(1)
-            .ok_or(Error::at(self.len, TooLong))?;
+            .ok_or(Error::at(self.len, HostOrPathTooLong))?;
         Ok(())
     }
     fn update_decider(&mut self) {
@@ -206,7 +205,7 @@ impl State {
             && self.scan.underscore_count() == 0;
         match ok {
             true => Ok(()),
-            false => Err(Error::at(self.len - 1, InvalidComponentEnd)),
+            false => Err(Error::at(self.len - 1, HostOrPathInvalidComponentEnd)),
         }
     }
 }
@@ -411,7 +410,7 @@ mod tests {
         should_fail_with("$", InvalidChar, 0);
         should_fail_with(
             "google.com.",
-            InvalidComponentEnd,
+            HostOrPathInvalidComponentEnd,
             ("google.com.".len() - 1) as u8,
         );
     }

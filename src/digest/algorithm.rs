@@ -26,7 +26,7 @@ use crate::{
     err,
     span::{impl_span_methods_on_tuple, IntoOption, Lengthy, Long, Short, ShortLength},
 };
-
+pub const MAX_LENGTH: u16 = Short::MAX as u16; // arbitrary but realistic limit
 use super::Compliance;
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) struct AlgorithmSpan<'src>(ShortLength<'src>);

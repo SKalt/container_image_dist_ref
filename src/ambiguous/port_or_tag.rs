@@ -69,7 +69,7 @@ impl State {
         Ok(())
     }
     fn advance(&mut self) -> Result<(), Error> {
-        if self.len > 128 && self.kind == Kind::Tag {
+        if self.len >= 129 && self.kind == Kind::Tag {
             Error::at(self.len, err::Kind::TagTooLong).into()
         } else {
             self.len = self

@@ -17,27 +17,11 @@
 
 // }}}
 
-//! > ```bnf
-//! >    path (or "remote-name")  := path-component ['/' path-component]*
-//! >    path-component           := alpha-numeric [separator alpha-numeric]*
-//! >    alpha-numeric            := /[a-z0-9]+/
-//! >    separator                := /[_.]|__|[-]*/
-//! > ```
-//! > -- https://github.com/distribution/reference/blob/v0.5.0/reference.go#L7-L16
-//!
-//!
-//!
-//! > Throughout this document, <name> MUST match the following regular expression:
-//! > ```ebnf
-//! > [a-z0-9]+([._-][a-z0-9]+)*(/[a-z0-9]+([._-][a-z0-9]+)*)*
-//! > [a-z0-9]+((\.|_|__|-+)[a-z0-9]+)*(\/[a-z0-9]+((\.|_|__|-+)[a-z0-9]+)*)*
-//! > ```
-//! > -- https://github.com/opencontainers/distribution-spec/blob/v1.0.1/spec.md#pulling-manifests
-//! > -- https://github.com/opencontainers/distribution-spec/blob/v1.1.0-rc3/spec.md#pulling-manifests
-//! > -- https://github.com/opencontainers/distribution-spec/commit/a73835700327bd1c037e33d0834c46ff98ac1286
-//! > -- https://github.com/opencontainers/distribution-spec/commit/efe2de09470d7f182d2fbd83ac4462fbdc462455
-
-// TODO: vendor grammar
+// for more context, see:
+// -- https://github.com/opencontainers/distribution-spec/blob/v1.0.1/spec.md#pulling-manifests
+// -- https://github.com/opencontainers/distribution-spec/blob/v1.1.0-rc3/spec.md#pulling-manifests
+// -- https://github.com/opencontainers/distribution-spec/commit/a73835700327bd1c037e33d0834c46ff98ac1286
+// -- https://github.com/opencontainers/distribution-spec/commit/efe2de09470d7f182d2fbd83ac4462fbdc462455
 
 use crate::{
     ambiguous::host_or_path::{HostOrPathSpan, Kind as PathKind},

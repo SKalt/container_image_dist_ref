@@ -33,8 +33,8 @@ pub(crate) mod ambiguous;
 pub mod digest;
 pub mod domain;
 pub mod err;
-pub mod path;
-pub mod span;
+mod path;
+mod span;
 mod tag;
 
 /// the maximum total number of characters in a repository name, as defined by

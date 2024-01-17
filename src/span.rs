@@ -1,3 +1,4 @@
+//! types + traits for working with lengths of strings
 use core::marker::PhantomData;
 pub type Short = u8;
 pub type Long = u16;

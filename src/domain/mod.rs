@@ -26,8 +26,9 @@
 // }}}
 
 //! Note that this **DOES NOT** allow for percent-encoded domain names. Thus,
-//! we can't use the `url` crate for parsing domain names.
-//! Since `url::Host` needs to decode percent-encoded domain names per [rfc3986](https://www.rfc-editor.org/rfc/rfc3986#appendix-A)
+//! we can't use the `url` crate for parsing domain names, since `url::Host`
+//! strictly follows [RFC 3986](https://www.rfc-editor.org/rfc/rfc3986#appendix-A),
+//! which allows decode percent-encoded domain names.
 
 pub(crate) mod host;
 pub(crate) mod ipv6;

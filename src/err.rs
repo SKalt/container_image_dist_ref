@@ -1,9 +1,12 @@
+//! # Errors
+//! This module supplies the global error types for the crate.
 use crate::span::{Long, Short};
 
 // since ErrorKind can fit 256 unique errors, use it for all non-ambiguous cases
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     // ambiguous::host_or_path ---------------------------------
+    /// An empty string => no match
     HostOrPathNoMatch,
     HostOrPathTooLong,
     HostOrPathInvalidChar,
@@ -65,6 +68,7 @@ pub enum Kind {
     RefNoMatch,
 }
 
+/// The `Error` type contains an `err::Kind` and an index within the source string.
 #[derive(Debug, Clone, Copy)]
 pub struct Error<Size = Short>(Size, Kind);
 impl From<Error<Short>> for Error<Long> {
@@ -77,15 +81,18 @@ impl<Size> Error<Size>
 where
     Size: Copy,
 {
+    /// The byte index within the source string where the error occurred.
     #[inline(always)]
     pub fn index(&self) -> Size {
         self.0
     }
+    /// the kind of error
     #[inline(always)]
     pub fn kind(&self) -> Kind {
         self.1
     }
 
+    /// Create a new error at the given index
     pub(crate) fn at(index: Size, kind: Kind) -> Self {
         Self(index, kind)
     }

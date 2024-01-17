@@ -8,7 +8,7 @@ fn main() {
     // read stdin to completion
     let mut input = String::new();
     std::io::stdin().read_line(&mut input).unwrap();
-    let input = input.trim();
+    let input = input.trim_end();
     let result = RefStr::new(input);
     match result {
         Ok(ref_str) => {

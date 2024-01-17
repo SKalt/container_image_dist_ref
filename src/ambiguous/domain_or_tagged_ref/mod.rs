@@ -81,7 +81,7 @@ impl<'src> DomainOrRefSpan<'src> {
             } // needs to be a tagged ref no matter what
             Some(b'/') => match right.into_option().map(|r| r.kind()) {
                 Some(_) => {
-                    return DomainSpan::from_ambiguous(left, right, src)
+                    return DomainSpan::from_ambiguous(left, right)
                         .map(Self::Domain)
                         .map_err(adapt_err)
                 }
@@ -95,7 +95,7 @@ impl<'src> DomainOrRefSpan<'src> {
                         return Ok(Self::TaggedRef((path, right.into())));
                     }
                     Host | IpV6 | HostOrPath => {
-                        return DomainSpan::from_ambiguous(left, right, src)
+                        return DomainSpan::from_ambiguous(left, right)
                             .map(Self::Domain)
                             .map_err(adapt_err)
                     }

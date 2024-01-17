@@ -3,7 +3,7 @@
 
 use crate::{
     err::{self, Error},
-    span::{impl_span_methods_on_tuple, IntoOption, Lengthy, Short, ShortLength},
+    span::{IntoOption, Lengthy, Short, ShortLength},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -13,9 +13,27 @@ pub(crate) enum Kind {
     /// a colon-prefixed span of alphanumeric characters that must be a tag.
     Tag,
 }
+impl Kind {
+    fn update(self, other: Self) -> Result<Self, ()> {
+        match (self, other) {
+            (Kind::Port, Kind::Port) | (Kind::Tag, Kind::Tag) => Ok(self),
+            (Kind::Port, Kind::Tag) => Ok(Kind::Tag), // all ports are valid tags
+            (Kind::Tag, Kind::Port) => Err(()),       // Kind::Tag is not compatible with Kind::Port
+        }
+    }
+}
 #[derive(Clone, Copy)]
-pub(crate) struct PortOrTagSpan<'src>(pub(crate) ShortLength<'src>, pub(crate) Kind);
-impl_span_methods_on_tuple!(PortOrTagSpan, Short);
+pub(crate) struct PortOrTagSpan<'src> {
+    length: ShortLength<'src>,
+    kind: Kind,
+    first_tag_char: Short,
+}
+impl Lengthy<'_, Short> for PortOrTagSpan<'_> {
+    #[inline(always)]
+    fn short_len(&self) -> Short {
+        self.length.short_len()
+    }
+}
 impl<'src> IntoOption for PortOrTagSpan<'src> {
     #[inline(always)]
     fn is_some(&self) -> bool {
@@ -23,7 +41,11 @@ impl<'src> IntoOption for PortOrTagSpan<'src> {
     }
     #[inline(always)]
     fn none() -> Self {
-        Self(0.into(), Kind::Port) // port is compatible with both ports and tags
+        Self {
+            length: 0.into(),
+            kind: Kind::Port, // port is compatible with both ports and tags
+            first_tag_char: 0,
+        }
     }
 }
 struct State {
@@ -34,16 +56,17 @@ struct State {
 impl State {
     fn update_kind(&mut self, other: Kind) -> Result<(), Error> {
         match (self.kind, other) {
-            (Kind::Port, Kind::Port) | (Kind::Tag, Kind::Tag) => Ok(()),
             (Kind::Port, Kind::Tag) => {
                 self.first_tag_char = self.len;
                 self.kind = Kind::Tag;
-                Ok(())
             } // all ports are valid tags
-            (Kind::Tag, Kind::Port) => {
-                Error::at(self.first_tag_char, err::Kind::PortInvalidChar).into()
-            } // Kind::Tag is not compatible with Kind::Port
+            _ => {}
         }
+        self.kind = self
+            .kind
+            .update(other)
+            .map_err(|_| Error::at(self.first_tag_char, err::Kind::PortInvalidChar))?;
+        Ok(())
     }
     fn advance(&mut self) -> Result<(), Error> {
         if self.len > 128 && self.kind == Kind::Tag {
@@ -61,11 +84,22 @@ impl State {
 impl<'src> PortOrTagSpan<'src> {
     #[inline(always)]
     pub(crate) fn span(&self) -> ShortLength<'src> {
-        self.0
+        self.length
     }
     #[inline(always)]
     pub(crate) fn kind(&self) -> Kind {
-        self.1
+        self.kind
+    }
+    pub(crate) fn narrow(&self, kind: Kind) -> Result<PortOrTagSpan<'src>, Error> {
+        let kind = self
+            .kind
+            .update(kind)
+            .map_err(|_| Error::at(self.first_tag_char, err::Kind::PortInvalidChar))?;
+        Ok(PortOrTagSpan {
+            length: self.length,
+            kind,
+            first_tag_char: self.first_tag_char,
+        })
     }
     /// can match an empty span if the first character in src is a `/` or `@`
     pub(crate) fn new(src: &str, kind: Kind) -> Result<Self, Error> {
@@ -81,7 +115,9 @@ impl<'src> PortOrTagSpan<'src> {
         let mut state = State {
             len: 1,
             kind,
-            first_tag_char: Short::MAX, // <- since ports/tags are limited to 127 ch, this is 255 is a niche
+            first_tag_char: 0, // only set on transition from port to tag
+                               // and only used for providing an error index when
+                               // trying to cast back from tag to port
         };
 
         // the first character after the colon must be alphanumeric or an underscore
@@ -117,7 +153,11 @@ impl<'src> PortOrTagSpan<'src> {
         } else {
             true
         });
-        Ok(Self(state.len.into(), state.kind))
+        Ok(Self {
+            length: state.len.into(),
+            kind: state.kind,
+            first_tag_char: state.first_tag_char,
+        })
     }
 }
 

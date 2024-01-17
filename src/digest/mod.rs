@@ -147,4 +147,7 @@ impl<'src> DigestStr<'src> {
             self.span.encoded,
         )
     }
+    pub fn compliance(&self) -> Compliance {
+        self.span.compliance
+    }
 }

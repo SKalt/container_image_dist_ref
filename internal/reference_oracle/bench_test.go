@@ -29,5 +29,3 @@ func BenchmarkOracleEntireTestSuite(b *testing.B) {
 		}
 	}
 }
-
-// TODO: use wazero to benchmark the wasm version of the rust library

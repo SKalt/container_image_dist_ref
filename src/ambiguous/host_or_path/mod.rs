@@ -60,7 +60,7 @@ impl Scan {
     // setters -----------------------------------------------------------------
     // all of which are fallible
     fn set_dot(&mut self) -> Result<(), err::Kind> {
-        if self.last_was_dot() || self.last_was_dash() {
+        if self.last_was_dot() || self.last_was_dash() || self.underscore_count() > 0 {
             Err(InvalidComponentEnd)
         } else {
             self.0 |= Self::LAST_WAS_DOT;

@@ -1,3 +1,29 @@
+//! Hosts and paths can conflict:
+//! | class | domain-component | path-component |
+//! | ----- | ---------------- | -------------- |
+//! | upper | yes              | no             |
+//! | -     | inner            | inner          |
+//! | _     | no               | inner          |
+//! | .     | yes              | yes            |
+//!
+//! See the grammar:
+
+// {{{sh sed 's#^#//! #g' ../../../grammars/host_or_path.ebnf; printf '//! ```\n\n// ' }}}{{{out skip=2
+
+//! ```ebnf
+//! name                 ::= (domain "/")? path
+//! domain               ::= host (":" port-number)?
+//! host                 ::= domain-name | IPv4address | "[" IPv6address "]" /* see https://www.rfc-editor.org/rfc/rfc3986#appendix-A */
+//! domain-name          ::= domain-component ("." domain-component)*
+//! domain-component     ::= ([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])
+//! port-number          ::= [0-9]+
+//! path-component       ::= [a-z0-9]+ (separator [a-z0-9]+)*
+//! path                 ::= path-component ("/" path-component)*
+//! separator            ::= [_.] | "__" | "-"+
+//! ```
+
+// }}}
+
 use crate::{
     domain::ipv6,
     err::{self, Error},

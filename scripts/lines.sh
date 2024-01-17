@@ -6,4 +6,4 @@ lines() {
   head "-$end" |
   tail "+$start"
 }
-if [ "${BASH_SOURCE[0]}" = "$0" ]; then line "$@"; fi
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then lines "$@"; fi

@@ -199,17 +199,3 @@ func FuzzAnyParsing(f *testing.F) {
 	}
 	f.Fuzz(harness)
 }
-
-// TODO: use seed data from the fuzzing corpus
-
-// func FuzzSeeded(f *testing.F) {
-// 	data, err := os.ReadFile("./inputs.txt")
-// 	panicIf(err)
-// 	lines := strings.Split(string(data), "\n")
-// 	for _, line := range lines {
-// 		if line != "" {
-// 			f.Add(line)
-// 		}
-// 	}
-// 	f.Fuzz(harness)
-// }

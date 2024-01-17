@@ -1,23 +1,26 @@
 //! # Algorithm
 //! There are two specifications for a digest algorithm string:
-//! - the [OCI Image Spec][image-spec]
-//! - [github.com/distribution/reference][ref]
+//! - the [OCI Image Spec](https://github.com/opencontainers/image-spec/blob/v1.0.2/descriptor.md#digests)
+//! - [github.com/distribution/reference](https://github.com/distribution/reference/blob/v0.5.0/reference.go#L21-L23)
 //!
 //! The OCI spec is a subset of the distribution spec:
 //!
+
+// {{{sh
+//    cat ../../grammars/digest_algorithm.diff | sed 's#^#//! #g';
+//    printf '//! ```\n\n// '
+// }}}{{{out skip=2
+
 //! ```diff
-//! --- a/distribution/reference
-//! +++ b/opencontainers/image-spec
-//!   digest      ::= algorithm ":" encoded
-//!   algorithm   ::= component (separator component)*
-//! - component   ::= [A-Za-z][A-Za-z0-9]
-//! + component   ::= [a-z0-9]+
-//!   separator   ::= [+._-]
+//! --- distribution/reference
+//! +++ opencontainers/image-spec
+//!  algorithm            ::= component (separator component)*
+//! -component            ::= [A-Za-z][A-Za-z0-9]*
+//! +component            ::= [a-z0-9]+
+//!  separator            ::= [+._-]
 //! ```
-//!
-//! [image-spec]: https://github.com/opencontainers/image-spec/blob/v1.0.2/descriptor.md#digests
-//! [ref]: https://github.com/distribution/reference/blob/v0.5.0/reference.go#L21-L23
-//!
+
+// }}}
 
 use crate::{
     err,

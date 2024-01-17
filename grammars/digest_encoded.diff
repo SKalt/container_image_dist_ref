@@ -1,0 +1,4 @@
+--- distribution/reference
++++ opencontainers/image-spec
+-encoded  ::= [a-fA-F0-9]{32,} /* At least 128 bit digest value */
++encoded  ::= [a-zA-Z0-9=_-]+

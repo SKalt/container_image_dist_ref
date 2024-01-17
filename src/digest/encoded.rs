@@ -1,20 +1,21 @@
 //! # Encoded
 //! There are two specifications for the encoded portion of a digest string:
-//! - the [OCI Image Spec][image-spec]
-//! - [github.com/distribution/reference][ref]
+//! - the [OCI Image Spec](https://github.com/opencontainers/image-spec/blob/v1.0.2/descriptor.md#digests)
+//! - [github.com/distribution/reference](https://github.com/distribution/reference/blob/v0.5.0/reference.go#L24)
 //!
 //! The distribution/reference implementation is a subset of the OCI spec:
 //!
+
+// {{{sh cat ../../grammars/digest_encoded.diff | sed 's#^#//! #g' }}}{{{out skip=2
+
 //! ```diff
-//! --- a/distribution/reference
-//! +++ b/opencontainers/image-spec
-//! -   hex     ::= [a-fA-F0-9]{32,}
-//! +   encoded ::= [a-zA-Z0-9=_-]+
+//! --- distribution/reference
+//! +++ opencontainers/image-spec
+//! -encoded  ::= [a-fA-F0-9]{32,} /* At least 128 bit digest value */
+//! +encoded  ::= [a-zA-Z0-9=_-]+
 //! ```
-//!
-//! [image-spec]: https://github.com/opencontainers/image-spec/blob/v1.0.2/descriptor.md#digests
-//! [ref]: https://github.com/distribution/reference/blob/v0.5.0/reference.go#L24
-//!
+
+// }}} skip=2
 
 use super::algorithm::AlgorithmStr;
 use super::Compliance;

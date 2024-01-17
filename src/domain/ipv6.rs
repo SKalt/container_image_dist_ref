@@ -1,3 +1,6 @@
+//! # Ipv6
+//! Parser for non-Ipv4-mapped Ipv6 addresses.
+
 // 42 is the max length for a restricted ipv6 address:
 // group  1___2____3____4____5____6____7____8____
 // ip     1234:6789:1234:6789:1234:6789:1235:6789

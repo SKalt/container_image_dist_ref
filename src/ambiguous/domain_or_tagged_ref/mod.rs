@@ -1,21 +1,31 @@
-// > name                            := [domain '/'] remote-name
-// > domain                          := host [':' port-number]
-// > port-number                     := /[0-9]+/
-// > host                            := domain-name | IPv4address | \[ IPv6address \] ; rfc3986 appendix-A
-// > domain-name                     := domain-component ['.' domain-component]*
-// > domain-component                := alpha-numeric [ ( alpha-numeric | '-' )* alpha-numeric ]
-// > path-component                  := alpha-numeric [separator alpha-numeric]*
-// > path (or "remote-name")         := path-component ['/' path-component]*
-// > alpha-numeric                   := /[a-z0-9]+/
-// > separator                       := /[_.]|__|[-]*/
-//
-// Note that domain components conflict with path components:
-// | class | domain-component | path-component |
-// | ----- | ---------------- | -------------- |
-// | upper | yes              | no             |
-// | -     | inner            | inner          |
-// | _     | no               | inner          |
-// | .     | yes              | yes            |
+//! # ambiguous domain or tagged ref
+//! structs in this parse either a domain or a tagged ref into an enum, then
+//! let the caller decide what to do with it.
+//!
+//! Note that domain components conflict with path components:
+
+// {{{sh
+//    cd ../../../ && ./scripts/lines.sh 1 12 ./grammars/reference.ebnf |
+//    sed 's#^#//! #g';
+//    printf '//! ```\n\n// ';
+// }}}{{{out skip=2
+
+//! ```ebnf
+//! reference            ::= name (":" tag )? ("@" digest )?
+//! name                 ::= (domain "/")? path
+//! domain               ::= host (":" port-number)?
+//! host                 ::= domain-name | IPv4address | "[" IPv6address "]" /* see https://www.rfc-editor.org/rfc/rfc3986#appendix-A */
+//! domain-name          ::= domain-component ("." domain-component)*
+//! domain-component     ::= ([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])
+//! port-number          ::= [0-9]+
+//! path-component       ::= [a-z0-9]+ (separator [a-z0-9]+)*
+//! path                 ::= path-component ("/" path-component)*
+//! separator            ::= [_.] | "__" | "-"+
+//!
+//! tag                  ::= [\w][\w.-]{0,127}
+//! ```
+
+// }}}
 
 use crate::{
     ambiguous::{

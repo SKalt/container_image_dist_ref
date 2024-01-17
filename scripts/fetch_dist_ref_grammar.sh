@@ -61,4 +61,9 @@ cat /tmp/reference.go |
     s/digest-hex/encoded/g;
   ' |
   sed 's/            ::=/ ::=/g' |
+  sed -E 's/\s+$//g' |
+  sed ' # for visual consistency with the OCI grammar
+    s/\[[+][.][-][_]\]/[+._-]/g;
+    s/\[0-9a-fA-F\]/[a-fA-F0-9]/g;
+  ' |
   cat -

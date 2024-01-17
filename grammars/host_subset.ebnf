@@ -1,0 +1,5 @@
+domain               ::= host (":" port-number)?
+host                 ::= domain-name | IPv4address | "[" IPv6address "]" /* see https://www.rfc-editor.org/rfc/rfc3986#appendix-A */
+domain-name          ::= domain-component ("." domain-component)*
+domain-component     ::= ([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])
+port-number          ::= [0-9]+

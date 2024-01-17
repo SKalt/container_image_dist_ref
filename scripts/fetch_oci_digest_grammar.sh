@@ -11,6 +11,7 @@ if [ ! -f /tmp/oci_digest_grammar ]; then
   curl -s "https://raw.githubusercontent.com/opencontainers/image-spec/v1.0.2/descriptor.md" > /tmp/oci_digest_grammar
 fi
 lines 72 76 /tmp/oci_digest_grammar |
-  sed 's/   ::=/ ::=/g' |
+  sed 's/   ::=/  ::=/g' |
+  sed 's///g' |
   cat -
   # sed 's/algorithm/digest-algorithm/g' |

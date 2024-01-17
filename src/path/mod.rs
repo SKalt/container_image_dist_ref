@@ -3,6 +3,20 @@
 //! a strict superset of the previous path pattern, so implementing the newer, more-
 //! compatible pattern shouldn't result in any previously-valid paths being rejected.
 //!
+
+// {{{sh
+//    cat ../../grammars/oci_name.ebnf | sed 's#^#//! #g';
+//    printf '//! ```\n\n// '
+// }}}{{{out skip=2
+
+//! ```ebnf
+//! path                ::= path-component ("/" path-component)*
+//! path-component      ::= [a-z0-9]+ (separator [a-z0-9]+)*
+//! separator           ::= [_.] | "__" | "-"+
+//! ```
+
+// }}}
+
 //! > ```bnf
 //! >    path (or "remote-name")  := path-component ['/' path-component]*
 //! >    path-component           := alpha-numeric [separator alpha-numeric]*
@@ -22,6 +36,8 @@
 //! > -- https://github.com/opencontainers/distribution-spec/blob/v1.1.0-rc3/spec.md#pulling-manifests
 //! > -- https://github.com/opencontainers/distribution-spec/commit/a73835700327bd1c037e33d0834c46ff98ac1286
 //! > -- https://github.com/opencontainers/distribution-spec/commit/efe2de09470d7f182d2fbd83ac4462fbdc462455
+
+// TODO: vendor grammar
 
 use crate::{
     ambiguous::host_or_path::{HostOrPathSpan, Kind as PathKind},
@@ -125,39 +141,17 @@ impl<'src> PathSpan<'src> {
     }
 }
 
-pub struct PathStr<'src>(&'src str);
-impl<'src> PathStr<'src> {
-    pub(crate) fn src(&self) -> &'src str {
-        self.0
-    }
-    fn from_span(src: &'src str, span: PathSpan<'src>) -> Self {
-        Self(span.span_of(src))
-    }
-    pub fn from_prefix(src: &'src str) -> Result<Self, Error> {
-        Ok(PathStr::from_span(src, PathSpan::new(src)?))
-    }
-    pub fn from_exact_match(src: &'src str) -> Result<Self, Error> {
-        let span = PathSpan::new(src)?;
-        if span.len() != src.len() {
-            return Error::at(span.short_len(), err::Kind::PathNoMatch).into();
-        }
-        Ok(PathStr::from_span(src, span))
-    }
-    pub fn parts(&self) -> impl Iterator<Item = &'src str> {
-        self.src().split('/')
-    }
-}
-impl Lengthy<'_, Short> for PathStr<'_> {
-    fn short_len(&self) -> Short {
-        self.src().len().try_into().unwrap()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
     fn test_this() {
+        // some strings in front of "/" must be paths since they include a underscores:
+        let src = "not_a_host/path:tag";
+        let span = PathSpan::new(src).unwrap();
+        assert_eq!(span.span_of(src), "not_a_host/path");
+
+        // watch out, though: host names are also valid paths
         let src = "test.com/path:tag";
         let span = PathSpan::new(src).unwrap();
         assert_eq!(span.span_of(src), "test.com/path");

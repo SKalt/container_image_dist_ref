@@ -6,6 +6,33 @@ A docker/OCI image reference parser.
 
 This library is extensively tested against the authoritative image reference implementation, https://github.com/distribution/reference.
 
+<!-- {{{sh cat ./grammars/reference.ebnf }}}{{{out skip=2 -->
+
+```ebnf
+reference            ::= name (":" tag )? ("@" digest )?
+name                 ::= (domain "/")? path
+domain               ::= host (":" port-number)?
+host                 ::= domain-name | IPv4address | "[" IPv6address "]" /* see https://www.rfc-editor.org/rfc/rfc3986#appendix-A */
+domain-name          ::= domain-component ("." domain-component)*
+domain-component     ::= ([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])
+port-number          ::= [0-9]+
+path-component       ::= [a-z0-9]+ (separator [a-z0-9]+)*
+path                 ::= path-component ("/" path-component)*
+separator            ::= [_.] | "__" | "-"+
+
+tag                  ::= [\w][\w.-]{0,127}
+
+digest               ::= algorithm ":" encoded
+algorithm            ::= algorithm-component (algorithm-separator algorithm-component)*
+algorithm-separator  ::= [+._-]
+algorithm-component  ::= [A-Za-z][A-Za-z0-9]*
+encoded              ::= [a-fA-F0-9]{32,} /* At least 128 bit digest value */
+
+identifier           ::= [a-f0-9]{64}
+```
+
+<!-- }}} skip=2 -->
+
 ## Motivation
 
 <!-- TODO: rewrite -->

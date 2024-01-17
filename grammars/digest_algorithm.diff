@@ -1,0 +1,6 @@
+--- distribution/reference
++++ opencontainers/image-spec
+ algorithm            ::= component (separator component)*
+-component            ::= [A-Za-z][A-Za-z0-9]*
++component            ::= [a-z0-9]+
+ separator            ::= [+._-]

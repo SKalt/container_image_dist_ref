@@ -1,16 +1,32 @@
-/// > A digest string MUST match the following grammar:
-/// >
-/// > ```ebnf
-/// > digest                ::= algorithm ":" encoded
-/// > algorithm             ::= algorithm-component (algorithm-separator algorithm-component)*
-/// > algorithm-component   ::= [a-z0-9]+
-/// > algorithm-separator   ::= [+._-]
-/// > encoded               ::= [a-zA-Z0-9=_-]+
-/// > ```
-/// >
-/// > -- https://github.com/opencontainers/image-spec/blob/v1.0.2/descriptor.md#digests
+//! # Digest
+//!
+//! Parsers for digest strings according to either the [OCI image spec][image-spec]
+//! or the grammar used by [`distribution/reference`][ref].
+//! These grammars differ slightly:
+
+// {{{sh
+//    echo; cat ../../grammars/digest.diff | sed 's#^#//!#g'; printf '\n// '
+// }}}{{{out skip=2
+
+//!```diff
+
+//!--- distribution/reference
+//!+++ opencontainers/image-spec
+//! digest               ::= algorithm ":" encoded
+//! algorithm            ::= algorithm-component (algorithm-separator algorithm-component)*
+//!-component            ::= [A-Za-z][A-Za-z0-9]*
+//!+component            ::= [a-z0-9]+
+//! separator            ::= [+._-]
+//!-encoded              ::= [0-9a-fA-F]{32,} /* At least 128 bit digest value */
+//!+encoded              ::= [a-zA-Z0-9=_-]+
+
+// }}}
+//! [image-spec]: https://github.com/opencontainers/image-spec/blob/v1.0.2/descriptor.md#digests
+//! [ref]: https://github.com/distribution/reference/blob/v0.5.0/reference.go#L24
+
 pub mod algorithm;
 pub mod encoded;
+
 use crate::{
     err,
     span::{IntoOption, Lengthy, Long},

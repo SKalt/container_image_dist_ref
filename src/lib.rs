@@ -54,6 +54,7 @@ use self::{
     tag::TagSpan,
 };
 pub(crate) type Error = err::Error<Long>;
+// TODO: document with doctests
 #[derive(PartialEq, Eq)]
 struct RefSpan<'src> {
     domain: DomainSpan<'src>,
@@ -62,6 +63,7 @@ struct RefSpan<'src> {
     digest: DigestSpan<'src>,
 }
 
+// TODO: add docs with doctest examples
 impl<'src> RefSpan<'src> {
     pub fn new(src: &'src str) -> Result<Self, Error> {
         if src.is_empty() {
@@ -186,6 +188,7 @@ impl<'src> RefSpan<'src> {
     }
 }
 
+// TODO: add docs with doctest examples
 pub struct CanonicalSpan<'src>(RefSpan<'src>);
 impl<'src> CanonicalSpan<'src> {
     pub fn new(src: &'src str) -> Result<Self, Error> {
@@ -220,7 +223,8 @@ impl<'src> CanonicalSpan<'src> {
         }))
     }
 }
-
+// TODO: add docs with doctest examples
+#[derive(PartialEq)]
 pub struct RefStr<'src> {
     src: &'src str,
     // pub name: NameStr<'src>,
@@ -259,12 +263,17 @@ fn rank(span: &RefSpan) -> u8 {
         | span.tag.into_option().map(|_| 1 << 1).unwrap_or(0)
         | span.digest.into_option().map(|_| 1 << 0).unwrap_or(0)
 }
-// TODO: sort RefStr's by information, most -> least
 impl<'src> PartialOrd for RefSpan<'src> {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         rank(other).partial_cmp(&rank(self))
         // note the order: if other has more information than self, then other
         // has to be ordered before than self
+    }
+}
+
+impl<'src> PartialOrd for RefStr<'src> {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        self.span.partial_cmp(&other.span)
     }
 }
 
@@ -313,13 +322,13 @@ impl<'src> CanonicalStr<'src> {
             .into_option()
             .map(|t| &t.span_of(&self.src[self.span.0.tag_index()..])[1..]) // trim the leading ':'
     }
-    pub fn digest(&self) -> &str {
-        let digest = &self.src[self.span.0.digest_range().unwrap()];
+    pub fn digest(&self) -> DigestStr<'src> {
+        let src = &self.src[self.span.0.digest_range().unwrap()];
         debug_assert!(
-            !digest.is_empty(),
+            !src.is_empty(),
             "canonical refs should have non-empty digests by construction"
         );
-        digest
+        DigestStr::from_span(src, self.span.0.digest)
     }
 }
 

@@ -1,3 +1,28 @@
+//! # Host
+//! Parses something like
+//! ```txt
+//! docker.io/library/alpine:3.14
+//! ^^^^^^^^^
+//! localhost:5000/registry/alpine:3.14
+//! ^^^^^^^^^^^^^^
+//! [2001:db8::1]:5000/registry/alpine:3.14
+//! ^^^^^^^^^^^^^^^^^
+//! ```
+//!
+//! Specifically, the grammar is:
+
+// {{{sh sed 's#^#//! #g' ../../grammars/host_subset.ebnf; printf '//! ```\n\n// ' }}}{{{out skip=2
+
+//! ```ebnf
+//! domain               ::= host (":" port-number)?
+//! host                 ::= domain-name | IPv4address | "[" IPv6address "]" /* see https://www.rfc-editor.org/rfc/rfc3986#appendix-A */
+//! domain-name          ::= domain-component ("." domain-component)*
+//! domain-component     ::= ([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])
+//! port-number          ::= [0-9]+
+//! ```
+
+// }}}
+
 use crate::{
     ambiguous::host_or_path::{HostOrPathSpan, Kind as HostKind},
     err::{self, Error},

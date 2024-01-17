@@ -1,5 +1,5 @@
-digest              ::= algorithm ":" encoded
-algorithm           ::= algorithm-component (algorithm-separator algorithm-component)*
-algorithm-component ::= [a-z0-9]+
-algorithm-separator ::= [+._-]
-encoded             ::= [a-zA-Z0-9=_-]+
+digest               ::= algorithm ":" encoded
+algorithm            ::= algorithm-component (algorithm-separator algorithm-component)*
+algorithm-component  ::= [a-z0-9]+
+algorithm-separator  ::= [+._-]
+encoded              ::= [a-zA-Z0-9=_-]+

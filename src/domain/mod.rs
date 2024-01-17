@@ -1,10 +1,30 @@
-//! > ```ebnf
-//! > domain           := host (':' port-number)?
-//! > host             := domain-name | IPv4address | ('[' IPv6address ']') ; rfc3986 appendix-A
-//! > domain-name      := domain-component ['.' domain-component]*
-//! > domain-component := [a-zA-Z0-9] | [a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])
-//! > port-number      := [0-9]+
-//! > ```
+//! # Domain
+//! Parsers for the domain section of a reference:
+//! ```txt
+//! docker.io/library/alpine:3.14
+//! ^^^^^^^^^
+//! 127.0.0.1:5000/registry/alpine:3.14
+//! ^^^^^^^^^^^^^^
+//!  ```
+//! The grammar for the domain section of a reference is:
+
+// {{{sh
+//    cat ../../grammars/reference.ebnf |
+//      grep -E "^(domain|port|host)" |
+//      sed 's#^#//! #g';
+//    printf '//! ```\n\n// '
+// }}}{{{out skip=2
+
+//! ```ebnf
+//! domain               ::= host (":" port-number)?
+//! host                 ::= domain-name | IPv4address | "[" IPv6address "]" /* see https://www.rfc-editor.org/rfc/rfc3986#appendix-A */
+//! domain-name          ::= domain-component ("." domain-component)*
+//! domain-component     ::= ([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])
+//! port-number          ::= [0-9]+
+//! ```
+
+// }}}
+
 //! Note that this **DOES NOT** allow for percent-encoded domain names. Thus,
 //! we can't use the `url` crate for parsing domain names.
 //! Since `url::Host` needs to decode percent-encoded domain names per [rfc3986](https://www.rfc-editor.org/rfc/rfc3986#appendix-A)
@@ -81,13 +101,12 @@ impl<'src> DomainSpan<'src> {
     pub(crate) fn from_ambiguous(
         host: HostOrPathSpan<'src>,
         port: PortOrTagSpan<'src>,
-        context: &'src str,
     ) -> Result<Self, Error> {
         let host = HostSpan::from_ambiguous(host)?;
         if host.is_none() {
             return Err(Error::at(0, err::Kind::HostNoMatch));
         }
-        let port = PortSpan::from_ambiguous(port, &context[host.len()..])?;
+        let port = PortSpan::from_ambiguous(port)?;
         Self::from_parts(host, port)
     }
 }

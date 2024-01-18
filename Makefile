@@ -52,3 +52,7 @@ grammars:                          \
 	./grammars/digest_encoded.diff   \
 	./grammars/host_subset.ebnf      \
 	./grammars/host_or_path.ebnf     \
+
+.PHONY: link-check
+link-check:
+	lychee --exclude=./target .

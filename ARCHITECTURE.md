@@ -48,7 +48,7 @@ Put extra debugging variables behind [`#[cfg(debug_assertions)]` conditional-com
 
 To keep the library size small and keep ownership of all of the relevant logic.
 
-I chose not to use the excellent [`regex` crate](https::github.com/rust-lang/regex) since:
+I chose not to use the excellent [`regex` crate](https://github.com/rust-lang/regex) since:
 
 1. writing the parsers as pure functions avoids issues of [cross-thread resource contention](https://docs.rs/regex/latest/regex/#sharing-a-regex-across-threads-can-result-in-contention).
 1. I _think_ `regex` relies on pointer-sized offsets for capture groups, which cancels out the short-length optimizations. A scan through the `regex` and `regex-automata` docs and issues didn't reveal a way to use `u8`s .

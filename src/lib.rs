@@ -7,7 +7,7 @@ pub mod domain;
 pub mod err;
 pub mod path;
 mod span;
-mod tag;
+pub mod tag;
 
 /// the maximum total number of characters in a repository name, as defined by
 /// https://github.com/distribution/reference/blob/main/reference.go#L39
@@ -79,25 +79,29 @@ impl<'src> RefSpan<'src> {
             DomainOrRefSpan::TaggedRef((_, right)) => match right.into_option() {
                 Some(tag) => Ok(tag),
                 None => match rest.bytes().next() {
-                    Some(b':') => TagSpan::new(rest).map_err(|e| e.into()),
+                    Some(b':') => TagSpan::new(&rest[1..]).map_err(|e| e.into()),
                     Some(b'@') | None => Ok(TagSpan::none()),
                     Some(_) => Error::at(0, err::Kind::PathInvalidChar).into(),
                 },
             },
             DomainOrRefSpan::Domain(_) => match rest.bytes().next() {
-                Some(b':') => TagSpan::new(rest).map_err(|e| e.into()),
+                Some(b':') => TagSpan::new(&rest[1..]).map_err(|e| e.into()),
                 Some(_) | None => Ok(TagSpan::none()),
             },
         }
         .map_err(|e| e + index)?;
-        index += tag.short_len() as Long;
+        index += tag
+            .into_option()
+            .map(|t| t.short_len() as Long)
+            .map(|l| l + 1) // +1 for the leading ':'
+            .unwrap_or(0);
         let rest = &src[index as usize..];
         let digest = match rest.bytes().next() {
             Some(b'@') => {
                 index += 1;
                 DigestSpan::new(&src[index as usize..])
             }
-            Some(_) => DigestSpan::new(&src[index as usize..]),
+            Some(_) => DigestSpan::new(&src[index as usize..]), // TODO: explain why this is valid. IIRC, it's to handle digest-only refs?
             None => Ok(DigestSpan::none()),
         }
         .map_err(|e| e + index)?;
@@ -115,12 +119,14 @@ impl<'src> RefSpan<'src> {
             digest,
         })
     }
-
+    /// the offset at which the path starts.
     fn path_index(&self) -> usize {
         self.domain.len()
     }
+    /// the at which the tag starts. If a tag is present, tag_index is AFTER the leading ':'.
     fn tag_index(&self) -> usize {
-        self.path_index() + self.path.len()
+        self.path_index() + self.path.len() + self.tag.into_option().map(|_| 1).unwrap_or(0)
+        // +1 for the leading ':'
     }
     fn digest_index(&self) -> usize {
         self.tag_index() + self.tag.len() + self.digest.into_option().map(|_| 1).unwrap_or(0)
@@ -142,7 +148,7 @@ impl<'src> RefSpan<'src> {
         })
     }
     fn name_range(&self) -> Option<Range<usize>> {
-        let end = self.tag_index();
+        let end = self.path_index() + self.path.len();
         if end == 0 {
             None
         } else {
@@ -150,10 +156,10 @@ impl<'src> RefSpan<'src> {
         }
     }
     fn tag_range(&self) -> Option<Range<usize>> {
-        self.tag
-            .into_option()
-            .map(|t| self.tag_index() + 1..self.tag_index() + t.len())
-        // 1 == consume the leading ':' if a tag is present
+        self.tag.into_option().map(|t| {
+            let start = self.tag_index();
+            start..(start + t.len())
+        })
     }
     fn digest_range(&self) -> Option<RangeFrom<usize>> {
         self.digest.into_option().map(|_| self.digest_index()..)
@@ -344,6 +350,8 @@ mod tests {
 
     use alloc::{format, string::String};
 
+    use self::err::Error;
+
     use super::*;
     fn should_parse(src: &'_ str) -> RefStr<'_> {
         let result = RefStr::new(src);
@@ -355,7 +363,7 @@ mod tests {
     }
     // TODO: expose this kind of error-formatting functionality in the err module
     // behind an `alloc` feature flag
-    fn pretty_err(e: Error, src: &str) -> String {
+    fn pretty_err(e: Error<Long>, src: &str) -> String {
         let kind = e.kind();
         let index = e.index();
         let msg = "failed to parse";
@@ -380,7 +388,7 @@ mod tests {
         assert_eq!(actual, expected, "differences parsing {:?}", src);
     }
 
-    fn should_fail_with(src: &'_ str, expected: Error) {
+    fn should_fail_with(src: &'_ str, expected: Error<Long>) {
         let result = RefStr::new(src);
 
         match result {
@@ -520,7 +528,10 @@ mod tests {
             should_fail_with(&src, Error::at(257, err::Kind::AlgorithmTooLong))
         };
     }
-
+    #[test]
+    fn test_bad_refs() {
+        should_fail_with("[::]0", Error::at(4, err::Kind::PortOrTagInvalidChar));
+    }
     #[derive(Debug, PartialEq, Eq)]
     struct TestCase<'src> {
         input: &'src str,

@@ -39,7 +39,7 @@ use crate::{
     tag::TagSpan,
 };
 use HostOrPathKind::{Any, Host, HostOrPath, IpV6, Path};
-use PortOrTagKind::{Port, Tag};
+use PortOrTagKind::Port;
 
 pub(crate) type Error = err::Error<Long>;
 /// represents a colon-delimited string of the form "left:right"
@@ -53,13 +53,19 @@ impl Lengthy<'_, Long> for DomainOrRefSpan<'_> {
         match self {
             DomainOrRefSpan::Domain(d) => d.short_len().into(),
             DomainOrRefSpan::TaggedRef((left, right)) => {
-                left.short_len() as Long + right.short_len() as Long
+                left.short_len() as Long
+                    + right
+                        .into_option()
+                        .map(|t| t.short_len() as Long)
+                        .map(|l| l + 1) // add after padding to prevent overflow of Short
+                        .unwrap_or(0)
             }
         }
     }
 }
 
-fn adapt_err(e: err::Error<Short>) -> err::Error<Long> {
+// TODO: check whether this has any effect on performance
+fn map_err(e: err::Error<Short>) -> err::Error<Long> {
     e.into()
 }
 
@@ -69,55 +75,65 @@ impl<'src> DomainOrRefSpan<'src> {
             .into_option()
             .ok_or(Error::at(0, err::Kind::HostOrPathNoMatch))?;
         let right_src = &src[left.len()..];
-        let right_kind = if left.short_len() == Short::MAX {
-            // no room left for a port in the name, since name is bounded at 255 chars
-            // thus, the right side must be a Tag
-            Tag
-        } else {
-            Port
-        };
-        let right = PortOrTagSpan::new(right_src, right_kind)
-            .map_err(adapt_err)
-            .map_err(|e| e + left.short_len())?;
+        let right = match right_src.bytes().next() {
+            Some(b':') => {
+                PortOrTagSpan::new(&right_src[1..], Port)
+                    .map_err(map_err)
+                    .map_err(|e| e + 1u8) // +1 for the leading ':'
+                    .map_err(|e| e + left.short_len())
+            }
+            Some(b'/') | Some(b'@') | None => Ok(PortOrTagSpan::none()),
+            Some(_) => Error::at(left.short_len().into(), err::Kind::PortOrTagInvalidChar).into(),
+        }?;
 
-        let len = left.len() + right.len();
+        let len = left.len() + right.into_option().map(|r| r.len() + 1).unwrap_or(0); // +1 for the leading ':'
         let rest = &src[len..];
-        let next = rest.bytes().next();
-        match next {
+        match rest.bytes().next() {
             Some(b'@') | None => {
-                return PathSpan::from_ambiguous(left)
-                    .map(|p| Self::TaggedRef((p, right.into())))
-                    .map_err(adapt_err)
-            } // needs to be a tagged ref no matter what
-            Some(b'/') => match right.into_option().map(|r| r.kind()) {
-                Some(_) => {
-                    return DomainSpan::from_ambiguous(left, right)
-                        .map(Self::Domain)
-                        .map_err(adapt_err)
-                }
-                None => match left.kind() {
-                    Path => {
-                        // need to extend the path
-                        let path = PathSpan::from_ambiguous(left)?
-                            .extend(rest)
-                            .map_err(adapt_err)
-                            .map_err(|e| e + left.short_len())?;
-                        return Ok(Self::TaggedRef((path, right.into())));
+                // since the next section must be a digest, the right side must be a tag
+                let path = PathSpan::from_ambiguous(left).map_err(map_err)?;
+                Ok(Self::TaggedRef((
+                    path,
+                    right
+                        .try_into()
+                        .map_err(map_err)
+                        .map_err(|e| e + 1u16) // the only error is TagTooLong, which gets thrown if there's a tag. Thus, add +1 for the leading ':'
+                        .map_err(|e| e + path.short_len())?, // addition is safe since path can be at most 255ch and tag can be at most 128ch
+                )))
+            }
+            Some(b'/') => {
+                // needs to be a name
+                return if right.is_some() {
+                    // right must be a port, so left must be a domain
+                    DomainSpan::from_ambiguous(left, right).map(Self::Domain)
+                } else {
+                    match left.kind() {
+                        Path => {
+                            // need to extend the path
+                            let path = PathSpan::from_ambiguous(left)?
+                                .extend(rest)
+                                .map_err(map_err)
+                                .map_err(|e| e + left.short_len())?;
+                            let tag = right
+                                .try_into()
+                                .map_err(map_err)
+                                .map_err(|e| e + 1u8) // +1 for the leading ':'
+                                .map_err(|e| e + path.short_len())?;
+                            Ok(Self::TaggedRef((path, tag)))
+                        }
+                        Host | IpV6 | HostOrPath => {
+                            DomainSpan::from_ambiguous(left, right).map(Self::Domain)
+                        }
+                        Any => unreachable!(
+                            "HostOrPathSpan::new should always refine to a more specific kind"
+                        ),
                     }
-                    Host | IpV6 | HostOrPath => {
-                        return DomainSpan::from_ambiguous(left, right)
-                            .map(Self::Domain)
-                            .map_err(adapt_err)
-                    }
-                    Any => unreachable!(
-                        "HostOrPathSpan::new should always refine to a more specific kind"
-                    ),
-                },
-            }, // needs to be a name
+                };
+            }
             _ => unreachable!(
                 "PortOrTagSpan::new() only terminates successfully at '/', '@', or EOF"
             ),
-        };
+        }
     }
 }
 
@@ -131,11 +147,20 @@ mod tests {
             Ok(span) => match span {
                 DomainOrRefSpan::Domain(domain) => {
                     assert_eq!(domain.host().span_of(src), left);
-                    assert_eq!(domain.port().span_of(&src[left.len()..]), right);
+                    if let Some(p) = domain.port().into_option() {
+                        assert_eq!(p.span_of(&src[left.len() + 1..]), right);
+                    } else {
+                        assert_eq!(right, "");
+                    };
+                    assert_eq!(domain.port().span_of(&src[left.len() + 1..]), right);
                 }
                 DomainOrRefSpan::TaggedRef((path, tag)) => {
                     assert_eq!(path.span_of(src), left);
-                    assert_eq!(tag.span_of(&src[left.len()..]), right);
+                    if let Some(t) = tag.into_option() {
+                        assert_eq!(t.span_of(&src[left.len() + 1..]), right);
+                    } else {
+                        assert_eq!(right, "");
+                    };
                 }
             },
             Err(e) => {
@@ -153,7 +178,7 @@ mod tests {
 
     #[test]
     fn test_ambiguous() {
-        should_split("test.com:tag", "test.com", ":tag");
+        should_split("test.com:tag", "test.com", "tag");
         should_split("test_com", "test_com", "");
     }
 }

@@ -296,6 +296,8 @@ impl<'src> HostOrPathSpan<'src> {
         let _done = DebugScan::from(&state.scan);
 
         state.check_component_end()?;
+        #[cfg(debug_assertions)]
+        let _rest = &src[state.len as usize..];
         debug_assert!(
             state.len as usize <= src.len(),
             "len = {}, src.len() = {} for {src:?}",

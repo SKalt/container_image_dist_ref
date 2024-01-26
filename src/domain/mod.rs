@@ -39,9 +39,10 @@ use crate::{
         host::{HostSpan, HostStr},
         port::PortSpan,
     },
-    err::{self, Error, Kind as ErrorKind},
-    span::{IntoOption, Lengthy, Short},
+    err::{self, Kind as ErrorKind},
+    span::{IntoOption, Lengthy, Long, Short},
 };
+type Error = err::Error<Long>;
 
 /// a definite host and an optional port. Combined length MUST be under 255 chars.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -52,10 +53,15 @@ pub(super) struct DomainSpan<'src> {
     port: PortSpan<'src>,
 }
 
-impl Lengthy<'_, Short> for DomainSpan<'_> {
+impl Lengthy<'_, Long> for DomainSpan<'_> {
     #[inline(always)]
-    fn short_len(&self) -> Short {
-        self.host().short_len() + self.port().short_len()
+    fn short_len(&self) -> Long {
+        self.host().short_len() as Long // since host can be up to 255 chars, pad to avoid overflow
+            + self
+                .port()
+                .into_option()
+                .map(|p| p.short_len() + 1) // +1 for the leading ':'
+                .unwrap_or(0) as Long
     }
 }
 
@@ -89,7 +95,7 @@ impl<'src> DomainSpan<'src> {
     fn from_parts(host: HostSpan<'src>, port: PortSpan<'src>) -> Result<Self, Error> {
         host.short_len()
             .checked_add(port.short_len())
-            .ok_or(Error::at(Short::MAX, err::Kind::PortTooLong))?;
+            .ok_or(Error::at(Short::MAX.into(), err::Kind::PortTooLong))?;
         Ok(Self { host, port })
     }
     /// parse a domain from the start of a string.

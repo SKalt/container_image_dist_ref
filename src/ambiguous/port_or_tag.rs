@@ -22,6 +22,11 @@ impl Kind {
         }
     }
 }
+/// A span of characters that can be either a port or a tag.
+/// Does NOT include the mandatory leading colon before either a port or a tag.
+/// To accommodate the grammar's definition of a port as a nonzero numeric string,
+/// the `.length` may be up to 255 characters, though tags are limited to 128 characters
+/// after the colon.
 #[derive(Clone, Copy)]
 pub(crate) struct PortOrTagSpan<'src> {
     length: ShortLength<'src>,
@@ -104,16 +109,9 @@ impl<'src> PortOrTagSpan<'src> {
     /// can match an empty span if the first character in src is a `/` or `@`
     pub(crate) fn new(src: &str, kind: Kind) -> Result<Self, Error> {
         let ascii = src.as_bytes();
-        // safe since len is going from 0 -> 1
         let mut bytes = src.bytes();
-        match bytes.next() {
-            Some(b':') => Ok(()), // consume the starting colon
-            None | Some(b'/') | Some(b'@') => return Ok(Self::none()),
-            _ => Err(Error::at(0, err::Kind::PortOrTagInvalidChar)),
-        }?;
-
         let mut state = State {
-            len: 1,
+            len: 0,
             kind,
             first_tag_char: 0, // only set on transition from port to tag
                                // and only used for providing an error index when
@@ -122,13 +120,13 @@ impl<'src> PortOrTagSpan<'src> {
 
         // the first character after the colon must be alphanumeric or an underscore
         match bytes.next() {
-            None | Some(b'/') | Some(b'@') => Error::at(1, err::Kind::PortOrTagMissing).into(),
             Some(b'0'..=b'9') => {
                 // both ports and tags can have digits
                 state.update_kind(state.kind)
             }
             Some(b'a'..=b'z') | Some(b'A'..=b'Z') | Some(b'_') => state.update_kind(Kind::Tag),
-            Some(_) => Error::at(1, err::Kind::PortOrTagInvalidChar).into(),
+            None | Some(b'/') | Some(b'@') => Error::at(1, err::Kind::PortOrTagMissing).into(),
+            _ => Error::at(1, err::Kind::PortOrTagInvalidChar).into(),
         }?;
         state.advance()?;
 
@@ -178,10 +176,10 @@ mod tests {
 
     #[test]
     fn test_basic_tag() {
-        should_parse_as(":tag", Kind::Tag);
+        should_parse_as("tag", Kind::Tag);
     }
     #[test]
     fn test_basic_port() {
-        should_parse_as(":1234", Kind::Port);
+        should_parse_as("1234", Kind::Port);
     }
 }

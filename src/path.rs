@@ -29,7 +29,9 @@ use crate::{
     span::{impl_span_methods_on_tuple, IntoOption, Length, Lengthy, Short},
 };
 type Error = err::Error<Short>;
-fn adapt_error(e: Error) -> Error {
+
+/// adapt ambiguous error kinds into path-specific error kinds
+fn map_error(e: Error) -> Error {
     let kind = match e.kind() {
         err::Kind::HostOrPathNoMatch => err::Kind::PathNoMatch,
         err::Kind::HostOrPathInvalidChar => err::Kind::PathInvalidChar,
@@ -54,7 +56,7 @@ impl IntoOption for PathSpan<'_> {
 impl<'src> PathSpan<'src> {
     fn parse_component(src: &'src str) -> Result<Self, Error> {
         let parsed =
-            Self::from_ambiguous(HostOrPathSpan::new(src, PathKind::Path).map_err(adapt_error)?)?;
+            Self::from_ambiguous(HostOrPathSpan::new(src, PathKind::Path).map_err(map_error)?)?;
         parsed
             .into_option()
             .ok_or(Error::at(0, err::Kind::PathComponentInvalidEnd))

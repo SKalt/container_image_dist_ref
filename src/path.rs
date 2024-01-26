@@ -99,7 +99,7 @@ impl<'src> PathSpan<'src> {
             .ok_or(Error::at(Short::MAX, err::Kind::PathTooLong))?;
         Ok(Self(Length::new(len)))
     }
-    pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
+    pub fn new(src: &'src str) -> Result<Self, Error> {
         let index = Self::parse_component(src)?.short_len();
         let result = Self::parse_from_slash(&src[index as usize..]).map_err(|e| {
             index
@@ -125,6 +125,22 @@ impl<'src> PathSpan<'src> {
     }
 }
 
+pub struct PathStr<'src> {
+    src: &'src str,
+    span: PathSpan<'src>,
+}
+impl<'src> PathStr<'src> {
+    pub fn new(src: &'src str) -> Result<Self, Error> {
+        let span = PathSpan::new(src)?;
+        Ok(Self { src, span })
+    }
+    pub fn src(&self) -> &'src str {
+        self.span.span_of(self.src)
+    }
+    pub fn parts(&self) -> impl Iterator<Item = &'src str> {
+        self.src().split('/')
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

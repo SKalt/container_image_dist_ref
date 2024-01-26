@@ -46,7 +46,7 @@ test:
 	./scripts/subset_host_or_path.sh > ./grammars/host_or_path.ebnf
 
 .PHONY: grammars
-grammars:                          \
+grammars:                            \
 	./grammars/digest.diff           \
 	./grammars/digest_algorithm.diff \
 	./grammars/digest_encoded.diff   \

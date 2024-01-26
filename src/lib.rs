@@ -1,39 +1,11 @@
-// > Grammar
-// >
-// > ```ebnf
-// > reference                       := name [ ":" tag ] [ "@" digest ]
-// > name                            := [domain '/'] remote-name
-// > domain                          := host [':' port-number]
-// > host                            := domain-name | IPv4address | \[ IPv6address \] ; rfc3986 appendix-A
-// > domain-name                     := domain-component ['.' domain-component]*
-// > domain-component                := /([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])/
-// > port-number                     := /[0-9]+/
-// > path-component                  := alpha-numeric [separator alpha-numeric]*
-// > path (or "remote-name")         := path-component ['/' path-component]*
-// > alpha-numeric                   := /[a-z0-9]+/
-// > separator                       := /[_.]|__|[-]*/
-// >
-// > tag                             := /[\w][\w.-]{0,127}/
-// >
-// > digest                          := digest-algorithm ":" digest-hex
-// > digest-algorithm                := digest-algorithm-component [ digest-algorithm-separator digest-algorithm-component ]*
-// > digest-algorithm-separator      := /[+.-_]/
-// > digest-algorithm-component      := /[A-Za-z][A-Za-z0-9]*/
-// > digest-hex                      := /[0-9a-fA-F]{32,}/ ; At least 128 bit digest value
-// >
-// > identifier                      := /[a-f0-9]{64}/
-// > ```
-// >
-// > -- https://github.com/distribution/reference/blob/v0.5.0/reference.go#L4-L26
-// > -- https://github.com/distribution/reference/blob/4894124079e525c3c3c5c8aacaa653b5499004e9/reference.go#L4-L26
-// https://www.rfc-editor.org/rfc/rfc3986#appendix-A
-// https://docs.rs/regex/latest/regex/#sharing-a-regex-across-threads-can-result-in-contention
+// TODO: docstring
+
 #![no_std]
 pub(crate) mod ambiguous;
 pub mod digest;
 pub mod domain;
 pub mod err;
-mod path;
+pub mod path;
 mod span;
 mod tag;
 
@@ -381,7 +353,8 @@ mod tests {
         let span = result.unwrap();
         span
     }
-
+    // TODO: expose this kind of error-formatting functionality in the err module
+    // behind an `alloc` feature flag
     fn pretty_err(e: Error, src: &str) -> String {
         let kind = e.kind();
         let index = e.index();

@@ -2,7 +2,7 @@
 [package]
 name = "container_image_dist_ref"
 description = "A library for parsing and validating container image references."
-version = "0.1.4"
+version = "0.2.0"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/skalt/container_image_dist_ref.git"

@@ -24,7 +24,8 @@ use self::{
     path::PathSpan, span::Lengthy, tag::TagSpan,
 };
 pub(crate) type Error = err::Error<u16>;
-// TODO: document with doctests
+/// A reference to an image by any combination of name, tag, and digest.
+// TODO: doctest
 #[derive(PartialEq, Eq)]
 struct RefSpan<'src> {
     domain: Option<DomainSpan<'src>>,
@@ -33,7 +34,6 @@ struct RefSpan<'src> {
     digest: Option<DigestSpan<'src>>,
 }
 
-// TODO: add docs with doctest examples
 impl<'src> RefSpan<'src> {
     pub fn new(src: &'src str) -> Result<Self, Error> {
         if src.is_empty() {
@@ -182,6 +182,7 @@ impl<'src> RefSpan<'src> {
 /// - a path/repo name
 /// - optionally, a tag
 /// - A digest
+// TODO: doctest
 pub struct CanonicalSpan<'src> {
     domain: DomainSpan<'src>,
     path: PathSpan<'src>,

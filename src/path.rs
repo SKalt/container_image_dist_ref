@@ -77,12 +77,8 @@ impl<'src> PathSpan<'src> {
                         .map(|i| Error::at(i, e.kind()))
                         .unwrap_or(ERR_PATH_TOO_LONG)
                 })?
-                .map(|p| p.short_len().into()) // TODO: <--
-                .map(|len| {
-                    index
-                        .checked_add(len)
-                        .ok_or(ERR_PATH_TOO_LONG)
-                });
+                .map(|p| p.short_len().into())
+                .map(|len| index.checked_add(len).ok_or(ERR_PATH_TOO_LONG));
             if let Some(update) = update {
                 index = update?;
             } else {

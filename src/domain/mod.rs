@@ -87,7 +87,9 @@ impl<'src> DomainSpan<'src> {
     /// parse a domain from the start of a string.
     pub(crate) fn new(src: &'src str) -> Result<Option<Self>, Error> {
         if let Some(host) = HostSpan::new(src)? {
-            let port = PortSpan::new(&src[host.len()..]).map_err(|e| e + host.short_len())?; // FIXME: check addition overflow
+            let port = PortSpan::new(&src[host.len()..])
+                .map_err(|e| e.into())
+                .map_err(|e: Error| e + host.short_len().widen())?;
             Self::from_parts(host, port).map(Some)
         } else {
             Ok(None)

@@ -60,9 +60,7 @@ pub enum Kind {
 
 /// can be ipv6
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) struct HostSpan<'src>(Length<'src, NonZeroU8>, pub(crate) Kind);
-// TODO: use named fields?
-// TODO: restrict access to innards
+pub(crate) struct HostSpan<'src>(Length<'src, NonZeroU8>, Kind);
 impl_span_methods_on_tuple!(HostSpan, u8, NonZeroU8);
 impl<'src> TryFrom<HostOrPathSpan<'src>> for HostSpan<'_> {
     type Error = Error;

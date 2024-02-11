@@ -36,7 +36,7 @@ impl_span_methods_on_tuple!(AlgorithmSpan, u8, NonZeroU8);
 
 type Error = err::Error<u16>;
 use err::Kind::{
-    AlgorithmInvalidChar, AlgorithmInvalidNumericPrefix, AlgorithmNoMatch, InvalidOciAlgorithm,
+    AlgorithmInvalidChar, AlgorithmInvalidNumericPrefix, AlgorithmMissing, InvalidOciAlgorithm,
 };
 fn try_add(a: NonZeroU8, b: u8) -> Result<NonZeroU8, Error> {
     a.checked_add(b)
@@ -49,7 +49,7 @@ pub const ALGORITHM_MAX_LEN: u8 = u8::MAX;
 impl<'src> AlgorithmSpan<'src> {
     pub(crate) fn new(src: &'src str) -> Result<(Self, Compliance), Error> {
         let (mut len, mut compliance) =
-            component(src, Compliance::Universal)?.ok_or(Error::at(0, AlgorithmNoMatch))?;
+            component(src, Compliance::Universal)?.ok_or(Error::at(0, AlgorithmMissing))?;
         let max_len = src.len().try_into().unwrap_or(ALGORITHM_MAX_LEN);
         loop {
             if u8::from(len) >= max_len {
@@ -65,7 +65,7 @@ impl<'src> AlgorithmSpan<'src> {
             }
             let (component_len, component_compliance) =
                 component(&src[len.as_usize()..], compliance)?
-                    .ok_or(Error::at(u8::from(len).into(), AlgorithmNoMatch))?;
+                    .ok_or(Error::at(u8::from(len).into(), AlgorithmMissing))?;
             len = try_add(len, component_len.into())?;
             compliance = component_compliance; // narrow compliance from Universal -> (Oci | Distribution)
         }
@@ -76,7 +76,7 @@ impl<'src> AlgorithmSpan<'src> {
         if span.len() == src.len() {
             Ok((span, compliance))
         } else {
-            Error::at(span.short_len().upcast().into(), AlgorithmNoMatch).into()
+            Error::at(span.short_len().upcast().into(), AlgorithmMissing).into()
         }
     }
 }

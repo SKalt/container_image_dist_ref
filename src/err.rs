@@ -5,12 +5,10 @@
 // since ErrorKind can fit 256 unique errors, use it for all non-ambiguous cases
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
-    // FIXME: rename errors from *NoMatch to *Missing
-
     // ambiguous::host_or_path ---------------------------------
     /// unable to match a host or path of length > 0. This is caused by
     /// attempting to parse an empty string.
-    HostOrPathNoMatch,
+    HostOrPathMissing,
     /// parsing the host or path section exceeded 255 characters.
     HostOrPathTooLong,
     HostOrPathInvalidChar,
@@ -25,12 +23,12 @@ pub enum Kind {
     /// the name (including host, port, and path) is over 255 characters long.
     NameTooLong,
     // name::domain::host --------------------------------------------
-    HostNoMatch,
+    HostMissing,
     HostComponentInvalidEnd,
     HostInvalidChar,
     HostTooLong,
     // name::domain::ipv6 -------------------------------------------
-    Ipv6NoMatch,
+    Ipv6InvalidChar,
     Ipv6TooLong,
     Ipv6BadColon,
     Ipv6TooManyHexDigits,
@@ -44,7 +42,7 @@ pub enum Kind {
     /// an empty port was observed (like "host:/", or "host:" at the end of the string)
     PortMissing,
     // name::path ----------------------------------------------------
-    PathNoMatch,
+    PathMissing,
     PathComponentInvalidEnd,
     PathInvalidChar,
     PathTooLong,
@@ -55,8 +53,7 @@ pub enum Kind {
 
     // digest::algorithm ----------------------------------------
     /// 0-length algorithm in an "algorithm:encoded" section detected
-    // TODO: deprecate in favor of Option<Algorithm>
-    AlgorithmNoMatch,
+    AlgorithmMissing,
     /// If parsing in OCI-digest mode, uppercase letters are not allowed.
     InvalidOciAlgorithm,
     /// At least one algorithm component starts with a number, which is allowed
@@ -72,7 +69,7 @@ pub enum Kind {
     AlgorithmTooLong,
     // digest::encoded ------------------------------------------
     /// Nothing after the ":" in an "algorithm:encoded" section.
-    EncodedNoMatch,
+    EncodedMissing,
     /// a non-base64 character was encountered.
     EncodedInvalidChar,
     ///non-lower-hex characters are not allowed when parsing in `distribution/reference` mode
@@ -86,7 +83,7 @@ pub enum Kind {
     EncodingTooLong,
     // reference ----------------------------------------
     /// empty string or non-canonical reference
-    RefNoMatch,
+    RefMissing,
 }
 
 /// The `Error` type contains an `err::Kind` and an index within the source string.

@@ -92,13 +92,13 @@ impl<'src> DigestSpan<'src> {
         let rest = &src[len.as_usize()..];
         len = match rest.bytes().next() {
             Some(b':') => len.checked_add(1).ok_or(err::Kind::AlgorithmTooLong),
-            None => Err(err::Kind::AlgorithmNoMatch),
+            None => Err(err::Kind::AlgorithmMissing),
             _ => Err(err::Kind::AlgorithmInvalidChar),
         }
         .map_err(|kind| Error::at(len.into(), kind))?;
         let rest = &src[len.as_usize()..];
         let (encoded, compliance) = EncodedSpan::new(rest, compliance)?
-            .ok_or(Error::at(len.into(), err::Kind::EncodedNoMatch))?;
+            .ok_or(Error::at(len.into(), err::Kind::EncodedMissing))?;
 
         {
             let rest = &src[len.as_usize()..];

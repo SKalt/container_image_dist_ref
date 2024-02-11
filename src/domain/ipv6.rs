@@ -130,7 +130,7 @@ impl<'src> Ipv6Span<'src> {
         let mut index: NonZeroU8 = match ascii.next() {
             None => return Ok(None),
             Some(b'[') => Ok(nonzero!(u8, 1)), // consume the opening bracket
-            Some(_) => Err(Error::at(0, err::Kind::Ipv6NoMatch)),
+            Some(_) => Err(Error::at(0, err::Kind::Ipv6InvalidChar)),
         }?;
         let mut state = State(0);
         loop {
@@ -140,7 +140,8 @@ impl<'src> Ipv6Span<'src> {
                     b'a'..=b'f' | b'A'..=b'F' | b'0'..=b'9' => state.increment_position_in_group(),
                     b':' => state.set_colon(),
                     b']' => break, // done!
-                    _ => Err(err::Kind::Ipv6MissingClosingBracket),
+                    b'/' => Err(err::Kind::Ipv6MissingClosingBracket),
+                    _ => Err(err::Kind::Ipv6InvalidChar),
                 }
                 .map_err(|kind| Error::at(index.upcast(), kind))?;
             } else {

@@ -131,7 +131,7 @@ impl<'src> DomainStr<'src> {
         let result = DomainSpan::new(src)?;
         let len = result.as_ref().map(|r| r.short_len().into()).unwrap_or(0);
         if (len as usize) != src.len() {
-            return Err(Error::at(len, ErrorKind::HostNoMatch));
+            return Err(Error::at(len, ErrorKind::HostInvalidChar));
         }
         Ok(result.map(|span| Self { src, span }))
     }

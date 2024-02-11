@@ -37,7 +37,7 @@ fn disambiguate_err(e: Error) -> Error {
     let kind = match e.kind() {
         err::Kind::HostOrPathInvalidChar => err::Kind::HostInvalidChar,
         err::Kind::HostOrPathTooLong => err::Kind::HostTooLong,
-        err::Kind::HostOrPathNoMatch => err::Kind::HostNoMatch,
+        err::Kind::HostOrPathMissing => err::Kind::HostMissing,
         _ => e.kind(),
     };
     Error::at(e.index(), kind)
@@ -140,7 +140,7 @@ impl<'src> HostStr<'src> {
         let result = HostSpan::new(src)?;
         let len = result.as_ref().map(|r| r.short_len().into()).unwrap_or(0);
         if (len as usize) != src.len() {
-            return Err(Error::at(len, crate::err::Kind::HostNoMatch));
+            return Err(Error::at(len, crate::err::Kind::HostInvalidChar));
         }
         Ok(result.map(|r| Self::from_span_of(src, r)))
     }

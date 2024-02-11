@@ -80,7 +80,7 @@ fn map_err(e: err::Error<u8>) -> err::Error<u16> {
 impl<'src> DomainOrRefSpan<'src> {
     pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
         let left = HostOrPathSpan::new(src, HostOrPathKind::Any)?
-            .ok_or(Error::at(0, err::Kind::HostOrPathNoMatch))?;
+            .ok_or(Error::at(0, err::Kind::HostOrPathMissing))?;
         let right_src = &src[left.len()..];
         let right = match right_src.bytes().next() {
             Some(b':') => {
@@ -151,7 +151,7 @@ impl<'src> DomainOrRefSpan<'src> {
                         Any => {
                             return Err(Error::at(
                                 len.try_into().unwrap(),
-                                err::Kind::HostOrPathNoMatch,
+                                err::Kind::HostOrPathMissing,
                             ))
                         }
                     }

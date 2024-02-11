@@ -35,7 +35,7 @@ type Error = err::Error<u8>;
 /// adapt ambiguous error kinds into path-specific error kinds
 fn map_error(e: Error) -> Error {
     let kind = match e.kind() {
-        err::Kind::HostOrPathNoMatch => err::Kind::PathNoMatch,
+        err::Kind::HostOrPathMissing => err::Kind::PathMissing,
         err::Kind::HostOrPathInvalidChar => err::Kind::PathInvalidChar,
         err::Kind::HostOrPathTooLong => err::Kind::PathTooLong,
         _ => e.kind(),

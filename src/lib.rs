@@ -37,7 +37,7 @@ struct RefSpan<'src> {
 impl<'src> RefSpan<'src> {
     pub fn new(src: &'src str) -> Result<Self, Error> {
         if src.is_empty() {
-            return Error::at(0, err::Kind::RefNoMatch).into();
+            return Error::at(0, err::Kind::RefMissing).into();
         };
         let prefix = DomainOrRefSpan::new(src)?;
         let rest = &src[prefix.len()..];
@@ -183,19 +183,19 @@ pub struct CanonicalSpan<'src> {
 }
 impl<'src> CanonicalSpan<'src> {
     pub fn new(src: &'src str) -> Result<Self, Error> {
-        let domain = DomainSpan::new(src)?.ok_or(Error::at(0, err::Kind::HostNoMatch))?;
+        let domain = DomainSpan::new(src)?.ok_or(Error::at(0, err::Kind::HostMissing))?;
         let mut len = domain.short_len().into();
         match &src[len as usize..].bytes().next() {
             Some(b'/') => Ok(()),
             Some(_) => Err(err::Kind::PathInvalidChar),
-            None => Err(err::Kind::RefNoMatch),
+            None => Err(err::Kind::PathMissing),
         }
         .map_err(|kind| Error::at(len, kind))?;
 
         let path = PathSpan::new(&src[len as usize..])
             .map_err(|e| e.into())
             .map_err(|e: Error| e + len)?
-            .ok_or(Error::at(len, err::Kind::PathNoMatch))?;
+            .ok_or(Error::at(len, err::Kind::PathMissing))?;
         len += path.short_len().upcast() as u16;
         if len > NAME_TOTAL_MAX_LENGTH as u16 {
             return Error::at(len, err::Kind::NameTooLong).into();
@@ -207,11 +207,11 @@ impl<'src> CanonicalSpan<'src> {
         len += match src.as_bytes()[len as usize..].iter().next() {
             Some(b'@') => Ok(1),
             Some(_) => Error::at(len, err::Kind::PathInvalidChar).into(),
-            None => Error::at(len, err::Kind::RefNoMatch).into(),
+            None => Error::at(len, err::Kind::AlgorithmMissing).into(),
         }?;
         let digest = DigestSpan::new(&src[len as usize..])
             .map_err(|e| e + len)?
-            .ok_or(Error::at(len, err::Kind::AlgorithmNoMatch))?;
+            .ok_or(Error::at(len, err::Kind::AlgorithmMissing))?;
         Ok(Self {
             domain,
             path,
@@ -354,14 +354,14 @@ impl<'src> TryInto<CanonicalSpan<'src>> for RefSpan<'src> {
     type Error = Error;
     fn try_into(self) -> Result<CanonicalSpan<'src>, self::Error> {
         // a canonical reference needs a domain, path, and digest
-        let domain = self.domain.ok_or(Error::at(0, err::Kind::HostNoMatch))?;
+        let domain = self.domain.ok_or(Error::at(0, err::Kind::HostMissing))?;
         let path = self.path.ok_or(Error::at(
             self.path_index().try_into().unwrap(),
-            err::Kind::PathNoMatch,
+            err::Kind::PathMissing,
         ))?;
         let digest = self.digest.ok_or(Error::at(
             self.digest_index().try_into().unwrap(), // safe to unwrap since host + path + tag + algorithm MUST be under u16::MAX
-            err::Kind::AlgorithmNoMatch,             // TODO: more specific error?
+            err::Kind::AlgorithmMissing,             // TODO: more specific error?
         ))?;
 
         Ok(CanonicalSpan {
@@ -564,7 +564,7 @@ mod tests {
             src.push_str("0@");
             src.push_str(&"0".repeat(255));
             src.push_str(":");
-            should_fail_with(&src, Error::at(258, err::Kind::EncodedNoMatch))
+            should_fail_with(&src, Error::at(258, err::Kind::EncodedMissing))
         };
     }
     #[test]

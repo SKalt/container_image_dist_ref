@@ -26,16 +26,18 @@
 pub mod algorithm;
 pub mod encoded;
 
+use core::num::NonZeroU16;
+
 use crate::{
     err,
-    span::{IntoOption, Lengthy, Long},
+    span::{Lengthy, OptionallyZero},
 };
 
 use self::{
     algorithm::{AlgorithmSpan, AlgorithmStr},
     encoded::{EncodedSpan, EncodedStr},
 };
-type Error = err::Error<Long>;
+type Error = err::Error<u16>;
 pub enum Standard {
     /// Matching [0-9a-f]{32,} per distribution/reference.
     ///
@@ -81,68 +83,61 @@ pub(crate) struct DigestSpan<'src> {
 }
 
 impl<'src> DigestSpan<'src> {
-    pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
+    pub(crate) fn new(src: &'src str) -> Result<Option<Self>, Error> {
         if src.is_empty() {
-            return Error::at(0, err::Kind::AlgorithmNoMatch).into();
+            return Ok(None);
         }
         let (algorithm, compliance) = AlgorithmSpan::new(src)?;
-        let mut len = algorithm.short_len();
-        let rest = &src[len as usize..];
+        let mut len = algorithm.short_len().widen();
+        let rest = &src[len.as_usize()..];
         len = match rest.bytes().next() {
-            Some(b':') => len
-                .checked_add(1)
-                .ok_or_else(|| Error::at(len.into(), err::Kind::AlgorithmTooLong)),
-            None => Error::at(len.into(), err::Kind::AlgorithmNoMatch).into(),
-            _ => Error::at(len.into(), err::Kind::AlgorithmInvalidChar).into(),
-        }?;
-        let rest = &src[len as usize..];
-        let (encoded, compliance) = EncodedSpan::new(rest, compliance)?;
+            Some(b':') => len.checked_add(1).ok_or(err::Kind::AlgorithmTooLong),
+            None => Err(err::Kind::AlgorithmNoMatch),
+            _ => Err(err::Kind::AlgorithmInvalidChar),
+        }
+        .map_err(|kind| Error::at(len.into(), kind))?;
+        let rest = &src[len.as_usize()..];
+        let (encoded, compliance) = EncodedSpan::new(rest, compliance)?
+            .ok_or(Error::at(len.into(), err::Kind::EncodedNoMatch))?;
 
         {
-            let rest = &src[len as usize..];
+            let rest = &src[len.as_usize()..];
             let algorithm = AlgorithmStr::from_span(src, algorithm);
             let encoded = EncodedStr::from_span(rest, encoded);
             encoded.validate_algorithm(&algorithm, compliance)?;
         }
 
-        Ok(Self {
+        Ok(Some(Self {
             algorithm,
             encoded,
             compliance,
-        })
+        }))
     }
 }
-impl Lengthy<'_, Long> for DigestSpan<'_> {
-    fn short_len(&self) -> Long {
+impl Lengthy<'_, u16, NonZeroU16> for DigestSpan<'_> {
+    fn short_len(&self) -> NonZeroU16 {
         self.algorithm
-            .into_option()
-            .map(|algo| algo.short_len() as Long + 1 + self.encoded.short_len())
-            .unwrap_or(0)
+            .short_len()
+            .widen()
+            .checked_add(1)
+            .unwrap()
+            .checked_add(self.encoded.short_len().upcast())
+            .unwrap()
+    }
+    #[inline]
+    fn len(&self) -> usize {
+        self.short_len().as_usize()
     }
 }
 
-impl IntoOption for DigestSpan<'_> {
-    fn is_some(&self) -> bool {
-        self.algorithm.is_some() && self.encoded.is_some()
-    }
-
-    fn none() -> Self {
-        Self {
-            algorithm: AlgorithmSpan::none(),
-            encoded: EncodedSpan::none(),
-            compliance: Compliance::Universal,
-        }
-    }
-}
 pub struct DigestStr<'src> {
     src: &'src str,
     span: DigestSpan<'src>,
 }
 
 impl<'src> DigestStr<'src> {
-    pub fn new(src: &'src str) -> Result<Self, Error> {
-        let span = DigestSpan::new(src)?;
-        Ok(Self { src, span })
+    pub fn new(src: &'src str) -> Result<Option<Self>, Error> {
+        Ok(DigestSpan::new(src)?.map(|span| Self { src, span }))
     }
     pub(crate) fn from_span(src: &'src str, span: DigestSpan<'src>) -> Self {
         Self { src, span }

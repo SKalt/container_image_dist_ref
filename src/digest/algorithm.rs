@@ -22,66 +22,60 @@
 
 // }}}
 
+use core::num::NonZeroU8;
+
 use crate::{
     err,
-    span::{impl_span_methods_on_tuple, IntoOption, Lengthy, Long, Short, ShortLength},
+    span::{impl_span_methods_on_tuple, nonzero, Lengthy, OptionallyZero, ShortLength},
 };
-pub const MAX_LENGTH: u16 = Short::MAX as u16; // arbitrary but realistic limit
+pub const MAX_LENGTH: u16 = u16::MAX; // arbitrary but realistic limit
 use super::Compliance;
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) struct AlgorithmSpan<'src>(ShortLength<'src>);
-impl_span_methods_on_tuple!(AlgorithmSpan, Short);
+impl_span_methods_on_tuple!(AlgorithmSpan, u8, NonZeroU8);
 
-type Error = err::Error<Long>;
+type Error = err::Error<u16>;
 use err::Kind::{
     AlgorithmInvalidChar, AlgorithmInvalidNumericPrefix, AlgorithmNoMatch, InvalidOciAlgorithm,
 };
-fn try_add(a: Short, b: Short) -> Result<Short, Error> {
+fn try_add(a: NonZeroU8, b: u8) -> Result<NonZeroU8, Error> {
     a.checked_add(b)
-        .ok_or(Error::at(Short::MAX.into(), err::Kind::AlgorithmTooLong))
+        .ok_or(Error::at(u8::MAX.into(), err::Kind::AlgorithmTooLong))
 }
 
 impl<'src> AlgorithmSpan<'src> {
     pub(crate) fn new(src: &'src str) -> Result<(Self, Compliance), Error> {
         let (mut len, mut compliance) = component(src, Compliance::Universal)?;
-        let max_len = src.len().try_into().unwrap_or(Short::MAX);
+        let max_len = src.len().try_into().unwrap_or(u8::MAX);
         loop {
-            if len >= max_len {
+            if u8::from(len) >= max_len {
                 break; // FIXME: handle overflow
             } else {
-                match src.as_bytes()[len as usize] {
+                match src.as_bytes()[u8::from(len) as usize] {
                     b':' => break,
                     b'+' | b'.' | b'_' | b'-' => {
                         len = try_add(len, 1)?; // consume the separator
                     }
-                    _ => return Error::at(len.into(), AlgorithmInvalidChar).into(),
+                    _ => return Error::at(u8::from(len).into(), AlgorithmInvalidChar).into(),
                 }
             }
             let (component_len, component_compliance) =
-                component(&src[(len as usize)..], compliance)?;
-            len = try_add(len, component_len)?;
+                component(&src[len.as_usize()..], compliance)?;
+            len = try_add(len, component_len.into())?;
             compliance = component_compliance; // narrow compliance from Universal -> (Oci | Distribution)
         }
-        Ok((Self(len.into()), compliance))
+        Ok((Self(ShortLength::from_nonzero(len)), compliance))
     }
     fn from_exact_match(src: &'src str) -> Result<(Self, Compliance), Error> {
         let (span, compliance) = Self::new(src)?;
         if span.len() == src.len() {
             Ok((span, compliance))
         } else {
-            Error::at(span.short_len().into(), AlgorithmNoMatch).into()
+            Error::at(span.short_len().upcast().into(), AlgorithmNoMatch).into()
         }
     }
 }
-impl IntoOption for AlgorithmSpan<'_> {
-    fn is_some(&self) -> bool {
-        self.short_len() > 0
-    }
 
-    fn none() -> Self {
-        Self(0.into())
-    }
-}
 pub struct AlgorithmStr<'src>(&'src str);
 impl<'src> AlgorithmStr<'src> {
     pub fn src(&self) -> &'src str {
@@ -133,7 +127,10 @@ fn is_separator(c: u8) -> bool {
 
 /// match an algorithm component and return the length of the match, along
 /// with what standard(s) the component is compliant with.
-fn component(src: &str, compliance: Compliance) -> Result<(Short, Compliance), Error> {
+fn component<'src>(
+    src: &'src str,
+    compliance: Compliance,
+) -> Result<(NonZeroU8, Compliance), Error> {
     use Compliance::*;
     let mut bytes = src.bytes();
     let compliance = match bytes.next() {
@@ -143,7 +140,7 @@ fn component(src: &str, compliance: Compliance) -> Result<(Short, Compliance), E
             //  but not the OCI image spec
             if compliance == Distribution {
                 // this is not a valid OCI algorithm
-                Error::at(0, AlgorithmInvalidNumericPrefix).into()
+                Err(AlgorithmInvalidNumericPrefix)
             } else {
                 Ok(Oci)
             }
@@ -153,16 +150,17 @@ fn component(src: &str, compliance: Compliance) -> Result<(Short, Compliance), E
             // but not the OCI image spec
             if compliance == Oci {
                 // this is not a valid OCI algorithm
-                Error::at(0, InvalidOciAlgorithm).into()
+                Err(InvalidOciAlgorithm)
             } else {
                 Ok(Distribution)
             }
         }
-        None => Error::at(0, AlgorithmNoMatch).into(),
-        _ => Error::at(0, AlgorithmInvalidChar).into(),
-    }?;
+        None => Err(AlgorithmNoMatch), // TODO: consider returning None?
+        _ => Err(AlgorithmInvalidChar),
+    }
+    .map_err(|kind| Error::at(0, kind))?;
 
-    let mut len: Short = 1;
+    let mut len = nonzero!(u8, 1);
     for c in bytes {
         #[cfg(debug_assertions)]
         let _c = c as char;
@@ -173,17 +171,20 @@ fn component(src: &str, compliance: Compliance) -> Result<(Short, Compliance), E
                 // but not the OCI image spec
                 if compliance == Oci {
                     // this is not a valid OCI algorithm
-                    Error::at(len.into(), InvalidOciAlgorithm).into()
+                    Err(InvalidOciAlgorithm)
                 } else {
                     Ok(())
                 }
             }
             b':' | b'+' | b'.' | b'_' | b'-' => break,
-            _ => Error::at(len.into(), AlgorithmInvalidChar).into(),
-        }?;
+            _ => Err(AlgorithmInvalidChar),
+        }
+        .map_err(|kind| Error::at(u8::from(len).into(), kind))?;
+
         len = len
             .checked_add(1)
-            .ok_or(Error::at(len.into(), err::Kind::AlgorithmTooLong))?;
+            .ok_or(Error::at(u8::from(len).into(), err::Kind::AlgorithmTooLong))?;
     }
+
     Ok((len, compliance))
 }

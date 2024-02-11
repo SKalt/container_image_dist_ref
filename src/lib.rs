@@ -13,26 +13,27 @@ pub mod tag;
 /// https://github.com/distribution/reference/blob/main/reference.go#L39
 pub const NAME_TOTAL_MAX_LENGTH: u8 = 255;
 
-use core::ops::{Range, RangeFrom};
+use core::{
+    cell::Ref,
+    ops::{Range, RangeFrom},
+};
 
 use digest::DigestStr;
 
+use crate::span::OptionallyZero;
+
 use self::{
-    ambiguous::domain_or_tagged_ref::DomainOrRefSpan,
-    digest::DigestSpan,
-    domain::DomainSpan,
-    path::PathSpan,
-    span::{IntoOption, Lengthy, Long, Short},
-    tag::TagSpan,
+    ambiguous::domain_or_tagged_ref::DomainOrRefSpan, digest::DigestSpan, domain::DomainSpan,
+    path::PathSpan, span::Lengthy, tag::TagSpan,
 };
-pub(crate) type Error = err::Error<Long>;
+pub(crate) type Error = err::Error<u16>;
 // TODO: document with doctests
 #[derive(PartialEq, Eq)]
 struct RefSpan<'src> {
-    domain: DomainSpan<'src>,
-    path: PathSpan<'src>,
-    tag: TagSpan<'src>,
-    digest: DigestSpan<'src>,
+    domain: Option<DomainSpan<'src>>,
+    path: Option<PathSpan<'src>>,
+    tag: Option<TagSpan<'src>>,
+    digest: Option<DigestSpan<'src>>,
 }
 
 // TODO: add docs with doctest examples
@@ -44,25 +45,26 @@ impl<'src> RefSpan<'src> {
         let prefix = DomainOrRefSpan::new(src)?;
         let rest = &src[prefix.len()..];
         let domain = match prefix {
-            DomainOrRefSpan::Domain(domain) => domain,
-            DomainOrRefSpan::TaggedRef(_) => DomainSpan::none(),
+            DomainOrRefSpan::Domain(domain) => Some(domain),
+            DomainOrRefSpan::TaggedRef(_) => None,
         };
-        let mut index: Long = domain.short_len().into();
+        let mut index: u16 = domain.map(|d| d.short_len().into()).unwrap_or(0);
         let path = match rest.bytes().next() {
             Some(b'/') => match prefix {
-                DomainOrRefSpan::TaggedRef((path_start, tag)) => match tag.into_option() {
+                DomainOrRefSpan::TaggedRef((path_start, tag)) => match tag {
                     Some(_) => {
                         unreachable!("a:0/b should always be parsed as Domain(host=a, port=0)")
                     }
-                    None => path_start.extend(rest),
+                    None => path_start.extend(rest).map(Some).map_err(|e| e.into()),
                     // e.g. "cant_be_host/more_path" needs to entirely match as path
                 },
-                DomainOrRefSpan::Domain(_) => PathSpan::parse_from_slash(rest),
+                DomainOrRefSpan::Domain(_) => {
+                    PathSpan::parse_from_slash(rest).map_err(|e| e.into())
+                }
             }
-            .map_err(|e| e.into())
-            .map_err(|e: err::Error<Long>| e + prefix.short_len()),
+            .map_err(|e: err::Error<u16>| e + prefix.short_len()),
             Some(b'@') | Some(b':') | None => match prefix {
-                DomainOrRefSpan::TaggedRef((name, _)) => Ok(name),
+                DomainOrRefSpan::TaggedRef((name, _)) => Ok(Some(name)),
                 DomainOrRefSpan::Domain(_) => {
                     unreachable!("if the left segment peeked an '@', it would parse as a TaggedRef")
                 }
@@ -70,30 +72,31 @@ impl<'src> RefSpan<'src> {
             Some(_) => Error::at(0, err::Kind::PathInvalidChar).into(),
         }
         .map_err(|e| e + index)?;
-        index += path.short_len() as Long;
+        index += path.map(|p| p.short_len().upcast().into()).unwrap_or(0);
         if index > NAME_TOTAL_MAX_LENGTH.into() {
             return Error::at(index, err::Kind::NameTooLong).into();
         }
         let rest = &src[index as usize..];
         let tag = match prefix {
-            DomainOrRefSpan::TaggedRef((_, right)) => match right.into_option() {
-                Some(tag) => Ok(tag),
+            DomainOrRefSpan::TaggedRef((_, right)) => match right {
+                Some(tag) => Ok(Some(tag)),
                 None => match rest.bytes().next() {
                     Some(b':') => TagSpan::new(&rest[1..]).map_err(|e| e.into()),
-                    Some(b'@') | None => Ok(TagSpan::none()),
+                    Some(b'@') | None => Ok(None),
                     Some(_) => Error::at(0, err::Kind::PathInvalidChar).into(),
                 },
             },
             DomainOrRefSpan::Domain(_) => match rest.bytes().next() {
-                Some(b':') => TagSpan::new(&rest[1..]).map_err(|e| e.into()),
-                Some(_) | None => Ok(TagSpan::none()),
+                Some(b':') => TagSpan::new(&rest[1..])
+                    .map_err(|e| e.into())
+                    .map_err(|e: err::Error<u16>| e + 1u16), // +1 to account for the leading ':'
+                Some(_) | None => Ok(None),
             },
         }
         .map_err(|e| e + index)?;
         index += tag
-            .into_option()
-            .map(|t| t.short_len() as Long)
-            .map(|l| l + 1) // +1 for the leading ':'
+            .map(|t| t.short_len().upcast().into())
+            .map(|l: u16| l + 1) // +1 for the leading ':'
             .unwrap_or(0);
         let rest = &src[index as usize..];
         let digest = match rest.bytes().next() {
@@ -102,10 +105,10 @@ impl<'src> RefSpan<'src> {
                 DigestSpan::new(&src[index as usize..])
             }
             Some(_) => DigestSpan::new(&src[index as usize..]), // TODO: explain why this is valid. IIRC, it's to handle digest-only refs?
-            None => Ok(DigestSpan::none()),
+            None => Ok(None),
         }
         .map_err(|e| e + index)?;
-        index += digest.short_len();
+        index += digest.map(|d| d.short_len().upcast().into()).unwrap_or(0);
         debug_assert!(
             index as usize == src.len(),
             "index {} != src.len() {}",
@@ -121,23 +124,27 @@ impl<'src> RefSpan<'src> {
     }
     /// the offset at which the path starts.
     fn path_index(&self) -> usize {
-        self.domain.len()
+        self.domain.map(|d| d.len()).unwrap_or(0)
     }
     /// the at which the tag starts. If a tag is present, tag_index is AFTER the leading ':'.
     fn tag_index(&self) -> usize {
-        self.path_index() + self.path.len() + self.tag.into_option().map(|_| 1).unwrap_or(0)
-        // +1 for the leading ':'
+        self.path_index()
+            + self.path.map(|p| p.len()).unwrap_or(0)
+            + self.tag.map(|_| 1) // +1 for the leading ':'
+            .unwrap_or(0)
     }
     fn digest_index(&self) -> usize {
-        self.tag_index() + self.tag.len() + self.digest.into_option().map(|_| 1).unwrap_or(0)
-        // 1 == consume the leading '@' if a digest is present
+        self.tag_index() // tag_index() accounts for the leading ':'
+            + self.tag.map(|t| t.len()).unwrap_or(0)
+            + self.digest.map(|_| 1) // 1 == consume the leading '@' if a digest is present
+            .unwrap_or(0)
     }
 
     fn domain_range(&self) -> Option<Range<usize>> {
-        self.domain.into_option().map(|d| 0..d.len())
+        self.domain.map(|d| 0..d.len())
     }
     fn path_range(&self) -> Option<Range<usize>> {
-        self.path.into_option().map(|p| {
+        self.path.map(|p| {
             let mut start = self.path_index();
             let end = start + p.len();
             if self.domain.is_some() {
@@ -148,7 +155,7 @@ impl<'src> RefSpan<'src> {
         })
     }
     fn name_range(&self) -> Option<Range<usize>> {
-        let end = self.path_index() + self.path.len();
+        let end = self.path_index() + self.path.map(|p| p.len()).unwrap_or(0);
         if end == 0 {
             None
         } else {
@@ -156,51 +163,67 @@ impl<'src> RefSpan<'src> {
         }
     }
     fn tag_range(&self) -> Option<Range<usize>> {
-        self.tag.into_option().map(|t| {
+        self.tag.map(|t| {
             let start = self.tag_index();
             start..(start + t.len())
         })
     }
     fn digest_range(&self) -> Option<RangeFrom<usize>> {
-        self.digest.into_option().map(|_| self.digest_index()..)
+        self.digest.map(|_| self.digest_index()..)
     }
 }
 
-// TODO: add docs with doctest examples
-pub struct CanonicalSpan<'src>(RefSpan<'src>);
+/// A *canonical* image reference includes:
+/// - A domain
+/// - a path/repo name
+/// - optionally, a tag
+/// - A digest
+pub struct CanonicalSpan<'src> {
+    domain: DomainSpan<'src>,
+    path: PathSpan<'src>,
+    tag: Option<TagSpan<'src>>,
+    digest: DigestSpan<'src>,
+}
 impl<'src> CanonicalSpan<'src> {
     pub fn new(src: &'src str) -> Result<Self, Error> {
-        let domain = DomainSpan::new(src)?;
-        let mut len = match src.as_bytes()[domain.len()..].iter().next() {
-            Some(b'/') => Ok(domain.short_len().into()),
-            Some(_) => Error::at(domain.short_len().into(), err::Kind::PathInvalidChar).into(),
-            None => Error::at(domain.short_len().into(), err::Kind::RefNoMatch).into(),
-        }?;
+        let domain = DomainSpan::new(src)?.ok_or(Error::at(0, err::Kind::HostNoMatch))?;
+        let mut len = domain.short_len().into();
+        match &src[len as usize..].bytes().next() {
+            Some(b'/') => Ok(()),
+            Some(_) => Err(err::Kind::PathInvalidChar),
+            None => Err(err::Kind::RefNoMatch),
+        }
+        .map_err(|kind| Error::at(len, kind))?;
+
         let path = PathSpan::new(&src[len as usize..])
             .map_err(|e| e.into())
-            .map_err(|e: err::Error<Long>| e + len)?;
-        len += path.short_len() as Long;
+            .map_err(|e: Error| e + len)?
+            .ok_or(Error::at(len, err::Kind::PathNoMatch))?;
+        len += path.short_len().upcast() as u16;
         if len > NAME_TOTAL_MAX_LENGTH as u16 {
             return Error::at(len, err::Kind::NameTooLong).into();
         }
         let tag = TagSpan::new(&src[len as usize..]) // can be None
             .map_err(|e| e.into())
-            .map_err(|e: err::Error<Long>| e + len)?;
-        len += tag.short_len() as Long;
+            .map_err(|e: Error| e + len)?;
+        len += tag.map(|t| t.short_len().upcast().into()).unwrap_or(0);
         len += match src.as_bytes()[len as usize..].iter().next() {
             Some(b'@') => Ok(1),
             Some(_) => Error::at(len, err::Kind::PathInvalidChar).into(),
             None => Error::at(len, err::Kind::RefNoMatch).into(),
         }?;
-        let digest = DigestSpan::new(&src[len as usize..]).map_err(|e| e + len)?;
-        Ok(Self(RefSpan {
+        let digest = DigestSpan::new(&src[len as usize..])
+            .map_err(|e| e + len)?
+            .ok_or(Error::at(len, err::Kind::AlgorithmNoMatch))?;
+        Ok(Self {
             domain,
             path,
             tag,
             digest,
-        }))
+        })
     }
 }
+
 // TODO: add docs with doctest examples
 #[derive(PartialEq)]
 pub struct RefStr<'src> {
@@ -229,17 +252,22 @@ impl<'src> RefStr<'src> {
     pub fn digest(&self) -> Option<DigestStr<'src>> {
         self.span
             .digest_range()
-            .map(|range| DigestStr::from_span(&self.src[range], self.span.digest))
+            .map(|range| {
+                self.span
+                    .digest
+                    .map(|span| DigestStr::from_span(&self.src[range], span))
+            })
+            .flatten()
     }
 }
 
 /// produce an u8 representing the amount of information contained in the span
 /// higher = more information, lower = less information
 fn rank(span: &RefSpan) -> u8 {
-    span.domain.into_option().map(|_| 1 << 3).unwrap_or(0)
-        | span.path.into_option().map(|_| 1 << 2).unwrap_or(0)
-        | span.tag.into_option().map(|_| 1 << 1).unwrap_or(0)
-        | span.digest.into_option().map(|_| 1 << 0).unwrap_or(0)
+    span.domain.map(|_| 1 << 3).unwrap_or(0)
+        | span.path.map(|_| 1 << 2).unwrap_or(0)
+        | span.tag.map(|_| 1 << 1).unwrap_or(0)
+        | span.digest.map(|_| 1 << 0).unwrap_or(0)
 }
 impl<'src> PartialOrd for RefSpan<'src> {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
@@ -265,7 +293,7 @@ impl<'src> CanonicalStr<'src> {
         Ok(Self { src, span })
     }
     pub fn domain(&self) -> &str {
-        let domain = self.span.0.domain.span_of(self.src);
+        let domain = self.span.domain.span_of(self.src);
         debug_assert!(
             !domain.is_empty(),
             "canonical refs should have non-empty domains by construction"
@@ -275,9 +303,9 @@ impl<'src> CanonicalStr<'src> {
     pub fn path(&self) -> &str {
         let path = self
             .span
-            .0
             .path
-            .span_of(&self.src[self.span.0.path_index()..]);
+            .span_of(&self.src[self.span.domain.len() + 1..]);
+        // +1 for the '/' between the domain and path
         debug_assert!(
             !path.is_empty(),
             "canonical refs should have non-empty paths by construction"
@@ -285,7 +313,8 @@ impl<'src> CanonicalStr<'src> {
         path
     }
     pub fn name(&self) -> &str {
-        let result = &self.src[self.span.0.name_range().unwrap()];
+        let result = &self.src[0..self.domain().len() + 1 + self.path().len()];
+        // +1 for the '/' between the domain and path
         debug_assert!(
             !result.is_empty(),
             "canonical refs should have non-empty names by construction"
@@ -294,19 +323,23 @@ impl<'src> CanonicalStr<'src> {
     }
     pub fn tag(&self) -> Option<&str> {
         // tags aren't required for canonical refs
-        self.span
-            .0
-            .tag
-            .into_option()
-            .map(|t| &t.span_of(&self.src[self.span.0.tag_index()..])[1..]) // trim the leading ':'
+        let start = self.span.domain.len() + 1 + self.path().len();
+        self.span.tag.map(|t| &t.span_of(&self.src[start..])[1..])
+        // trim the leading ':'
+        // TODO: avoid re-slicing
     }
     pub fn digest(&self) -> DigestStr<'src> {
-        let src = &self.src[self.span.0.digest_range().unwrap()];
+        let start = self.span.domain.len()
+            + 1 // 1 == '/'
+            + self.path().len()
+            + self.span.tag.map(|t| 1 + t.len()) // 1 == ':'
+            .unwrap_or(0);
+        let src = &self.src[start..];
         debug_assert!(
             !src.is_empty(),
             "canonical refs should have non-empty digests by construction"
         );
-        DigestStr::from_span(src, self.span.0.digest)
+        DigestStr::from_span(src, self.span.digest)
     }
 }
 
@@ -314,7 +347,12 @@ impl<'src> From<CanonicalStr<'src>> for RefStr<'src> {
     fn from(value: CanonicalStr<'src>) -> Self {
         Self {
             src: value.src,
-            span: value.span.0,
+            span: RefSpan {
+                domain: Some(value.span.domain),
+                path: Some(value.span.path),
+                tag: value.span.tag,
+                digest: Some(value.span.digest),
+            },
         }
     }
 }
@@ -322,25 +360,32 @@ impl<'src> TryInto<CanonicalSpan<'src>> for RefSpan<'src> {
     type Error = Error;
     fn try_into(self) -> Result<CanonicalSpan<'src>, self::Error> {
         // a canonical reference needs a domain, path, and digest
-        self.domain
-            .into_option()
-            .ok_or(Error::at(0, err::Kind::HostNoMatch))?;
-        self.path.into_option().ok_or(Error::at(
+        let domain = self.domain.ok_or(Error::at(0, err::Kind::HostNoMatch))?;
+        let path = self.path.ok_or(Error::at(
             self.path_index().try_into().unwrap(),
             err::Kind::PathNoMatch,
         ))?;
-        self.digest.into_option().ok_or(Error::at(
+        let digest = self.digest.ok_or(Error::at(
             self.digest_index().try_into().unwrap(), // safe to unwrap since host + path + tag + algorithm MUST be under u16::MAX
             err::Kind::AlgorithmNoMatch,             // TODO: more specific error?
         ))?;
 
-        Ok(CanonicalSpan(self))
+        Ok(CanonicalSpan {
+            domain,
+            path,
+            tag: self.tag,
+            digest,
+        })
     }
 }
 impl<'src> TryInto<CanonicalStr<'src>> for RefStr<'src> {
     type Error = Error;
     fn try_into(self) -> Result<CanonicalStr<'src>, Self::Error> {
-        CanonicalStr::new(self.src)
+        let canonical = self.span.try_into()?;
+        Ok(CanonicalStr {
+            src: self.src,
+            span: canonical,
+        })
     }
 }
 #[cfg(test)]
@@ -363,7 +408,7 @@ mod tests {
     }
     // TODO: expose this kind of error-formatting functionality in the err module
     // behind an `alloc` feature flag
-    fn pretty_err(e: Error<Long>, src: &str) -> String {
+    fn pretty_err(e: Error<u16>, src: &str) -> String {
         let kind = e.kind();
         let index = e.index();
         let msg = "failed to parse";
@@ -388,7 +433,7 @@ mod tests {
         assert_eq!(actual, expected, "differences parsing {:?}", src);
     }
 
-    fn should_fail_with(src: &'_ str, expected: Error<Long>) {
+    fn should_fail_with(src: &'_ str, expected: Error<u16>) {
         let result = RefStr::new(src);
 
         match result {
@@ -439,14 +484,14 @@ mod tests {
             should_parse_as(&src, None, Some("0"), Some(&tag), None);
         }
         {
-            let mut src = String::with_capacity(Short::MAX as usize * 2 + 1);
-            let long = "0".repeat(Short::MAX as usize);
+            let mut src = String::with_capacity(u8::MAX as usize * 2 + 1);
+            let long = "0".repeat(u8::MAX as usize);
             src.push_str(&long);
             src.push(':');
             src.push_str(&long);
             should_fail_with(
                 &src,
-                Error::at(Short::MAX as u16 + 1 + 128, err::Kind::TagTooLong),
+                Error::at(u8::MAX as u16 + 1 + 128, err::Kind::TagTooLong),
                 // Short::MAX == max name length
                 //          1 == the ':' of the tag
                 //        128 == max length of tag characters
@@ -525,11 +570,12 @@ mod tests {
             src.push_str("0@");
             src.push_str(&"0".repeat(255));
             src.push_str(":");
-            should_fail_with(&src, Error::at(257, err::Kind::AlgorithmTooLong))
+            should_fail_with(&src, Error::at(258, err::Kind::EncodedNoMatch))
         };
     }
     #[test]
     fn test_bad_refs() {
+        // FIXME: rename test
         should_fail_with("[::]0", Error::at(4, err::Kind::PortOrTagInvalidChar));
     }
     #[derive(Debug, PartialEq, Eq)]

@@ -16,23 +16,22 @@ tag                  ::= [\w][\w.-]{0,127}
 /*
 Thus, tags can be up to 128 characters long.
 */
+use core::num::NonZeroU8;
+
 use crate::{
     ambiguous::port_or_tag::{Kind as TagKind, PortOrTagSpan},
-    err::{self, Error},
-    span::{impl_span_methods_on_tuple, IntoOption, Lengthy, ShortLength},
+    err,
+    span::{impl_span_methods_on_tuple, nonzero, Lengthy, OptionallyZero, ShortLength},
 };
-pub const TAG_MAX_LEN: u8 = 128;
+
+pub const TAG_MAX_LEN: NonZeroU8 = nonzero!(u8, 128);
+
+// we can index all errors with a u8 since the longest possible tag is 128 characters
+type Error = err::Error<u8>;
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TagSpan<'src>(ShortLength<'src>);
-impl_span_methods_on_tuple!(TagSpan, Short);
-impl<'src> IntoOption for TagSpan<'src> {
-    fn is_some(&self) -> bool {
-        self.short_len() > 0
-    }
-    fn none() -> Self {
-        Self(0.into())
-    }
-}
+impl_span_methods_on_tuple!(TagSpan, u8, NonZeroU8);
 
 impl<'src> TryFrom<PortOrTagSpan<'src>> for TagSpan<'src> {
     type Error = Error;
@@ -40,23 +39,23 @@ impl<'src> TryFrom<PortOrTagSpan<'src>> for TagSpan<'src> {
         if ambiguous.short_len() <= TAG_MAX_LEN {
             Ok(Self(ambiguous.span()))
         } else {
-            Err(Error::at(TAG_MAX_LEN, err::Kind::TagTooLong))
+            Err(Error::at(TAG_MAX_LEN.upcast(), err::Kind::TagTooLong))
         }
     }
 }
 
 impl<'src> TagSpan<'src> {
     /// can match an empty span if the first character in `src` is a `/` or `@`
-    pub(crate) fn new(src: &str) -> Result<Self, Error> {
-        let span = PortOrTagSpan::new(src, TagKind::Tag).map_err(|e| {
-            let kind = match e.kind() {
-                err::Kind::PortOrTagInvalidChar => err::Kind::TagInvalidChar,
-                _ => e.kind(),
-            };
-            Error::at(e.index(), kind)
-        })?;
-        debug_assert!(span.kind() == TagKind::Tag);
-        Ok(Self(span.span()))
+    pub(crate) fn new(src: &str) -> Result<Option<Self>, Error> {
+        Ok(PortOrTagSpan::new(src, TagKind::Tag)
+            .map_err(|e| {
+                let kind = match e.kind() {
+                    err::Kind::PortOrTagInvalidChar => err::Kind::TagInvalidChar,
+                    _ => e.kind(),
+                };
+                Error::at(e.index(), kind)
+            })?
+            .map(|span| Self(span.span())))
     }
 }
 
@@ -65,9 +64,8 @@ pub struct TagStr<'src> {
     span: TagSpan<'src>,
 }
 impl<'src> TagStr<'src> {
-    pub fn new(src: &'src str) -> Result<Self, Error> {
-        let span = TagSpan::new(src)?;
-        Ok(Self { src, span })
+    pub fn new(src: &'src str) -> Result<Option<Self>, Error> {
+        Ok(TagSpan::new(src)?.map(|span| Self { src, span }))
     }
     pub fn src(&self) -> &'src str {
         self.span.span_of(self.src)

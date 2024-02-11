@@ -1,10 +1,14 @@
 //! > tag  := ":" [\w][\w.-]{0,127}
 //! > port := ":" [0-9]+
 
+use core::num::NonZeroU8;
+
 use crate::{
-    err::{self, Error},
-    span::{IntoOption, Lengthy, Short, ShortLength},
+    err,
+    span::{nonzero, Lengthy, OptionallyZero, ShortLength},
 };
+
+type Error = crate::err::Error<u8>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Kind {
@@ -31,38 +35,31 @@ impl Kind {
 pub(crate) struct PortOrTagSpan<'src> {
     length: ShortLength<'src>,
     kind: Kind,
-    first_tag_char: Short,
+    first_tag_char: u8,
 }
-impl Lengthy<'_, Short> for PortOrTagSpan<'_> {
-    #[inline(always)]
-    fn short_len(&self) -> Short {
+
+impl Lengthy<'_, u8, NonZeroU8> for PortOrTagSpan<'_> {
+    #[inline]
+    fn short_len(&self) -> NonZeroU8 {
         self.length.short_len()
     }
-}
-impl<'src> IntoOption for PortOrTagSpan<'src> {
-    #[inline(always)]
-    fn is_some(&self) -> bool {
-        self.short_len() > 0
-    }
-    #[inline(always)]
-    fn none() -> Self {
-        Self {
-            length: 0.into(),
-            kind: Kind::Port, // port is compatible with both ports and tags
-            first_tag_char: 0,
-        }
+    #[inline]
+    fn len(&self) -> usize {
+        self.length.len()
     }
 }
+
 struct State {
-    len: Short,
+    len: NonZeroU8,
     kind: Kind,
-    first_tag_char: Short,
+    /// can be 0, but only relevant when kind is Kind::Tag
+    first_tag_char: u8,
 }
 impl State {
     fn update_kind(&mut self, other: Kind) -> Result<(), Error> {
         match (self.kind, other) {
             (Kind::Port, Kind::Tag) => {
-                self.first_tag_char = self.len;
+                self.first_tag_char = self.len.upcast();
                 self.kind = Kind::Tag;
             } // all ports are valid tags
             _ => {}
@@ -74,26 +71,22 @@ impl State {
         Ok(())
     }
     fn advance(&mut self) -> Result<(), Error> {
-        if self.len >= 129 && self.kind == Kind::Tag {
-            Error::at(self.len, err::Kind::TagTooLong).into()
+        if self.len >= nonzero!(u8, 129) && self.kind == Kind::Tag {
+            Error::at(self.len.upcast(), err::Kind::TagTooLong).into()
         } else {
             self.len = self
                 .len
                 .checked_add(1)
-                .ok_or(Error::at(self.len, err::Kind::PortTooLong))?;
+                .ok_or(Error::at(self.len.upcast(), err::Kind::PortTooLong))?;
             Ok(())
         }
     }
 }
 
 impl<'src> PortOrTagSpan<'src> {
-    #[inline(always)]
+    #[inline]
     pub(crate) fn span(&self) -> ShortLength<'src> {
         self.length
-    }
-    #[inline(always)]
-    pub(crate) fn kind(&self) -> Kind {
-        self.kind
     }
     pub(crate) fn narrow(&self, kind: Kind) -> Result<PortOrTagSpan<'src>, Error> {
         let kind = self
@@ -107,28 +100,30 @@ impl<'src> PortOrTagSpan<'src> {
         })
     }
     /// can match an empty span if the first character in src is a `/` or `@`
-    pub(crate) fn new(src: &str, kind: Kind) -> Result<Self, Error> {
-        let ascii = src.as_bytes();
+    pub(crate) fn new(src: &str, kind: Kind) -> Result<Option<Self>, Error> {
+        let ascii = src.as_bytes(); // TODO: move inline
         let mut bytes = src.bytes();
+
+        // the first character after the colon must be alphanumeric or an underscore
+        let kind = match bytes.next() {
+            Some(b'0'..=b'9') => {
+                // both ports and tags can have digits
+                Ok(kind)
+            }
+            Some(b'a'..=b'z') | Some(b'A'..=b'Z') | Some(b'_') => kind
+                .update(Kind::Tag) // only tags can have non-numeric characters
+                .map_err(|_| err::Kind::PortInvalidChar),
+            None | Some(b'/') | Some(b'@') => return Ok(None),
+            _ => Err(err::Kind::PortOrTagInvalidChar),
+        }
+        .map_err(|err_kind| Error::at(0, err_kind))?;
         let mut state = State {
-            len: 0,
+            len: nonzero!(u8, 1),
             kind,
             first_tag_char: 0, // only set on transition from port to tag
                                // and only used for providing an error index when
                                // trying to cast back from tag to port
         };
-
-        // the first character after the colon must be alphanumeric or an underscore
-        match bytes.next() {
-            Some(b'0'..=b'9') => {
-                // both ports and tags can have digits
-                state.update_kind(state.kind)
-            }
-            Some(b'a'..=b'z') | Some(b'A'..=b'Z') | Some(b'_') => state.update_kind(Kind::Tag),
-            None | Some(b'/') | Some(b'@') => Error::at(1, err::Kind::PortOrTagMissing).into(),
-            _ => Error::at(1, err::Kind::PortOrTagInvalidChar).into(),
-        }?;
-        state.advance()?;
 
         for c in bytes {
             #[cfg(debug_assertions)]
@@ -138,24 +133,25 @@ impl<'src> PortOrTagSpan<'src> {
                 b'a'..=b'z' | b'A'..=b'Z' | b'.' | b'-' | b'_' => state.update_kind(Kind::Tag),
                 b'/' => state.update_kind(Kind::Port),
                 b'@' => state.update_kind(Kind::Tag),
-                _ => Error::at(state.len, err::Kind::PortOrTagInvalidChar).into(),
+                _ => Error::at(state.len.upcast(), err::Kind::PortOrTagInvalidChar).into(),
             }?;
             if c == b'/' || c == b'@' {
                 break;
             }
             state.advance()?;
         }
-        debug_assert!((state.len as usize) <= src.len());
-        debug_assert!(if (state.len as usize) < src.len() {
-            ascii[state.len as usize] == b'/' || ascii[state.len as usize] == b'@'
+        debug_assert!(state.len.as_usize() <= src.len());
+        debug_assert!(if (state.len.as_usize()) < src.len() {
+            ascii[state.len.as_usize()] == b'/' || ascii[state.len.as_usize()] == b'@'
         } else {
             true
         });
-        Ok(Self {
-            length: state.len.into(),
+
+        Ok(Some(Self {
+            length: ShortLength::from_nonzero(state.len),
             kind: state.kind,
             first_tag_char: state.first_tag_char,
-        })
+        }))
     }
 }
 
@@ -166,9 +162,12 @@ mod tests {
     fn should_parse_as(src: &str, kind: Kind) {
         let tag = PortOrTagSpan::new(src, kind);
         match tag {
-            Ok(tag) => {
+            Ok(Some(tag)) => {
                 assert_eq!(tag.span().span_of(src), src);
-                assert_eq!(tag.kind(), kind);
+                assert_eq!(tag.kind, kind);
+            }
+            Ok(None) => {
+                assert!(src.is_empty() || src.starts_with('/') || src.starts_with('@'));
             }
             Err(e) => panic!("failed to parse tag {src:?}: {:?}", e),
         }

@@ -1,6 +1,5 @@
 //! # Errors
 //! This module supplies the global error types for the crate.
-use crate::span::{Long, Short};
 
 // TODO: more docs
 // since ErrorKind can fit 256 unique errors, use it for all non-ambiguous cases
@@ -54,6 +53,7 @@ pub enum Kind {
 
     // digest::algorithm ----------------------------------------
     /// 0-length algorithm in an "algorithm:encoded" section detected
+    // TODO: deprecate in favor of Option<Algorithm>
     AlgorithmNoMatch,
     /// If parsing in OCI-digest mode, uppercase letters are not allowed.
     InvalidOciAlgorithm,
@@ -89,37 +89,37 @@ pub enum Kind {
 
 /// The `Error` type contains an `err::Kind` and an index within the source string.
 #[derive(Debug, Clone, Copy)]
-pub struct Error<Size = Short>(Size, Kind);
-impl From<Error<Short>> for Error<Long> {
-    fn from(e: Error<Short>) -> Self {
+pub struct Error<Size: Sized + Into<usize>>(Size, Kind);
+impl From<Error<u8>> for Error<u16> {
+    fn from(e: Error<u8>) -> Self {
         Self(e.0.into(), e.1)
     }
 }
 
 impl<Size> Error<Size>
 where
-    Size: Copy,
+    Size: Copy + Into<usize>,
 {
     /// The byte index within the source string where the error occurred.
-    #[inline(always)]
+    #[inline]
     pub fn index(&self) -> Size {
         self.0
     }
     /// the kind of error
-    #[inline(always)]
+    #[inline]
     pub fn kind(&self) -> Kind {
         self.1
     }
 
     /// Create a new error at the given index
-    pub(crate) fn at(index: Size, kind: Kind) -> Self {
+    pub(crate) const fn at(index: Size, kind: Kind) -> Self {
         Self(index, kind)
     }
 }
 
 impl<Int, Size> core::ops::Add<Int> for Error<Size>
 where
-    Size: core::ops::Add<Output = Size>,
+    Size: core::ops::Add<Output = Size> + Into<usize>,
     Int: Into<Size>,
 {
     type Output = Self;
@@ -128,7 +128,7 @@ where
     }
 }
 
-impl<T, Size> From<Error<Size>> for Result<T, Error<Size>> {
+impl<T, Size: Into<usize>> From<Error<Size>> for Result<T, Error<Size>> {
     #[inline(always)]
     fn from(value: Error<Size>) -> Self {
         Err(value)

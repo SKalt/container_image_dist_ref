@@ -17,26 +17,28 @@
 
 // }}} skip=2
 
-use super::algorithm::AlgorithmStr;
-use super::Compliance;
-use crate::span::{impl_span_methods_on_tuple, IntoOption, Lengthy, Long, LongLength};
+use core::num::NonZeroU16;
+
+use super::{algorithm::AlgorithmStr, Compliance};
+use crate::span::{impl_span_methods_on_tuple, Lengthy, LongLength};
+
 pub const MAX_LENGTH: u16 = 1024; // arbitrary but realistic limit
 
 use crate::err::Kind::{
     EncodedInvalidChar, EncodedNoMatch, EncodedNonLowerHex, EncodingTooLong, EncodingTooShort,
     OciRegisteredAlgorithmWrongDigestLength, OciRegisteredDigestInvalidChar,
 };
-type Error = crate::err::Error<Long>;
+type Error = crate::err::Error<u16>;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) struct EncodedSpan<'src>(LongLength<'src>);
-impl_span_methods_on_tuple!(EncodedSpan, Long);
+impl_span_methods_on_tuple!(EncodedSpan, u16, NonZeroU16);
 impl<'src> EncodedSpan<'src> {
-    pub(crate) fn new(src: &'src str, compliance: Compliance) -> Result<(Self, Compliance), Error> {
+    pub(crate) fn new(
+        src: &'src str,
+        compliance: Compliance,
+    ) -> Result<Option<(Self, Compliance)>, Error> {
         use Compliance::*;
-        if src.is_empty() {
-            return Error::at(0, EncodedNoMatch).into();
-        }
         let mut len = 0;
         let mut compliance = compliance;
         for c in src.as_bytes() {
@@ -48,11 +50,12 @@ impl<'src> EncodedSpan<'src> {
                     if compliance != Distribution {
                         Ok(Oci)
                     } else {
-                        Error::at(len, EncodedNonLowerHex).into()
+                        Err(EncodedNonLowerHex)
                     }
                 }
-                _ => Error::at(len, EncodedInvalidChar).into(),
-            }?;
+                _ => Err(EncodedInvalidChar),
+            }
+            .map_err(|kind| Error::at(len, kind))?;
             if len == MAX_LENGTH {
                 return Error::at(len, EncodingTooLong).into();
             }
@@ -60,40 +63,18 @@ impl<'src> EncodedSpan<'src> {
         }
         debug_assert!(len as usize == src.len(), "must have consume all src");
 
-        Ok((Self(len.into()), compliance))
+        Ok(LongLength::new(len).map(|length| (Self(length), compliance)))
     }
 }
 
-impl IntoOption for EncodedSpan<'_> {
-    fn is_some(&self) -> bool {
-        self.short_len() > 0
-    }
-
-    fn none() -> Self {
-        Self(0.into())
-    }
-}
 pub struct EncodedStr<'src>(&'src str);
 impl<'src> EncodedStr<'src> {
     pub fn src(&self) -> &'src str {
         self.0
     }
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-    pub fn is_empty(&self) -> bool {
-        self.src().is_empty()
-    }
     // no implementation of from_prefix(&str) because digests MUST terminate a
     // reference
 
-    pub fn from_exact_match(
-        src: &'src str,
-        compliance: Compliance,
-    ) -> Result<(Self, Compliance), Error> {
-        let (_, compliance) = EncodedSpan::new(src, compliance)?;
-        Ok((Self(src), compliance))
-    }
     pub(crate) fn from_span(src: &'src str, span: EncodedSpan<'src>) -> Self {
         Self(span.span_of(src))
     }
@@ -130,9 +111,9 @@ impl<'src> EncodedStr<'src> {
     fn validate_distribution(&self) -> Result<(), Error> {
         const MAX: usize = MAX_LENGTH as usize;
         match self.len() {
-            0..=31 => Error::at(self.short_len(), EncodingTooShort).into(),
+            0..=31 => Error::at(self.short_len().into(), EncodingTooShort).into(),
             32..=MAX => Ok(()),
-            _ => Error::at(self.short_len(), EncodingTooLong).into(),
+            _ => Error::at(self.short_len().into(), EncodingTooLong).into(),
         }
     }
     /// Validate the encoded string is compliant with an algorithm string (possibly a
@@ -159,11 +140,13 @@ impl<'src> EncodedStr<'src> {
         }
     }
 }
-impl Lengthy<'_, Long> for EncodedStr<'_> {
+impl Lengthy<'_, u16, NonZeroU16> for EncodedStr<'_> {
+    #[inline]
     fn len(&self) -> usize {
         self.0.len()
     }
-    fn short_len(&self) -> Long {
-        self.len().try_into().unwrap()
+    #[inline]
+    fn short_len(&self) -> NonZeroU16 {
+        NonZeroU16::new(self.len().try_into().unwrap()).unwrap()
     }
 }

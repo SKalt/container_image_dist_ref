@@ -7,11 +7,15 @@
 //        0   0    1    1    2    2    3    3   3
 //        1   5    0    5    0    5    0    5   9
 
+use core::num::NonZeroU8;
+
 use crate::{
-    err::{self, Error},
-    span::{impl_span_methods_on_tuple, Length},
-    Short,
+    err,
+    span::{impl_span_methods_on_tuple, nonzero, Lengthy, OptionallyZero, ShortLength},
 };
+
+type Error = err::Error<u8>;
+
 /// recognize an IPv6 address as defined in https://www.rfc-editor.org/rfc/rfc3986#appendix-A
 /// and then subsequently restricted by distribution/reference:
 /// > ipv6address are enclosed between square brackets and may be represented
@@ -23,8 +27,8 @@ use crate::{
 /// > ```
 /// > -- https://github.com/distribution/reference/blob/main/regexp.go#L87-90
 #[derive(Clone, Copy)]
-pub(crate) struct Ipv6Span<'src>(Length<'src>);
-impl_span_methods_on_tuple!(Ipv6Span, Short);
+pub(crate) struct Ipv6Span<'src>(ShortLength<'src>);
+impl_span_methods_on_tuple!(Ipv6Span, u8, NonZeroU8);
 
 struct State(u8);
 impl State {
@@ -121,42 +125,48 @@ impl State {
     }
 }
 impl<'src> Ipv6Span<'src> {
-    pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
-        let ascii = src.as_bytes();
-        let mut index: Short = if src.is_empty() || ascii[0] != b'[' {
-            Err(Error::at(0, err::Kind::Ipv6NoMatch))
-        } else {
-            Ok(0) // consume the opening bracket
+    pub(crate) fn new(src: &'src str) -> Result<Option<Self>, Error> {
+        let mut ascii = src.bytes();
+        let mut index: NonZeroU8 = match ascii.next() {
+            None => return Ok(None),
+            Some(b'[') => Ok(nonzero!(u8, 1)), // consume the opening bracket
+            Some(_) => Err(Error::at(0, err::Kind::Ipv6NoMatch)),
         }?;
         let mut state = State(0);
         loop {
-            index = if (src.len() - 1) == index as usize {
-                Err(Error::at(index, err::Kind::Ipv6MissingClosingBracket))
-            } else if index == Short::MAX {
-                Err(Error::at(index, err::Kind::Ipv6TooLong))
+            // loop until we reach the closing bracket or encounter an error
+            if let Some(next) = ascii.next() {
+                match next {
+                    b'a'..=b'f' | b'A'..=b'F' | b'0'..=b'9' => state.increment_position_in_group(),
+                    b':' => state.set_colon(),
+                    b']' => break, // done!
+                    _ => Err(err::Kind::Ipv6MissingClosingBracket),
+                }
+                .map_err(|kind| Error::at(index.upcast(), kind))?;
             } else {
-                Ok(index + 1)
-            }?;
-            match ascii[index as usize] {
-                b'a'..=b'f' | b'A'..=b'F' | b'0'..=b'9' => state.increment_position_in_group(),
-                b':' => state.set_colon(),
-                b']' => break, // done!
-                _ => return Err(Error::at(0, err::Kind::Ipv6MissingClosingBracket)),
-            }
-            .map_err(|kind| Error::at(index, kind))?;
+                return Err(Error::at(
+                    index.upcast(),
+                    err::Kind::Ipv6MissingClosingBracket,
+                ));
+            };
+            index = index
+                .checked_add(1)
+                .ok_or(Error::at(u8::MAX, err::Kind::Ipv6TooLong))?;
         }
-        debug_assert!(ascii[0] == b'[');
-        debug_assert!(ascii[index as usize] == b']');
-        let len = index + 1; // consume the closing bracket
+        debug_assert!(src.as_bytes()[0] == b'[');
+        debug_assert!(src.as_bytes()[index.as_usize()] == b']');
+        index = index
+            .checked_add(1) // consume t he closing bracket
+            .ok_or(Error::at(u8::MAX, err::Kind::Ipv6TooLong))?;
         match state.current_group() {
             0..=6 => {
                 if state.double_colon_already_seen() {
-                    Ok(Self(len.into()))
+                    Ok(Some(Self(ShortLength::from_nonzero(index))))
                 } else {
-                    Err(Error::at(index, err::Kind::Ipv6TooFewGroups))
+                    Err(Error::at(index.upcast(), err::Kind::Ipv6TooFewGroups))
                 }
             }
-            7 => Ok(Self(len.into())),
+            7 => Ok(Some(Self(ShortLength::from_nonzero(index)))),
             _ => unreachable!("group_count <= 7 enforced by checks on state.increment_group()"),
         }
     }
@@ -169,10 +179,10 @@ mod test {
     fn should_work(ip: &str) {
         match super::Ipv6Span::new(ip) {
             Ok(span) => assert_eq!(
-                span.span_of(ip),
+                span.map(|p| p.span_of(ip)).unwrap_or(""),
                 ip,
                 "\n\tparsed: {:?}\n\tip    : {ip:?}",
-                span.span_of(ip)
+                span.map(|p| p.span_of(ip)).unwrap_or("")
             ),
             Err(e) => assert!(
                 false,
@@ -188,7 +198,7 @@ mod test {
             Ok(span) => assert!(
                 false,
                 "should have failed to parse\n{ip}\n{}",
-                span.span_of(ip),
+                span.map(|p| p.span_of(ip)).unwrap_or(""),
             ),
             Err(_) => {}
         }

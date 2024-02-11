@@ -33,6 +33,8 @@
 pub(crate) mod host;
 pub(crate) mod ipv6;
 pub(crate) mod port;
+use core::num::NonZeroU16;
+
 use crate::{
     ambiguous::{host_or_path::HostOrPathSpan, port_or_tag::PortOrTagSpan},
     domain::{
@@ -40,51 +42,33 @@ use crate::{
         port::PortSpan,
     },
     err::{self, Kind as ErrorKind},
-    span::{IntoOption, Lengthy, Long, Short},
+    span::{Lengthy, OptionallyZero},
 };
-type Error = err::Error<Long>;
+type Error = err::Error<u16>;
 
 /// a definite host and an optional port. Combined length MUST be under 255 chars.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) struct DomainSpan<'src> {
-    /// required: cannot be zero-length
-    host: HostSpan<'src>,
-    /// can be 0-length, indicating that the port is missing
-    port: PortSpan<'src>,
+    /// The length of the source string that represents the host
+    pub host: HostSpan<'src>,
+    /// If present, the length of the source string that represents the port *after* a colon
+    pub port: Option<PortSpan<'src>>,
 }
 
-impl Lengthy<'_, Long> for DomainSpan<'_> {
-    #[inline(always)]
-    fn short_len(&self) -> Long {
-        self.host().short_len() as Long // since host can be up to 255 chars, pad to avoid overflow
-            + self
-                .port()
-                .into_option()
-                .map(|p| p.short_len() + 1) // +1 for the leading ':'
-                .unwrap_or(0) as Long
+impl Lengthy<'_, u16, NonZeroU16> for DomainSpan<'_> {
+    #[inline]
+    fn short_len(&self) -> NonZeroU16 {
+        let mut len = self.host.short_len().widen(); // since host can be up to 255 chars, pad to avoid overflow
+        len = len
+            .checked_add(self
+                .port.map(|p| p.short_len().upcast() + 1) // +1 for the leading ':'
+                .unwrap_or(0) as u16)
+            .unwrap();
+        len
     }
-}
-
-impl<'src> IntoOption for DomainSpan<'src> {
-    fn is_some(&self) -> bool {
-        self.short_len() > 0
-    }
-    fn none() -> Self {
-        Self {
-            host: HostSpan::none(),
-            port: PortSpan::none(),
-        }
-    }
-}
-
-/// accessor functions
-impl<'src> DomainSpan<'src> {
-    pub fn host(&self) -> HostSpan<'src> {
-        self.host
-    }
-
-    pub fn port(&self) -> PortSpan {
-        self.port
+    #[inline]
+    fn len(&self) -> usize {
+        self.short_len().as_usize()
     }
 }
 
@@ -92,28 +76,34 @@ impl<'src> DomainSpan<'src> {
 impl<'src> DomainSpan<'src> {
     /// check that a given HostSpan and PortSpan can be combined into a DomainSpan
     /// without overflowing the 255 char limit
-    fn from_parts(host: HostSpan<'src>, port: PortSpan<'src>) -> Result<Self, Error> {
-        host.short_len()
-            .checked_add(port.short_len())
-            .ok_or(Error::at(Short::MAX.into(), err::Kind::PortTooLong))?;
+    fn from_parts(host: HostSpan<'src>, port: Option<PortSpan<'src>>) -> Result<Self, Error> {
+        if let Some(port) = port {
+            host.short_len()
+                .checked_add(port.short_len().upcast())
+                .ok_or(Error::at(u8::MAX.into(), err::Kind::PortTooLong))?;
+        }
         Ok(Self { host, port })
     }
     /// parse a domain from the start of a string.
-    pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
-        let host = HostSpan::new(src)?;
-        let port = PortSpan::new(&src[host.len()..]).map_err(|e| e + host.short_len())?;
-        Self::from_parts(host, port)
+    pub(crate) fn new(src: &'src str) -> Result<Option<Self>, Error> {
+        if let Some(host) = HostSpan::new(src)? {
+            let port = PortSpan::new(&src[host.len()..]).map_err(|e| e + host.short_len())?; // FIXME: check addition overflow
+            Self::from_parts(host, port).map(Some)
+        } else {
+            Ok(None)
+        }
     }
 
     pub(crate) fn from_ambiguous(
         host: HostOrPathSpan<'src>,
-        port: PortOrTagSpan<'src>,
+        port: Option<PortOrTagSpan<'src>>,
     ) -> Result<Self, Error> {
         let host = HostSpan::from_ambiguous(host)?;
-        if host.is_none() {
-            return Err(Error::at(0, err::Kind::HostNoMatch));
-        }
-        let port = PortSpan::from_ambiguous(port)?;
+        let port = if let Some(p) = port {
+            Some(PortSpan::from_ambiguous(p)?)
+        } else {
+            None
+        };
         Self::from_parts(host, port)
     }
 }
@@ -134,25 +124,22 @@ impl<'src> DomainStr<'src> {
     pub fn is_empty(&self) -> bool {
         self.src.is_empty()
     }
-    pub fn from_prefix(src: &'src str) -> Result<Self, Error> {
-        let span = DomainSpan::new(src)?;
-        Ok(Self {
-            src: &src[..span.len()],
-            span,
-        })
+    pub fn from_prefix(src: &'src str) -> Result<Option<Self>, Error> {
+        Ok(DomainSpan::new(src)?.map(|span| Self { src, span }))
     }
-    pub fn from_exact_match(src: &'src str) -> Result<Self, Error> {
-        let result = DomainStr::from_prefix(src)?;
-        if result.len() != src.len() {
-            return Err(Error::at(result.span.short_len(), ErrorKind::HostNoMatch));
+    pub fn from_exact_match(src: &'src str) -> Result<Option<Self>, Error> {
+        let result = DomainSpan::new(src)?;
+        let len = result.as_ref().map(|r| r.short_len().into()).unwrap_or(0);
+        if (len as usize) != src.len() {
+            return Err(Error::at(len, ErrorKind::HostNoMatch));
         }
-        Ok(result)
+        Ok(result.map(|span| Self { src, span }))
     }
     pub fn host(&self) -> HostStr<'src> {
         HostStr::from_span_of(self.src, self.span.host)
     }
     pub fn port(&self) -> Option<&str> {
-        self.span.port.into_option().map(|port| {
+        self.span.port.map(|port| {
             let start = self.span.host.len();
             &self.src[start..start + port.len()]
         })

@@ -24,14 +24,20 @@
 
 // }}}
 
+use core::num::NonZeroU8;
+
 use crate::{
     domain::ipv6,
-    err::{self, Error},
-    span::{impl_span_methods_on_tuple, IntoOption, Lengthy, Short, ShortLength},
+    err::{
+        self,
+        Kind::{
+            HostOrPathInvalidChar as InvalidChar, HostOrPathInvalidComponentEnd, HostOrPathTooLong,
+        },
+    },
+    span::{impl_span_methods_on_tuple, Lengthy, ShortLength},
 };
-use err::Kind::{
-    HostOrPathInvalidChar as InvalidChar, HostOrPathInvalidComponentEnd, HostOrPathTooLong,
-};
+
+type Error = err::Error<u8>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Kind {
@@ -170,9 +176,9 @@ impl Scan {
 }
 
 struct State {
-    len: Short,
+    len: u8,
     scan: Scan,
-    deciding_char: Option<Short>,
+    deciding_char: Option<u8>,
 }
 impl State {
     fn advance(&mut self) -> Result<(), Error> {
@@ -237,27 +243,16 @@ impl From<&Scan> for DebugScan {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct HostOrPathSpan<'src>(ShortLength<'src>, Kind, Short);
-impl_span_methods_on_tuple!(HostOrPathSpan, Short);
-impl<'src> IntoOption for HostOrPathSpan<'src> {
-    fn is_some(&self) -> bool {
-        self.short_len() > 0
-    }
-    fn none() -> Self {
-        Self(0.into(), Kind::Any, 0)
-    }
-}
+pub(crate) struct HostOrPathSpan<'src>(ShortLength<'src>, Kind, u8);
+impl_span_methods_on_tuple!(HostOrPathSpan, u8, NonZeroU8);
+
 impl<'src> HostOrPathSpan<'src> {
     pub(crate) fn kind(&self) -> Kind {
         self.1
     }
-    fn from_ipv6(src: &'src str) -> Result<Self, Error> {
-        let span = ipv6::Ipv6Span::new(src)?;
-        Ok(Self(span.short_len().into(), Kind::IpV6, 0))
-    }
 
     /// can return 0-length spans if at EOF or the first character is a `/` or `@`
-    pub(crate) fn new(src: &'src str, kind: Kind) -> Result<Self, Error> {
+    pub(crate) fn new(src: &'src str, kind: Kind) -> Result<Option<Self>, Error> {
         let mut state = State {
             len: 0,
             scan: kind.into(), // <- scan's setters will enforce the kind's constraint(s)
@@ -269,10 +264,11 @@ impl<'src> HostOrPathSpan<'src> {
             #[cfg(test)]
             let _c = c.map(|c| c as char);
             match c {
-                None => return Ok(Self(0.into(), kind, 0)),
+                None => return Ok(None),
                 Some(b'[') => {
                     return match kind {
-                        Kind::IpV6 | Kind::Any => Self::from_ipv6(src),
+                        Kind::IpV6 | Kind::Any => Ok(ipv6::Ipv6Span::new(src)?
+                            .map(|span| Self(span.into_length().unwrap(), Kind::IpV6, 0))),
                         _ => Err(Error::at(0, InvalidChar)),
                     }
                 }
@@ -304,11 +300,8 @@ impl<'src> HostOrPathSpan<'src> {
             state.len,
             src.len()
         );
-        Ok(Self(
-            state.len.into(),
-            state.scan.into(),
-            state.deciding_char.unwrap_or(0),
-        ))
+        Ok(ShortLength::new(state.len)
+            .map(|length| Self(length, state.scan.into(), state.deciding_char.unwrap_or(0))))
     }
     pub(crate) fn narrow(self, target_kind: Kind) -> Result<Self, Error> {
         use Kind::*;
@@ -344,6 +337,7 @@ mod tests {
                 );
             })
             .unwrap()
+            .unwrap()
     }
     fn should_parse_as(src: &str, expected: &str, kind: Kind) {
         let host_or_path = should_parse(src);
@@ -367,6 +361,7 @@ mod tests {
 
     fn should_fail_with(src: &str, err_kind: err::Kind, bad_char_index: u8) {
         let err = super::HostOrPathSpan::new(src, Kind::Any)
+            .map(|e| e.unwrap())
             .map(|e| {
                 assert!(
                     false,

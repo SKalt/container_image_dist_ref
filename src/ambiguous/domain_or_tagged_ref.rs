@@ -5,7 +5,7 @@
 //! Note that domain components conflict with path components:
 
 // {{{sh
-//    cd ../../../ && ./scripts/lines.sh 1 12 ./grammars/reference.ebnf |
+//    cd ../../ && ./scripts/lines.sh 1 12 ./grammars/reference.ebnf |
 //    sed 's#^#//! #g';
 //    printf '//! ```\n\n// ';
 // }}}{{{out skip=2

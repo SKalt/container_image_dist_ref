@@ -8,7 +8,7 @@ a tag must have the following pattern:
 
 /*
 ```ebnf
-tag                  ::= [\w][\w.-]{0,127}
+tag ::= [\w][\w.-]{0,127}
 ```
 */
 

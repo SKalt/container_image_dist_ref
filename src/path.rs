@@ -5,7 +5,7 @@
 //!
 
 // {{{sh
-//    cat ../../grammars/oci_name.ebnf | sed 's#^#//! #g';
+//    cat ../grammars/oci_name.ebnf | sed 's#^#//! #g';
 //    printf '//! ```\n\n// '
 // }}}{{{out skip=2
 

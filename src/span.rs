@@ -136,6 +136,18 @@ where
         self.0.as_usize()
     }
 }
+impl From<Length<'_, NonZeroU16>> for u16 {
+    #[inline]
+    fn from(span: Length<'_, NonZeroU16>) -> u16 {
+        u16::from(span.0)
+    }
+}
+impl From<Length<'_, NonZeroU8>> for u16 {
+    #[inline]
+    fn from(span: Length<'_, NonZeroU8>) -> u16 {
+        u8::from(span.0).into()
+    }
+}
 
 /// Given a wrapper type like Wrapper<'a>(Span<'a>), re-expose the methods of Span
 /// on Wrapper

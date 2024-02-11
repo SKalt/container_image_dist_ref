@@ -8,7 +8,7 @@
 //!
 //! See the grammar:
 
-// {{{sh sed 's#^#//! #g' ../../../grammars/host_or_path.ebnf; printf '//! ```\n\n// ' }}}{{{out skip=2
+// {{{sh sed 's#^#//! #g' ../../grammars/host_or_path.ebnf; printf '//! ```\n\n// ' }}}{{{out skip=2
 
 //! ```ebnf
 //! name                 ::= (domain "/")? path

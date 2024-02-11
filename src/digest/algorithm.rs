@@ -169,13 +169,11 @@ fn component(src: &str, compliance: Compliance) -> Result<Option<(NonZeroU8, Com
         match c {
             b'a'..=b'z' | b'0'..=b'9' => Ok(()),
             b'A'..=b'Z' => {
-                // acceptable according to distribution/reference
-                // but not the OCI image spec
-                if compliance == Oci {
-                    // this is not a valid OCI algorithm
-                    Err(InvalidOciAlgorithm)
-                } else {
-                    Ok(())
+                match compliance {
+                    // uppercase letters are acceptable according to distribution/reference
+                    Distribution | Universal => Ok(()),
+                    // but not the OCI image spec
+                    Oci => Err(InvalidOciAlgorithm),
                 }
             }
             b':' | b'+' | b'.' | b'_' | b'-' => break,

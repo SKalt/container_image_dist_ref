@@ -571,8 +571,7 @@ mod tests {
         };
     }
     #[test]
-    fn test_bad_refs() {
-        // FIXME: rename test
+    fn test_bad_ipv6_fails() {
         should_fail_with("[::]0", Error::at(4, err::Kind::PortOrTagInvalidChar));
     }
     #[derive(Debug, PartialEq, Eq)]

@@ -90,10 +90,9 @@ impl<'src> DomainOrRefSpan<'src> {
                 let right = PortOrTagSpan::new(&right_src[1..], Port)
                     .map_err(map_err)
                     .map_err(|e| e + len)?;
-                Ok(Some(right.ok_or(Error::at(
-                    left.short_len().upcast().into(),
-                    err::Kind::PortOrTagMissing,
-                ))?))
+                Ok(Some(
+                    right.ok_or(Error::at(len, err::Kind::PortOrTagMissing))?,
+                ))
             }
             Some(b'/') | Some(b'@') | None => Ok(None),
             Some(_) => Error::at(

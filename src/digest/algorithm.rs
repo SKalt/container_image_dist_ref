@@ -45,7 +45,8 @@ fn try_add(a: NonZeroU8, b: u8) -> Result<NonZeroU8, Error> {
 
 impl<'src> AlgorithmSpan<'src> {
     pub(crate) fn new(src: &'src str) -> Result<(Self, Compliance), Error> {
-        let (mut len, mut compliance) = component(src, Compliance::Universal)?;
+        let (mut len, mut compliance) =
+            component(src, Compliance::Universal)?.ok_or(Error::at(0, AlgorithmNoMatch))?;
         let max_len = src.len().try_into().unwrap_or(u8::MAX);
         loop {
             if u8::from(len) >= max_len {
@@ -60,7 +61,8 @@ impl<'src> AlgorithmSpan<'src> {
                 }
             }
             let (component_len, component_compliance) =
-                component(&src[len.as_usize()..], compliance)?;
+                component(&src[len.as_usize()..], compliance)?
+                    .ok_or(Error::at(u8::from(len).into(), AlgorithmNoMatch))?;
             len = try_add(len, component_len.into())?;
             compliance = component_compliance; // narrow compliance from Universal -> (Oci | Distribution)
         }
@@ -130,10 +132,11 @@ fn is_separator(c: u8) -> bool {
 fn component<'src>(
     src: &'src str,
     compliance: Compliance,
-) -> Result<(NonZeroU8, Compliance), Error> {
+) -> Result<Option<(NonZeroU8, Compliance)>, Error> {
     use Compliance::*;
     let mut bytes = src.bytes();
     let compliance = match bytes.next() {
+        None => return Ok(None),
         Some(b'a'..=b'z') => Ok(compliance), // universally compatible first character
         Some(b'0'..=b'9') => {
             // acceptable according to OCI spec, but not distribution/reference
@@ -155,7 +158,6 @@ fn component<'src>(
                 Ok(Distribution)
             }
         }
-        None => Err(AlgorithmNoMatch), // TODO: consider returning None?
         _ => Err(AlgorithmInvalidChar),
     }
     .map_err(|kind| Error::at(0, kind))?;
@@ -186,5 +188,5 @@ fn component<'src>(
             .ok_or(Error::at(u8::from(len).into(), err::Kind::AlgorithmTooLong))?;
     }
 
-    Ok((len, compliance))
+    Ok(Some((len, compliance)))
 }

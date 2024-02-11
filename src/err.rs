@@ -5,6 +5,8 @@
 // since ErrorKind can fit 256 unique errors, use it for all non-ambiguous cases
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
+    // FIXME: rename errors from *NoMatch to *Missing
+
     // ambiguous::host_or_path ---------------------------------
     /// unable to match a host or path of length > 0. This is caused by
     /// attempting to parse an empty string.

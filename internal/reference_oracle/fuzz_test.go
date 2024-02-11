@@ -123,6 +123,7 @@ func harness(t *testing.T, input string) {
 	if !utf8.ValidString(input) {
 		return
 	}
+	input = strings.TrimRight(input, "\r\n")
 	oracle := parse(input)
 	t.Logf("input: \"%s\"", input)
 

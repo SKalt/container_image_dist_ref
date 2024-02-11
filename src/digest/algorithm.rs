@@ -42,15 +42,18 @@ fn try_add(a: NonZeroU8, b: u8) -> Result<NonZeroU8, Error> {
     a.checked_add(b)
         .ok_or(Error::at(u8::MAX.into(), err::Kind::AlgorithmTooLong))
 }
+/// While there's no specification for the max length of an algorithm string,
+/// 255 characters is a reasonable upper bound.
+pub const ALGORITHM_MAX_LEN: u8 = u8::MAX;
 
 impl<'src> AlgorithmSpan<'src> {
     pub(crate) fn new(src: &'src str) -> Result<(Self, Compliance), Error> {
         let (mut len, mut compliance) =
             component(src, Compliance::Universal)?.ok_or(Error::at(0, AlgorithmNoMatch))?;
-        let max_len = src.len().try_into().unwrap_or(u8::MAX);
+        let max_len = src.len().try_into().unwrap_or(ALGORITHM_MAX_LEN);
         loop {
             if u8::from(len) >= max_len {
-                break; // FIXME: handle overflow
+                break;
             } else {
                 match src.as_bytes()[u8::from(len) as usize] {
                     b':' => break,
@@ -129,10 +132,7 @@ fn is_separator(c: u8) -> bool {
 
 /// match an algorithm component and return the length of the match, along
 /// with what standard(s) the component is compliant with.
-fn component<'src>(
-    src: &'src str,
-    compliance: Compliance,
-) -> Result<Option<(NonZeroU8, Compliance)>, Error> {
+fn component(src: &str, compliance: Compliance) -> Result<Option<(NonZeroU8, Compliance)>, Error> {
     use Compliance::*;
     let mut bytes = src.bytes();
     let compliance = match bytes.next() {

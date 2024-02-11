@@ -28,7 +28,7 @@ use core::num::NonZeroU8;
 use crate::{
     ambiguous::host_or_path::{HostOrPathSpan, Kind as HostKind},
     err,
-    span::{impl_span_methods_on_tuple, nonzero, Length, Lengthy, OptionallyZero},
+    span::{impl_span_methods_on_tuple, nonzero, Length, Lengthy},
 };
 
 type Error = err::Error<u8>;
@@ -60,7 +60,7 @@ pub enum Kind {
 
 /// can be ipv6
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) struct HostSpan<'src>(pub(crate) Length<'src, NonZeroU8>, pub(crate) Kind);
+pub(crate) struct HostSpan<'src>(Length<'src, NonZeroU8>, pub(crate) Kind);
 // TODO: use named fields?
 // TODO: restrict access to innards
 impl_span_methods_on_tuple!(HostSpan, u8, NonZeroU8);
@@ -124,7 +124,7 @@ impl<'src> HostStr<'src> {
         self.src().len()
     }
     #[inline]
-    fn short_len(&self) -> NonZeroU8 {
+    pub fn short_len(&self) -> NonZeroU8 {
         // unwrapping self.len() is safe since the length of a HostStr is always <= U::MAX
         let len: u8 = self.len().try_into().unwrap();
         // casting as nonzero is safe since the length of a HostStr is always > 0

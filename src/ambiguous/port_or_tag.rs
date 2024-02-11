@@ -57,12 +57,10 @@ struct State {
 }
 impl State {
     fn update_kind(&mut self, other: Kind) -> Result<(), Error> {
-        match (self.kind, other) {
-            (Kind::Port, Kind::Tag) => {
-                self.first_tag_char = self.len.upcast();
-                self.kind = Kind::Tag;
-            } // all ports are valid tags
-            _ => {}
+        if let (Kind::Port, Kind::Tag) = (self.kind, other) {
+            // all ports are valid tags
+            self.first_tag_char = self.len.upcast();
+            self.kind = Kind::Tag;
         }
         self.kind = self
             .kind

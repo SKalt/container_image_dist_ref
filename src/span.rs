@@ -3,7 +3,7 @@ use core::marker::PhantomData;
 use core::num::{NonZeroU16, NonZeroU8};
 
 // need this trait since I can't implement From<NonZeroU8> for usize
-pub(crate) trait OptionallyZero
+pub trait OptionallyZero
 where
     Self: Sized + Clone,
 {
@@ -76,16 +76,8 @@ where
         NonZero::new(len).map(|len| Self::from_nonzero(len))
     }
     #[inline]
-    pub(crate) fn from_nonzero(len: NonZero) -> Self {
+    pub(crate) const fn from_nonzero(len: NonZero) -> Self {
         Self(len, PhantomData)
-    }
-    #[inline]
-    pub(crate) fn nonzero(&self) -> NonZero {
-        self.0
-    }
-    #[inline]
-    pub(crate) fn original(&self) -> Original {
-        self.0.upcast()
     }
 }
 

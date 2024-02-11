@@ -95,7 +95,7 @@ impl<'src> PathSpan<'src> {
         let extension = Self::parse_from_slash(rest).map_err(|e| {
             e.index()
                 .checked_add(self.short_len().into())
-                .map(|i| Error::at(i.into(), e.kind()))
+                .map(|i| Error::at(i, e.kind()))
                 .unwrap_or(ERR_PATH_TOO_LONG)
         })?;
         let len = self

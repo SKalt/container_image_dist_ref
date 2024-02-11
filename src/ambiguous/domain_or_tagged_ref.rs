@@ -72,7 +72,6 @@ impl Lengthy<'_, u16, NonZeroU16> for DomainOrRefSpan<'_> {
     }
 }
 
-// TODO: check whether this has any effect on performance
 #[inline]
 fn map_err(e: err::Error<u8>) -> err::Error<u16> {
     e.into()

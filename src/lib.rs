@@ -105,7 +105,7 @@ impl<'src> RefSpan<'src> {
             None => Ok(None),
         }
         .map_err(|e| e + index)?;
-        index += digest.map(|d| d.short_len().upcast().into()).unwrap_or(0);
+        index += digest.map(|d| d.short_len().upcast()).unwrap_or(0);
         debug_assert!(
             index as usize == src.len(),
             "index {} != src.len() {}",
@@ -247,14 +247,11 @@ impl<'src> RefStr<'src> {
         self.span.tag_range().map(|range| &self.src[range])
     }
     pub fn digest(&self) -> Option<DigestStr<'src>> {
-        self.span
-            .digest_range()
-            .map(|range| {
-                self.span
-                    .digest
-                    .map(|span| DigestStr::from_span(&self.src[range], span))
-            })
-            .flatten()
+        self.span.digest_range().and_then(|range| {
+            self.span
+                .digest
+                .map(|span| DigestStr::from_span(&self.src[range], span))
+        })
     }
 }
 

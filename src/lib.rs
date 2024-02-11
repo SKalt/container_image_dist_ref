@@ -13,10 +13,7 @@ pub mod tag;
 /// https://github.com/distribution/reference/blob/main/reference.go#L39
 pub const NAME_TOTAL_MAX_LENGTH: u8 = 255;
 
-use core::{
-    cell::Ref,
-    ops::{Range, RangeFrom},
-};
+use core::ops::{Range, RangeFrom};
 
 use digest::DigestStr;
 

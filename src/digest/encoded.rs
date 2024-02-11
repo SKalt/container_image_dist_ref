@@ -25,7 +25,7 @@ use crate::span::{impl_span_methods_on_tuple, Lengthy, LongLength};
 pub const MAX_LENGTH: u16 = 1024; // arbitrary but realistic limit
 
 use crate::err::Kind::{
-    EncodedInvalidChar, EncodedNoMatch, EncodedNonLowerHex, EncodingTooLong, EncodingTooShort,
+    EncodedInvalidChar, EncodedNonLowerHex, EncodingTooLong, EncodingTooShort,
     OciRegisteredAlgorithmWrongDigestLength, OciRegisteredDigestInvalidChar,
 };
 type Error = crate::err::Error<u16>;
@@ -61,6 +61,7 @@ impl<'src> EncodedSpan<'src> {
             }
             len += 1;
         }
+
         debug_assert!(len as usize == src.len(), "must have consume all src");
 
         Ok(LongLength::new(len).map(|length| (Self(length), compliance)))
@@ -148,5 +149,24 @@ impl Lengthy<'_, u16, NonZeroU16> for EncodedStr<'_> {
     #[inline]
     fn short_len(&self) -> NonZeroU16 {
         NonZeroU16::new(self.len().try_into().unwrap()).unwrap()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn encoded_consumes_all() {
+        fn consumes_all(src: &str) -> Result<(), Error> {
+            let (span, _) = EncodedSpan::new(src, Compliance::Oci)?.unwrap();
+            assert_eq!(span.len(), src.len());
+            Ok(())
+        }
+        consumes_all("aaa").expect("ok");
+        consumes_all("000").expect("ok");
+        let err = consumes_all("000 ").expect_err("Accepted invalid trailing character");
+        assert_eq!(err.kind(), EncodedInvalidChar);
+        assert_eq!(err.index(), 3);
     }
 }

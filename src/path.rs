@@ -26,10 +26,7 @@
 use core::num::NonZeroU8;
 
 use crate::{
-    ambiguous::{
-        self,
-        host_or_path::{HostOrPathSpan, Kind as PathKind},
-    },
+    ambiguous::host_or_path::{HostOrPathSpan, Kind as PathKind},
     err,
     span::{impl_span_methods_on_tuple, Length, Lengthy, OptionallyZero, ShortLength},
 };

@@ -50,7 +50,7 @@ pub enum Standard {
     Oci,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Compliance {
     /// Not compliant with distribution/reference: at least one algorithm component
     /// starts with a number.

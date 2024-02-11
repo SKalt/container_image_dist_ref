@@ -101,7 +101,14 @@ impl<'src> RefSpan<'src> {
                 index += 1;
                 DigestSpan::new(&src[index as usize..])
             }
-            Some(_) => DigestSpan::new(&src[index as usize..]), // TODO: explain why this is valid. IIRC, it's to handle digest-only refs?
+            Some(_) => {
+                if domain.is_some() || path.is_some() || tag.is_some() {
+                    Error::at(index, err::Kind::AlgorithmMissing).into()
+                } else {
+                    // this is a digest-only ref, e.g. "algo:abc123".
+                    DigestSpan::new(&src[index as usize..])
+                }
+            }
             None => Ok(None),
         }
         .map_err(|e| e + index)?;
@@ -317,10 +324,11 @@ impl<'src> CanonicalStr<'src> {
     }
     pub fn tag(&self) -> Option<&str> {
         // tags aren't required for canonical refs
-        let start = self.span.domain.len() + 1 + self.path().len();
-        self.span.tag.map(|t| &t.span_of(&self.src[start..])[1..])
-        // trim the leading ':'
-        // TODO: avoid re-slicing
+        self.span.tag.map(|t| {
+            let start = self.span.domain.len() + 1 + self.path().len();
+            let end = start + t.len();
+            &self.src[(start + 1)..end] // trim the leading ':'
+        })
     }
     pub fn digest(&self) -> DigestStr<'src> {
         let start = self.span.domain.len()

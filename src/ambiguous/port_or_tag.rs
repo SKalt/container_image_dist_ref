@@ -99,7 +99,6 @@ impl<'src> PortOrTagSpan<'src> {
     }
     /// can match an empty span if the first character in src is a `/` or `@`
     pub(crate) fn new(src: &str, kind: Kind) -> Result<Option<Self>, Error> {
-        let ascii = src.as_bytes(); // TODO: move inline
         let mut bytes = src.bytes();
 
         // the first character after the colon must be alphanumeric or an underscore
@@ -140,7 +139,8 @@ impl<'src> PortOrTagSpan<'src> {
         }
         debug_assert!(state.len.as_usize() <= src.len());
         debug_assert!(if (state.len.as_usize()) < src.len() {
-            ascii[state.len.as_usize()] == b'/' || ascii[state.len.as_usize()] == b'@'
+            src.as_bytes()[state.len.as_usize()] == b'/'
+                || src.as_bytes()[state.len.as_usize()] == b'@'
         } else {
             true
         });

@@ -22,7 +22,7 @@
 
 // }}}
 
-use core::num::NonZeroU8;
+use core::{iter::Peekable, num::NonZeroU8, str::Bytes};
 
 use crate::{
     err,
@@ -47,6 +47,9 @@ fn try_add(a: NonZeroU8, b: u8) -> Result<NonZeroU8, Error> {
 pub const ALGORITHM_MAX_LEN: u8 = u8::MAX;
 
 impl<'src> AlgorithmSpan<'src> {
+    pub(crate) fn from_iter(ascii: &mut Peekable<Bytes<'_>>) -> Result<(Self, Compliance), Error> {
+        todo!()
+    }
     pub(crate) fn new(src: &'src str) -> Result<(Self, Compliance), Error> {
         let (mut len, mut compliance) =
             component(src, Compliance::Universal)?.ok_or(Error::at(0, AlgorithmMissing))?;
@@ -54,14 +57,14 @@ impl<'src> AlgorithmSpan<'src> {
         loop {
             if u8::from(len) >= max_len {
                 break;
-            } else {
-                match src.as_bytes()[u8::from(len) as usize] {
-                    b':' => break,
-                    b'+' | b'.' | b'_' | b'-' => {
-                        len = try_add(len, 1)?; // consume the separator
-                    }
-                    _ => return Error::at(u8::from(len).into(), AlgorithmInvalidChar).into(),
+            }
+
+            match src.as_bytes()[u8::from(len) as usize] {
+                b':' => break,
+                b'+' | b'.' | b'_' | b'-' => {
+                    len = try_add(len, 1)?; // consume the separator
                 }
+                _ => return Error::at(u8::from(len).into(), AlgorithmInvalidChar).into(),
             }
             let (component_len, component_compliance) =
                 component(&src[len.as_usize()..], compliance)?
@@ -127,6 +130,7 @@ impl<'src> AlgorithmStr<'src> {
 
 /// match a single separator character: matching the regular expression /[+._-]/
 fn is_separator(c: u8) -> bool {
+    // TODO: make `const fn`?
     matches!(c, b'+' | b'.' | b'_' | b'-')
 }
 

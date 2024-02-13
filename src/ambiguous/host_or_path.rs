@@ -24,7 +24,7 @@
 
 // }}}
 
-use core::num::NonZeroU8;
+use core::{iter::Peekable, num::NonZeroU8, str::Bytes};
 
 use crate::{
     domain::ipv6,
@@ -246,62 +246,85 @@ impl From<&Scan> for DebugScan {
 pub(crate) struct HostOrPathSpan<'src>(ShortLength<'src>, Kind, u8);
 impl_span_methods_on_tuple!(HostOrPathSpan, u8, NonZeroU8);
 
+struct X<'a>(&'a str); // 16
+struct Y<'a>(Peekable<Bytes<'a>>); // 24
+struct Z<'a, 'b>(&'b mut Peekable<Bytes<'a>>); // 8
+
 impl<'src> HostOrPathSpan<'src> {
     pub(crate) fn kind(&self) -> Kind {
         self.1
     }
 
-    /// can return 0-length spans if at EOF or the first character is a `/` or `@`
-    pub(crate) fn new(src: &'src str, kind: Kind) -> Result<Option<Self>, Error> {
+    pub(crate) fn from_iter(
+        ascii: &mut Peekable<Bytes>,
+        kind: Kind,
+    ) -> Result<Option<Self>, Error> {
+        // check the first character, if any
+        match ascii.peek() {
+            Some(b'[') => {
+                // try to parse an IPv6 address
+                return match kind {
+                    Kind::IpV6 | Kind::Any => {
+                        ipv6::Ipv6Span::from_iter(ascii) // FIXME
+                            .map(|span| {
+                                span.map(|span| Self(span.into_length().unwrap(), Kind::IpV6, 0))
+                            })
+                    }
+                    _ => Err(Error::at(0, InvalidChar)),
+                };
+            }
+            Some(b'.' | b'-' | b'_') => return Error::at(0, InvalidChar).into(),
+            None => return Ok(None),
+            _ => {}
+        }
         let mut state = State {
             len: 0,
             scan: kind.into(), // <- scan's setters will enforce the kind's constraint(s)
             deciding_char: None,
         };
-        {
-            // check the first character, if any
-            let c = src.bytes().next();
-            #[cfg(test)]
-            let _c = c.map(|c| c as char);
-            match c {
-                None => return Ok(None),
-                Some(b'[') => {
-                    return match kind {
-                        Kind::IpV6 | Kind::Any => Ok(ipv6::Ipv6Span::new(src)?
-                            .map(|span| Self(span.into_length().unwrap(), Kind::IpV6, 0))),
-                        _ => Err(Error::at(0, InvalidChar)),
-                    }
-                }
-                Some(b'.') | Some(b'-') | Some(b'_') => return Error::at(0, InvalidChar).into(),
-                _ => {}
-            };
-        };
+        loop {
+            match ascii.peek() {
+                None | Some(b':' | b'/' | b'@') => break,
+                Some(&c) => {
+                    #[cfg(debug_assertions)]
+                    let (_pre, _ch) = (DebugScan::from(&state.scan), c as char);
 
-        for c in src.bytes() {
-            #[cfg(debug_assertions)]
-            let (_pre, _ch) = (DebugScan::from(&state.scan), c as char);
-            match c {
-                b':' | b'/' | b'@' => break, // done!
-                _ => state.update(c),
-            }?;
-            #[cfg(debug_assertions)]
-            let _post = DebugScan::from(&state.scan);
-            state.advance()?;
+                    state.update(c)?;
+
+                    #[cfg(debug_assertions)]
+                    let _post = DebugScan::from(&state.scan);
+
+                    // consume the character
+                    ascii.next();
+                    state.advance()?;
+                }
+            }
         }
+
         #[cfg(debug_assertions)]
         let _done = DebugScan::from(&state.scan);
 
         state.check_component_end()?;
-        #[cfg(debug_assertions)]
-        let _rest = &src[state.len as usize..];
-        debug_assert!(
-            state.len as usize <= src.len(),
-            "len = {}, src.len() = {} for {src:?}",
-            state.len,
-            src.len()
-        );
+
         Ok(ShortLength::new(state.len)
             .map(|length| Self(length, state.scan.into(), state.deciding_char.unwrap_or(0))))
+    }
+
+    /// can return 0-length spans if at EOF or the first character is a `/` or `@`
+    pub(crate) fn new(src: &'src str, kind: Kind) -> Result<Option<Self>, Error> {
+        let mut ascii = src.bytes().peekable();
+        let result = Self::from_iter(&mut ascii, kind)?;
+        if let Some(result) = result.as_ref() {
+            #[cfg(debug_assertions)]
+            let _rest = &src[result.len()..];
+            debug_assert!(
+                result.len() <= src.len(),
+                "len = {}, src.len() = {} for {src:?}",
+                result.len(),
+                src.len()
+            );
+        }
+        Ok(result)
     }
     pub(crate) fn narrow(self, target_kind: Kind) -> Result<Self, Error> {
         use Kind::*;

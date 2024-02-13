@@ -7,7 +7,7 @@
 //        0   0    1    1    2    2    3    3   3
 //        1   5    0    5    0    5    0    5   9
 
-use core::num::NonZeroU8;
+use core::{iter::Peekable, num::NonZeroU8, str::Bytes};
 
 use crate::{
     err,
@@ -125,51 +125,62 @@ impl State {
     }
 }
 impl<'src> Ipv6Span<'src> {
-    pub(crate) fn new(src: &'src str) -> Result<Option<Self>, Error> {
-        let mut ascii = src.bytes();
-        let mut index: NonZeroU8 = match ascii.next() {
+    pub(crate) fn from_iter(ascii: &mut impl Iterator<Item = u8>) -> Result<Option<Self>, Error> {
+        match ascii.next() {
             None => return Ok(None),
-            Some(b'[') => Ok(nonzero!(u8, 1)), // consume the opening bracket
-            Some(_) => Err(Error::at(0, err::Kind::Ipv6InvalidChar)),
-        }?;
+            Some(b'[') => {}
+            Some(_) => return Err(Error::at(0, err::Kind::Ipv6InvalidChar)),
+        };
+        let mut offset: NonZeroU8 = nonzero!(u8, 1);
         let mut state = State(0);
         loop {
             // loop until we reach the closing bracket or encounter an error
-            if let Some(next) = ascii.next() {
-                match next {
-                    b'a'..=b'f' | b'A'..=b'F' | b'0'..=b'9' => state.increment_position_in_group(),
-                    b':' => state.set_colon(),
-                    b']' => break, // done!
-                    b'/' => Err(err::Kind::Ipv6MissingClosingBracket),
-                    _ => Err(err::Kind::Ipv6InvalidChar),
-                }
-                .map_err(|kind| Error::at(index.upcast(), kind))?;
-            } else {
-                return Err(Error::at(
-                    index.upcast(),
-                    err::Kind::Ipv6MissingClosingBracket,
-                ));
-            };
-            index = index
+
+            let next = ascii.next().ok_or(Error::at(
+                offset.upcast(),
+                err::Kind::Ipv6MissingClosingBracket,
+            ))?;
+
+            #[cfg(debug_assertions)]
+            let _ch = next as char;
+
+            match next {
+                b'a'..=b'f' | b'A'..=b'F' | b'0'..=b'9' => state.increment_position_in_group(),
+                b':' => state.set_colon(),
+                b']' => break, // done!
+                b'/' => Err(err::Kind::Ipv6MissingClosingBracket),
+                _ => Err(err::Kind::Ipv6InvalidChar),
+            }
+            .map_err(|kind| Error::at(offset.upcast(), kind))?;
+
+            offset = offset
                 .checked_add(1)
                 .ok_or(Error::at(u8::MAX, err::Kind::Ipv6TooLong))?;
         }
-        debug_assert!(src.as_bytes()[0] == b'[');
-        debug_assert!(src.as_bytes()[index.as_usize()] == b']');
-        index = index
-            .checked_add(1) // consume t he closing bracket
+        let len = offset
+            .checked_add(1)
             .ok_or(Error::at(u8::MAX, err::Kind::Ipv6TooLong))?;
         match state.current_group() {
             0..=6 => {
                 if state.double_colon_already_seen() {
-                    Ok(Some(Self(ShortLength::from_nonzero(index))))
+                    Ok(Some(Self(ShortLength::from_nonzero(len))))
                 } else {
-                    Err(Error::at(index.upcast(), err::Kind::Ipv6TooFewGroups))
+                    Err(Error::at(offset.upcast(), err::Kind::Ipv6TooFewGroups))
                 }
             }
-            7 => Ok(Some(Self(ShortLength::from_nonzero(index)))),
+            7 => Ok(Some(Self(ShortLength::from_nonzero(len)))),
             _ => unreachable!("group_count <= 7 enforced by checks on state.increment_group()"),
         }
+    }
+    // TODO: make public?
+    pub(crate) fn new(src: &'src str) -> Result<Option<Self>, Error> {
+        let mut ascii = src.bytes();
+        let result = Self::from_iter(&mut ascii)?;
+        if let Some(result) = result {
+            debug_assert!(src.as_bytes()[0] == b'[');
+            debug_assert!(src.as_bytes()[result.len() - 1] == b']');
+        }
+        Ok(result)
     }
 }
 

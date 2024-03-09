@@ -29,7 +29,8 @@ pub(crate) type Error = err::Error<u16>;
 #[derive(PartialEq, Eq)]
 struct RefSpan<'src> {
     domain: Option<DomainSpan<'src>>,
-    path: Option<PathSpan<'src>>,
+    // All valid refs have a non-empty path
+    path: PathSpan<'src>,
     tag: Option<TagSpan<'src>>,
     digest: Option<DigestSpan<'src>>,
 }
@@ -52,16 +53,16 @@ impl<'src> RefSpan<'src> {
                     Some(_) => {
                         unreachable!("a:0/b should always be parsed as Domain(host=a, port=0)")
                     }
-                    None => path_start.extend(rest).map(Some).map_err(|e| e.into()),
+                    None => path_start.extend(rest).map_err(|e| e.into()),
                     // e.g. "cant_be_host/more_path" needs to entirely match as path
                 },
-                DomainOrRefSpan::Domain(_) => {
-                    PathSpan::parse_from_slash(rest).map_err(|e| e.into())
-                }
+                DomainOrRefSpan::Domain(_) => PathSpan::parse_from_slash(rest)
+                    .and_then(|p| p.ok_or(err::Error::<u8>::at(0, err::Kind::PathMissing)))
+                    .map_err(|e| e.into()),
             }
             .map_err(|e: err::Error<u16>| e + prefix.short_len()),
             Some(b'@') | Some(b':') | None => match prefix {
-                DomainOrRefSpan::TaggedRef((name, _)) => Ok(Some(name)),
+                DomainOrRefSpan::TaggedRef((name, _)) => Ok(name),
                 DomainOrRefSpan::Domain(_) => {
                     unreachable!("if the left segment peeked an '@', it would parse as a TaggedRef")
                 }
@@ -69,7 +70,8 @@ impl<'src> RefSpan<'src> {
             Some(_) => Error::at(0, err::Kind::PathInvalidChar).into(),
         }
         .map_err(|e| e + index)?;
-        index += path.map(|p| p.short_len().upcast().into()).unwrap_or(0);
+        index += path.short_len().upcast() as u16;
+        let path = path;
         if index > NAME_TOTAL_MAX_LENGTH.into() {
             return Error::at(index, err::Kind::NameTooLong).into();
         }
@@ -101,14 +103,7 @@ impl<'src> RefSpan<'src> {
                 index += 1;
                 DigestSpan::new(&src[index as usize..])
             }
-            Some(_) => {
-                if domain.is_some() || path.is_some() || tag.is_some() {
-                    Error::at(index, err::Kind::AlgorithmMissing).into()
-                } else {
-                    // this is a digest-only ref, e.g. "algo:abc123".
-                    DigestSpan::new(&src[index as usize..])
-                }
-            }
+            Some(_) => Error::at(index, err::Kind::AlgorithmMissing).into(),
             None => Ok(None),
         }
         .map_err(|e| e + index)?;
@@ -133,7 +128,7 @@ impl<'src> RefSpan<'src> {
     /// the at which the tag starts. If a tag is present, tag_index is AFTER the leading ':'.
     fn tag_index(&self) -> usize {
         self.path_index()
-            + self.path.map(|p| p.len()).unwrap_or(0)
+            + self.path.len()
             + self.tag.map(|_| 1) // +1 for the leading ':'
             .unwrap_or(0)
     }
@@ -147,24 +142,18 @@ impl<'src> RefSpan<'src> {
     fn domain_range(&self) -> Option<Range<usize>> {
         self.domain.map(|d| 0..d.len())
     }
-    fn path_range(&self) -> Option<Range<usize>> {
-        self.path.map(|p| {
-            let mut start = self.path_index();
-            let end = start + p.len();
-            if self.domain.is_some() {
-                // don't emit the leading '/'
-                start += 1;
-            }
-            start..end
-        })
-    }
-    fn name_range(&self) -> Option<Range<usize>> {
-        let end = self.path_index() + self.path.map(|p| p.len()).unwrap_or(0);
-        if end == 0 {
-            None
-        } else {
-            Some(0..end)
+    fn path_range(&self) -> Range<usize> {
+        let mut start = self.path_index();
+        let end = start + self.path.len();
+        if self.domain.is_some() {
+            // don't emit the leading '/'
+            start += 1;
         }
+        start..end
+    }
+    fn name_range(&self) -> Range<usize> {
+        let end = self.path_index() + self.path.len();
+        0..end
     }
     fn tag_range(&self) -> Option<Range<usize>> {
         self.tag.map(|t| {
@@ -245,11 +234,11 @@ impl<'src> RefStr<'src> {
     pub fn domain(&self) -> Option<&str> {
         self.span.domain_range().map(|range| &self.src[range])
     }
-    pub fn path(&self) -> Option<&str> {
-        self.span.path_range().map(|range| &self.src[range])
+    pub fn path(&self) -> &str {
+        &self.src[self.span.path_range()]
     }
-    pub fn name(&self) -> Option<&str> {
-        self.span.name_range().map(|range| &self.src[range])
+    pub fn name(&self) -> &str {
+        &self.src[self.span.name_range()]
     }
     pub fn tag(&self) -> Option<&str> {
         self.span.tag_range().map(|range| &self.src[range])
@@ -267,7 +256,6 @@ impl<'src> RefStr<'src> {
 /// higher = more information, lower = less information
 fn rank(span: &RefSpan) -> u8 {
     span.domain.map(|_| 1 << 3).unwrap_or(0)
-        | span.path.map(|_| 1 << 2).unwrap_or(0)
         | span.tag.map(|_| 1 << 1).unwrap_or(0)
         | span.digest.map(|_| 1 << 0).unwrap_or(0)
 }
@@ -352,7 +340,7 @@ impl<'src> From<CanonicalStr<'src>> for RefStr<'src> {
             src: value.src,
             span: RefSpan {
                 domain: Some(value.span.domain),
-                path: Some(value.span.path),
+                path: value.span.path,
                 tag: value.span.tag,
                 digest: Some(value.span.digest),
             },
@@ -364,10 +352,7 @@ impl<'src> TryInto<CanonicalSpan<'src>> for RefSpan<'src> {
     fn try_into(self) -> Result<CanonicalSpan<'src>, self::Error> {
         // a canonical reference needs a domain, path, and digest
         let domain = self.domain.ok_or(Error::at(0, err::Kind::HostMissing))?;
-        let path = self.path.ok_or(Error::at(
-            self.path_index().try_into().unwrap(),
-            err::Kind::PathMissing,
-        ))?;
+        let path = self.path;
         let digest = self.digest.ok_or(Error::at(
             self.digest_index().try_into().unwrap(), // safe to unwrap since host + path + tag + algorithm MUST be under u16::MAX
             err::Kind::AlgorithmMissing,             // TODO: more specific error?
@@ -428,7 +413,7 @@ mod tests {
         let span = should_parse(src);
         let actual = (
             span.domain(),
-            span.path(),
+            Some(span.path()),
             span.tag(),
             span.digest().map(|d| d.src()),
         );
@@ -679,9 +664,9 @@ mod tests {
         let digest = span.digest();
         TestCase {
             input: span.src,
-            name: span.name(),
+            name: Some(span.name()),
             domain: span.domain(),
-            path: span.path(),
+            path: Some(span.path()),
             tag: span.tag(),
             digest_algo: digest.as_ref().map(|d| d.algorithm().src()),
             digest_encoded: digest.map(|d| d.encoded().src()),

@@ -64,7 +64,8 @@ pub(crate) use nonzero;
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Length<'src, NonZeroLength: Clone + Copy>(
     NonZeroLength,
-    PhantomData<&'src str>, // tie Span to the lifetime of a string slice
+    PhantomData<&'src str>,
+    // ensure this length doesn't outlive the string slice it's derived from
 );
 
 impl<'src, NonZero, Original> Length<'src, NonZero>

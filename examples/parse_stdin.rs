@@ -13,9 +13,9 @@ fn main() {
     match result {
         Ok(ref_str) => {
             let input = escape(&input);
-            let name = escape(ref_str.name().unwrap_or(""));
+            let name = escape(ref_str.name());
             let domain = escape(ref_str.domain().unwrap_or(""));
-            let path = escape(ref_str.path().unwrap_or(""));
+            let path = escape(ref_str.path());
             let tag = escape(ref_str.tag().unwrap_or(""));
             let digest_algo = escape(ref_str.digest().map(|d| d.algorithm().src()).unwrap_or(""));
             let digest_encoded = escape(ref_str.digest().map(|d| d.encoded().src()).unwrap_or(""));

@@ -2,6 +2,9 @@
 fuzz: cli
 	(cd internal/reference_oracle && go test -fuzz=.)
 
+fuzz-canonical: cli
+	(cd internal/fuzz_canonical && go test -fuzz=.)
+
 .PHONY: cli
 cli:
 	cargo build --examples
@@ -46,7 +49,7 @@ test:
 	./scripts/subset_host_or_path.sh > ./grammars/host_or_path.ebnf
 
 .PHONY: grammars
-grammars:                            \
+grammars:                          \
 	./grammars/digest.diff           \
 	./grammars/digest_algorithm.diff \
 	./grammars/digest_encoded.diff   \
@@ -55,4 +58,9 @@ grammars:                            \
 
 .PHONY: link-check
 link-check:
+	cargo doc
 	lychee --exclude=./target .
+	lychee ./target/doc
+
+rust-docs:
+	cargo doc --open

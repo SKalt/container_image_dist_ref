@@ -1,4 +1,5 @@
-//! # Encoded
+//! # Encoded digest value parsing and validation
+//!
 //! There are two specifications for the encoded portion of a digest string:
 //! - the [OCI Image Spec](https://github.com/opencontainers/image-spec/blob/v1.0.2/descriptor.md#digests)
 //! - [github.com/distribution/reference](https://github.com/distribution/reference/blob/v0.5.0/reference.go#L24)
@@ -30,7 +31,7 @@ use crate::err::Kind::{
 };
 type Error = crate::err::Error<u16>;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) struct EncodedSpan<'src>(LongLength<'src>);
 impl_span_methods_on_tuple!(EncodedSpan, u16, NonZeroU16);
 impl<'src> EncodedSpan<'src> {

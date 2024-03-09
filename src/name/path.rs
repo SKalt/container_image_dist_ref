@@ -43,7 +43,7 @@ fn map_error(e: Error) -> Error {
     Error::at(e.index(), kind)
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) struct PathSpan<'src>(ShortLength<'src>);
 impl_span_methods_on_tuple!(PathSpan, u8, NonZeroU8);
 

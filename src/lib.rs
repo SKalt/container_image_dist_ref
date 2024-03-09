@@ -1,4 +1,5 @@
-// TODO: docstring
+//! # Parse docker/OCI Image References
+//! This library is extensively tested against the authoritative image reference implementation, https://github.com/distribution/reference.
 
 #![no_std]
 pub(crate) mod ambiguous;
@@ -18,14 +19,14 @@ use digest::DigestStr;
 use crate::span::OptionallyZero;
 
 use self::{
-    ambiguous::domain_or_tagged_ref::DomainOrRefSpan, digest::DigestSpan, domain::DomainSpan,
-    path::PathSpan, span::Lengthy, tag::TagSpan,
+    ambiguous::domain_or_tagged_ref::DomainOrRefSpan, digest::DigestSpan, path::PathSpan,
+    span::Lengthy, tag::TagSpan,
 };
 pub(crate) type Error = err::Error<u16>;
 /// A reference to an image by any combination of name, tag, and digest.
 // TODO: doctest
 #[derive(PartialEq, Eq)]
-struct RefSpan<'src> {
+pub struct RefSpan<'src> {
     name: NameSpan<'src>,
     tag: Option<TagSpan<'src>>,
     digest: Option<DigestSpan<'src>>,
@@ -161,58 +162,6 @@ impl<'src> RefSpan<'src> {
     }
 }
 
-/// A *canonical* image reference includes:
-/// - A domain
-/// - a path/repo name
-/// - optionally, a tag
-/// - A digest
-// TODO: doctest
-pub struct CanonicalSpan<'src> {
-    domain: DomainSpan<'src>,
-    path: PathSpan<'src>,
-    tag: Option<TagSpan<'src>>,
-    digest: DigestSpan<'src>,
-}
-impl<'src> CanonicalSpan<'src> {
-    pub fn new(src: &'src str) -> Result<Self, Error> {
-        let domain = DomainSpan::new(src)?.ok_or(Error::at(0, err::Kind::HostMissing))?;
-        let mut len = domain.short_len().into();
-        match &src[len as usize..].bytes().next() {
-            Some(b'/') => Ok(()),
-            Some(_) => Err(err::Kind::PathInvalidChar),
-            None => Err(err::Kind::PathMissing),
-        }
-        .map_err(|kind| Error::at(len, kind))?;
-
-        let path = PathSpan::new(&src[len as usize..])
-            .map_err(|e| e.into())
-            .map_err(|e: Error| e + len)?
-            .ok_or(Error::at(len, err::Kind::PathMissing))?;
-        len += path.short_len().upcast() as u16;
-        if len > name::MAX_LEN as u16 {
-            return Error::at(len, err::Kind::NameTooLong).into();
-        }
-        let tag = TagSpan::new(&src[len as usize..]) // can be None
-            .map_err(|e| e.into())
-            .map_err(|e: Error| e + len)?;
-        len += tag.map(|t| t.short_len().upcast().into()).unwrap_or(0);
-        len += match src.as_bytes()[len as usize..].iter().next() {
-            Some(b'@') => Ok(1),
-            Some(_) => Error::at(len, err::Kind::PathInvalidChar).into(),
-            None => Error::at(len, err::Kind::AlgorithmMissing).into(),
-        }?;
-        let digest = DigestSpan::new(&src[len as usize..])
-            .map_err(|e| e + len)?
-            .ok_or(Error::at(len, err::Kind::AlgorithmMissing))?;
-        Ok(Self {
-            domain,
-            path,
-            tag,
-            digest,
-        })
-    }
-}
-
 // TODO: add docs with doctest examples
 #[derive(PartialEq)]
 pub struct RefStr<'src> {
@@ -250,7 +199,7 @@ impl<'src> RefStr<'src> {
 /// produce an u8 representing the amount of information contained in the span
 /// higher = more information, lower = less information
 fn rank(span: &RefSpan) -> u8 {
-    span.name.domain.map(|_| 1 << 3).unwrap_or(0)
+    span.name.domain.map(|_| 1 << 2).unwrap_or(0)
         | span.tag.map(|_| 1 << 1).unwrap_or(0)
         | span.digest.map(|_| 1 << 0).unwrap_or(0)
 }
@@ -268,6 +217,65 @@ impl<'src> PartialOrd for RefStr<'src> {
     }
 }
 
+struct CanonicalSpan<'src> {
+    span: RefSpan<'src>,
+}
+macro_rules! mirror_inner_method {
+    ($inner:ident, $res:ty) => {
+        #[inline]
+        fn $inner(&self) -> $res {
+            self.span.$inner()
+        }
+    };
+}
+macro_rules! unwrap_inner_method {
+    ($inner:ident, $res:ty) => {
+        #[inline]
+        fn $inner(&self) -> $res {
+            self.span.$inner().unwrap()
+        }
+    };
+}
+
+impl<'src> CanonicalSpan<'src> {
+    fn new(src: &'src str) -> Result<Self, Error> {
+        Self::from_span(RefSpan::new(src)?)
+    }
+    fn from_span(span: RefSpan<'src>) -> Result<Self, Error> {
+        span.name
+            .domain
+            .ok_or(Error::at(0, err::Kind::HostMissing))?;
+        span.digest.ok_or(Error::at(
+            span.digest_index().try_into().unwrap(),
+            err::Kind::AlgorithmMissing,
+        ))?;
+        Ok(Self { span })
+    }
+    unwrap_inner_method!(domain_range, Range<usize>);
+    mirror_inner_method!(path_range, Range<usize>);
+    mirror_inner_method!(name_range, Range<usize>);
+    mirror_inner_method!(tag_range, Option<Range<usize>>);
+    unwrap_inner_method!(digest_range, RangeFrom<usize>);
+}
+
+/// A canonical image reference includes a domain, a path/repo name, and digest.
+/// It may also include a tag.
+/// ```rust
+/// use container_image_dist_ref::CanonicalStr;
+/// let img_ref = CanonicalStr::new("host.com/repo:tag@algo:encoded").unwrap();
+/// assert_eq!(img_ref.name(), "host.com/repo");
+/// assert_eq!(img_ref.domain(), "host.com");
+/// assert_eq!(img_ref.path(), "repo");
+/// assert_eq!(img_ref.tag(), Some("tag"));
+/// assert_eq!(img_ref.digest().src(), "algo:encoded");
+///
+/// let img_ref = CanonicalStr::new("no.tag/img@algo:encoded").unwrap();
+/// assert_eq!(img_ref.name(), "no.tag/img");
+/// assert_eq!(img_ref.domain(), "no.tag");
+/// assert_eq!(img_ref.path(), "img");
+/// assert_eq!(img_ref.tag(), None);
+/// assert_eq!(img_ref.digest().src(), "algo:encoded");
+/// ```
 pub struct CanonicalStr<'src> {
     src: &'src str,
     span: CanonicalSpan<'src>,
@@ -278,19 +286,10 @@ impl<'src> CanonicalStr<'src> {
         Ok(Self { src, span })
     }
     pub fn domain(&self) -> &str {
-        let domain = self.span.domain.span_of(self.src);
-        debug_assert!(
-            !domain.is_empty(),
-            "canonical refs should have non-empty domains by construction"
-        );
-        domain
+        &self.src[self.span.domain_range()]
     }
     pub fn path(&self) -> &str {
-        let path = self
-            .span
-            .path
-            .span_of(&self.src[self.span.domain.len() + 1..]);
-        // +1 for the '/' between the domain and path
+        let path = &self.src[self.span.path_range()];
         debug_assert!(
             !path.is_empty(),
             "canonical refs should have non-empty paths by construction"
@@ -298,8 +297,7 @@ impl<'src> CanonicalStr<'src> {
         path
     }
     pub fn name(&self) -> &str {
-        let result = &self.src[0..self.domain().len() + 1 + self.path().len()];
-        // +1 for the '/' between the domain and path
+        let result = &self.src[self.span.name_range()];
         debug_assert!(
             !result.is_empty(),
             "canonical refs should have non-empty names by construction"
@@ -308,24 +306,15 @@ impl<'src> CanonicalStr<'src> {
     }
     pub fn tag(&self) -> Option<&str> {
         // tags aren't required for canonical refs
-        self.span.tag.map(|t| {
-            let start = self.span.domain.len() + 1 + self.path().len();
-            let end = start + t.len();
-            &self.src[(start + 1)..end] // trim the leading ':'
-        })
+        self.span.tag_range().map(|range| &self.src[range])
     }
     pub fn digest(&self) -> DigestStr<'src> {
-        let start = self.span.domain.len()
-            + 1 // 1 == '/'
-            + self.path().len()
-            + self.span.tag.map(|t| 1 + t.len()) // 1 == ':'
-            .unwrap_or(0);
-        let src = &self.src[start..];
+        let digest = &self.src[self.span.digest_range()];
         debug_assert!(
-            !src.is_empty(),
+            !digest.is_empty(),
             "canonical refs should have non-empty digests by construction"
         );
-        DigestStr::from_span(src, self.span.digest)
+        DigestStr::from_span(digest, self.span.span.digest.unwrap())
     }
 }
 
@@ -333,43 +322,14 @@ impl<'src> From<CanonicalStr<'src>> for RefStr<'src> {
     fn from(value: CanonicalStr<'src>) -> Self {
         Self {
             src: value.src,
-            span: RefSpan {
-                name: NameSpan {
-                    domain: Some(value.span.domain),
-                    path: value.span.path,
-                },
-                tag: value.span.tag,
-                digest: Some(value.span.digest),
-            },
+            span: value.span.span,
         }
     }
 }
 impl<'src> TryInto<CanonicalSpan<'src>> for RefSpan<'src> {
     type Error = Error;
     fn try_into(self) -> Result<CanonicalSpan<'src>, self::Error> {
-        // a canonical reference needs a domain and digest
-        let domain = self
-            .name
-            .domain
-            .ok_or(Error::at(0, err::Kind::HostMissing))?;
-        if self.digest.is_none() {
-            return Error::at(
-                self.digest_index().try_into().unwrap(),
-                err::Kind::AlgorithmMissing,
-            )
-            .into();
-        }
-        let digest = self.digest.ok_or(Error::at(
-            self.digest_index().try_into().unwrap(), // safe to unwrap since host + path + tag + algorithm MUST be under u16::MAX
-            err::Kind::AlgorithmMissing,             // TODO: more specific error?
-        ))?;
-
-        Ok(CanonicalSpan {
-            domain,
-            path: self.name.path,
-            tag: self.tag,
-            digest,
-        })
+        CanonicalSpan::from_span(self)
     }
 }
 impl<'src> TryInto<CanonicalStr<'src>> for RefStr<'src> {
@@ -571,6 +531,17 @@ mod tests {
     fn test_bad_ipv6_fails() {
         should_fail_with("[::]0", Error::at(4, err::Kind::PortOrTagInvalidChar));
     }
+
+    #[test]
+    fn test_canonical() {
+        let canonical = CanonicalStr::new("[2001:db8::1]:5000/repo@algo:encoded").unwrap();
+        assert_eq!(canonical.name(), "[2001:db8::1]:5000/repo");
+        assert_eq!(canonical.domain(), "[2001:db8::1]:5000");
+        assert_eq!(canonical.path(), "repo");
+        assert_eq!(canonical.tag(), None);
+        assert_eq!(canonical.digest().src(), "algo:encoded");
+    }
+
     #[derive(Debug, PartialEq, Eq)]
     struct TestCase<'src> {
         input: &'src str,

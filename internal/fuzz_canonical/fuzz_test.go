@@ -1,4 +1,4 @@
-package reference_oracle
+package fuzz_canonical
 
 import (
 	"io/fs"
@@ -7,20 +7,22 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/skalt/container_image_dist_ref/internal/reference_oracle"
 )
 
-const refParserPath = "../../target/debug/examples/parse_stdin"
+const canonicalRefParserPath = "../../target/debug/examples/parse_canonical"
 
-func harness(t *testing.T, input string) {
+func canonicalHarness(t *testing.T, input string) {
 	// skip the test if the input is invalid utf8
 	if !utf8.ValidString(input) {
 		return
 	}
 	input = strings.TrimRight(input, "\r\n")
-	oracle := parseRef(input)
+	oracle := reference_oracle.ParseCanonical(input)
 	t.Logf("input: \"%s\"", input)
 
-	cmd := exec.Cmd{Path: refParserPath, Stdin: strings.NewReader(input + "\n")}
+	cmd := exec.Cmd{Path: canonicalRefParserPath, Stdin: strings.NewReader(input + "\n")}
 	resultBytes, err := cmd.Output()
 	if err != nil { // rust lib errored
 		if e, ok := err.(*exec.ExitError); ok {
@@ -29,10 +31,10 @@ func harness(t *testing.T, input string) {
 				t.Fatal("unreachable")
 			case 1:
 				// normal rust lib error
-				result := ParseTsv(string(resultBytes))
+				result := reference_oracle.ParseTsv(string(resultBytes))
 				if oracle.Err == "" { // distribution/reference parsed successfully
 					// the rust lib differs from the go lib by constraining IPv6 addresses
-					if Ipv6ExpectedFailure(result.Err) {
+					if reference_oracle.Ipv6ExpectedFailure(result.Err) {
 						return
 					}
 					t.Errorf("unexpected error:\n%s\n\n%s", result.Err, oracle.Pretty())
@@ -48,7 +50,7 @@ func harness(t *testing.T, input string) {
 			}
 		} else if _, ok := err.(*fs.PathError); ok {
 			cwd, _ := os.Getwd()
-			t.Fatalf("unable to find %s\nwrong cwd: %s", refParserPath, cwd)
+			t.Fatalf("unable to find %s\nwrong cwd: %s", canonicalRefParserPath, cwd)
 
 		} else {
 			// unexpected error
@@ -56,7 +58,7 @@ func harness(t *testing.T, input string) {
 		}
 	} else {
 		// the rust lib parsed successfully
-		result := ParseTsv(string(resultBytes))
+		result := reference_oracle.ParseTsv(string(resultBytes))
 		diff, same := oracle.Diff(&result)
 		if oracle.Err != "" { // distribution/reference errored
 			switch result.DigestAlgo {
@@ -64,7 +66,7 @@ func harness(t *testing.T, input string) {
 			case "sha512":
 				// unexpected error, distribution/reference supports support these
 				// check the pattern:
-				if DigestPat.Match([]byte(result.DigestAlgo + ":" + result.DigestEncoded)) {
+				if reference_oracle.DigestPat.Match([]byte(result.DigestAlgo + ":" + result.DigestEncoded)) {
 					t.Log("matched?")
 				}
 				t.Errorf("unexpected error in registered algorithm:\n%s", diff)
@@ -82,14 +84,14 @@ func harness(t *testing.T, input string) {
 	}
 }
 
-func FuzzAnyParsing(f *testing.F) {
+func FuzzCanonicalParsing(f *testing.F) {
 	data, err := os.ReadFile("./inputs.txt")
-	PanicIf(err)
+	reference_oracle.PanicIf(err)
 	lines := strings.Split(string(data), "\n")
 	for _, line := range lines {
 		if line != "" {
 			f.Add(line)
 		}
 	}
-	f.Fuzz(harness)
+	f.Fuzz(canonicalHarness)
 }

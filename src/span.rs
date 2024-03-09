@@ -61,7 +61,7 @@ pub(crate) use nonzero;
 /// To avoid lugging around an entire &str (which costs 2 pointer-sizes), we can
 /// use a span to represent a length of string with a lifetime tied to the original
 /// string slice.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Length<'src, NonZeroLength: Clone + Copy>(
     NonZeroLength,
     PhantomData<&'src str>,

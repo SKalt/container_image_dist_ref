@@ -45,7 +45,7 @@ fn disambiguate_err(e: Error) -> Error {
 
 use super::ipv6::Ipv6Span;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Kind {
     /// a span of ascii characters that represents a restricted domain name, e.g. "Example.com".
     /// Must match the regex `^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]$`
@@ -59,7 +59,7 @@ pub enum Kind {
 }
 
 /// can be ipv6
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) struct HostSpan<'src>(Length<'src, NonZeroU8>, Kind);
 impl_span_methods_on_tuple!(HostSpan, u8, NonZeroU8);
 impl<'src> TryFrom<HostOrPathSpan<'src>> for HostSpan<'_> {
@@ -86,7 +86,7 @@ impl<'src> HostSpan<'src> {
     pub(crate) fn new(src: &'src str) -> Result<Option<Self>, Error> {
         // handle bracketed ipv6 addresses
         if let Some(ambiguous) =
-            HostOrPathSpan::new(src, HostKind::HostOrPath).map_err(disambiguate_err)?
+            HostOrPathSpan::new(src, HostKind::Any).map_err(disambiguate_err)?
         {
             Self::from_ambiguous(ambiguous).map(Some)
         } else {

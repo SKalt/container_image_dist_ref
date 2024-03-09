@@ -1,0 +1,4 @@
+test:5000/repo@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+test:5000/repo:tag@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+test/path:tag@sha256:0000000000000000000000000000000000000000000000000000000000000000
+[2001:db8::1]:5000/repo@sha256:ffffffffffffafffffffffffffffffffffffffffffffffffffffffffffffffff

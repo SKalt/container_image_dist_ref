@@ -4,7 +4,7 @@ pub mod domain;
 pub mod path;
 
 /// the maximum total number of characters in a repository name, as defined by
-/// https://github.com/distribution/reference/blob/main/reference.go#L39
+/// <https://github.com/distribution/reference/blob/main/reference.go#L39>
 pub const MAX_LEN: u8 = 255;
 
 #[derive(Clone, Copy, PartialEq, Eq)]

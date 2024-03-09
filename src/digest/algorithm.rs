@@ -29,7 +29,7 @@ use crate::{
     err,
     span::{impl_span_methods_on_tuple, nonzero, Lengthy, OptionallyZero, ShortLength},
 };
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) struct AlgorithmSpan<'src>(ShortLength<'src>);
 impl_span_methods_on_tuple!(AlgorithmSpan, u8, NonZeroU8);
 

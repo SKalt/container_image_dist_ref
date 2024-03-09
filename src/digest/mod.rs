@@ -1,4 +1,4 @@
-//! # Digest
+//! # Parsers for digest algorithms and encoded digest values
 //!
 //! Parsers for digest strings according to either the [OCI image spec](https://github.com/opencontainers/image-spec/blob/v1.0.2/descriptor.md#digests)
 //! or the grammar used by [`distribution/reference`](https://github.com/distribution/reference/blob/v0.5.0/reference.go#L20-L24).
@@ -22,6 +22,7 @@
 //!+encoded              ::= [a-zA-Z0-9=_-]+
 
 // }}}
+//! ```
 
 pub mod algorithm;
 pub mod encoded;
@@ -75,7 +76,7 @@ impl Compliance {
 
 // Note: DigestSpan doesn't own a leading '@'; that's only implied when DigestSpan
 // is part of a larger ReferenceSpan.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) struct DigestSpan<'src> {
     algorithm: AlgorithmSpan<'src>,
     encoded: EncodedSpan<'src>,

@@ -10,7 +10,7 @@ type Error = err::Error<u8>;
 
 // pub(crate) use crate::ambiguous::port_or_tag::Error;
 /// a span representing a port number **WITH** the leading colon. Can be empty.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) struct PortSpan<'src>(ShortLength<'src>);
 impl_span_methods_on_tuple!(PortSpan, u8, NonZeroU8);
 

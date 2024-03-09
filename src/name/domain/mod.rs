@@ -47,7 +47,7 @@ use crate::{
 type Error = err::Error<u16>;
 
 /// a definite host and an optional port. Combined length MUST be under 255 chars.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) struct DomainSpan<'src> {
     /// The length of the source string that represents the host
     pub host: HostSpan<'src>,

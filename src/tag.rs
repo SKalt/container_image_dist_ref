@@ -1,4 +1,6 @@
 /*!
+# Tag parsing
+
 According to [the OCI distribution spec](https://github.com/opencontainers/distribution-spec/blob/v1.0.1/spec.md?plain=1#L64),
 a tag is "a custom, human-readable manifest identifier".
 According to [`distribution/reference`](https://github.com/distribution/reference/blob/v0.5.0/reference.go#L18),
@@ -29,7 +31,7 @@ pub const MAX_LEN: NonZeroU8 = nonzero!(u8, 128);
 // we can index all errors with a u8 since the longest possible tag is 128 characters
 type Error = err::Error<u8>;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) struct TagSpan<'src>(ShortLength<'src>);
 impl_span_methods_on_tuple!(TagSpan, u8, NonZeroU8);
 

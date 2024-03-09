@@ -24,12 +24,11 @@
 
 use core::num::NonZeroU8;
 
+use super::Compliance;
 use crate::{
     err,
     span::{impl_span_methods_on_tuple, nonzero, Lengthy, OptionallyZero, ShortLength},
 };
-pub const MAX_LENGTH: u16 = u16::MAX; // arbitrary but realistic limit
-use super::Compliance;
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) struct AlgorithmSpan<'src>(ShortLength<'src>);
 impl_span_methods_on_tuple!(AlgorithmSpan, u8, NonZeroU8);
@@ -44,13 +43,13 @@ fn try_add(a: NonZeroU8, b: u8) -> Result<NonZeroU8, Error> {
 }
 /// While there's no specification for the max length of an algorithm string,
 /// 255 characters is a reasonable upper bound.
-pub const ALGORITHM_MAX_LEN: u8 = u8::MAX;
+pub const MAX_LEN: u8 = u8::MAX;
 
 impl<'src> AlgorithmSpan<'src> {
     pub(crate) fn new(src: &'src str) -> Result<(Self, Compliance), Error> {
         let (mut len, mut compliance) =
             component(src, Compliance::Universal)?.ok_or(Error::at(0, AlgorithmMissing))?;
-        let max_len = src.len().try_into().unwrap_or(ALGORITHM_MAX_LEN);
+        let max_len = src.len().try_into().unwrap_or(MAX_LEN);
         loop {
             if u8::from(len) >= max_len {
                 break;

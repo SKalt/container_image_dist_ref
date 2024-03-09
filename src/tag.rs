@@ -24,7 +24,7 @@ use crate::{
     span::{impl_span_methods_on_tuple, nonzero, Lengthy, OptionallyZero, ShortLength},
 };
 
-pub const TAG_MAX_LEN: NonZeroU8 = nonzero!(u8, 128);
+pub const MAX_LEN: NonZeroU8 = nonzero!(u8, 128);
 
 // we can index all errors with a u8 since the longest possible tag is 128 characters
 type Error = err::Error<u8>;
@@ -36,10 +36,10 @@ impl_span_methods_on_tuple!(TagSpan, u8, NonZeroU8);
 impl<'src> TryFrom<PortOrTagSpan<'src>> for TagSpan<'src> {
     type Error = Error;
     fn try_from(ambiguous: PortOrTagSpan<'src>) -> Result<Self, Error> {
-        if ambiguous.short_len() <= TAG_MAX_LEN {
+        if ambiguous.short_len() <= MAX_LEN {
             Ok(Self(ambiguous.span()))
         } else {
-            Err(Error::at(TAG_MAX_LEN.upcast(), err::Kind::TagTooLong))
+            Err(Error::at(MAX_LEN.upcast(), err::Kind::TagTooLong))
         }
     }
 }

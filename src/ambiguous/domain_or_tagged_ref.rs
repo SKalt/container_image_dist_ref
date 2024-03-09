@@ -34,8 +34,8 @@ use crate::{
         host_or_path::{HostOrPathSpan, Kind as HostOrPathKind},
         port_or_tag::{Kind as PortOrTagKind, PortOrTagSpan},
     },
-    domain::DomainSpan,
     err,
+    name::domain::DomainSpan,
     path::PathSpan,
     span::{Lengthy, OptionallyZero},
     tag::TagSpan,
@@ -46,7 +46,7 @@ use PortOrTagKind::Port;
 pub(crate) type Error = err::Error<u16>;
 /// represents a colon-delimited string of the form "left:right"
 pub(crate) enum DomainOrRefSpan<'src> {
-    Domain(DomainSpan<'src>),
+    Domain(DomainSpan<'src>), // TODO: document why a DomainSpan can't be a PathSpan
     TaggedRef((PathSpan<'src>, Option<TagSpan<'src>>)),
 }
 

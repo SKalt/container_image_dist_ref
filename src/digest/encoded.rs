@@ -22,7 +22,7 @@ use core::num::NonZeroU16;
 use super::{algorithm::AlgorithmStr, Compliance};
 use crate::span::{impl_span_methods_on_tuple, Lengthy, LongLength};
 
-pub const MAX_LENGTH: u16 = 1024; // arbitrary but realistic limit
+pub const MAX_LEN: u16 = 1024; // arbitrary but realistic limit
 
 use crate::err::Kind::{
     EncodedInvalidChar, EncodedNonLowerHex, EncodingTooLong, EncodingTooShort,
@@ -56,7 +56,7 @@ impl<'src> EncodedSpan<'src> {
                 _ => Err(EncodedInvalidChar),
             }
             .map_err(|kind| Error::at(len, kind))?;
-            if len == MAX_LENGTH {
+            if len == MAX_LEN {
                 return Error::at(len, EncodingTooLong).into();
             }
             len += 1;
@@ -110,7 +110,7 @@ impl<'src> EncodedStr<'src> {
     }
     /// check that the encoded string is an appropriate length according to distribution/reference
     fn validate_distribution(&self) -> Result<(), Error> {
-        const MAX: usize = MAX_LENGTH as usize;
+        const MAX: usize = MAX_LEN as usize;
         match self.len() {
             0..=31 => Error::at(self.short_len().into(), EncodingTooShort).into(),
             32..=MAX => Ok(()),

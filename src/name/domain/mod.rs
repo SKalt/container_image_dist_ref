@@ -48,7 +48,7 @@ type Error = err::Error<u16>;
 
 /// a definite host and an optional port. Combined length MUST be under 255 chars.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) struct DomainSpan<'src> {
+pub(crate) struct DomainSpan<'src> {
     /// The length of the source string that represents the host
     pub host: HostSpan<'src>,
     /// If present, the length of the source string that represents the port *after* a colon

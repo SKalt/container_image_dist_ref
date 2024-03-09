@@ -3,15 +3,13 @@
 #![no_std]
 pub(crate) mod ambiguous;
 pub mod digest;
-pub mod domain;
 pub mod err;
-pub mod path;
+pub mod name;
 mod span;
 pub mod tag;
 
-/// the maximum total number of characters in a repository name, as defined by
-/// https://github.com/distribution/reference/blob/main/reference.go#L39
-pub const NAME_TOTAL_MAX_LENGTH: u8 = 255;
+use name::NameSpan;
+pub use name::{domain, path};
 
 use core::ops::{Range, RangeFrom};
 
@@ -28,9 +26,7 @@ pub(crate) type Error = err::Error<u16>;
 // TODO: doctest
 #[derive(PartialEq, Eq)]
 struct RefSpan<'src> {
-    domain: Option<DomainSpan<'src>>,
-    // All valid refs have a non-empty path
-    path: PathSpan<'src>,
+    name: NameSpan<'src>,
     tag: Option<TagSpan<'src>>,
     digest: Option<DigestSpan<'src>>,
 }
@@ -72,7 +68,7 @@ impl<'src> RefSpan<'src> {
         .map_err(|e| e + index)?;
         index += path.short_len().upcast() as u16;
         let path = path;
-        if index > NAME_TOTAL_MAX_LENGTH.into() {
+        if index > name::MAX_LEN.into() {
             return Error::at(index, err::Kind::NameTooLong).into();
         }
         let rest = &src[index as usize..];
@@ -115,20 +111,19 @@ impl<'src> RefSpan<'src> {
             src.len()
         );
         Ok(Self {
-            domain,
-            path,
+            name: NameSpan { domain, path },
             tag,
             digest,
         })
     }
     /// the offset at which the path starts.
     fn path_index(&self) -> usize {
-        self.domain.map(|d| d.len()).unwrap_or(0)
+        self.name.domain.map(|d| d.len()).unwrap_or(0)
     }
     /// the at which the tag starts. If a tag is present, tag_index is AFTER the leading ':'.
     fn tag_index(&self) -> usize {
         self.path_index()
-            + self.path.len()
+            + self.name.path.len()
             + self.tag.map(|_| 1) // +1 for the leading ':'
             .unwrap_or(0)
     }
@@ -140,19 +135,19 @@ impl<'src> RefSpan<'src> {
     }
 
     fn domain_range(&self) -> Option<Range<usize>> {
-        self.domain.map(|d| 0..d.len())
+        self.name.domain.map(|d| 0..d.len())
     }
     fn path_range(&self) -> Range<usize> {
         let mut start = self.path_index();
-        let end = start + self.path.len();
-        if self.domain.is_some() {
+        let end = start + self.name.path.len();
+        if self.name.domain.is_some() {
             // don't emit the leading '/'
             start += 1;
         }
         start..end
     }
     fn name_range(&self) -> Range<usize> {
-        let end = self.path_index() + self.path.len();
+        let end = self.path_index() + self.name.path.len();
         0..end
     }
     fn tag_range(&self) -> Option<Range<usize>> {
@@ -194,7 +189,7 @@ impl<'src> CanonicalSpan<'src> {
             .map_err(|e: Error| e + len)?
             .ok_or(Error::at(len, err::Kind::PathMissing))?;
         len += path.short_len().upcast() as u16;
-        if len > NAME_TOTAL_MAX_LENGTH as u16 {
+        if len > name::MAX_LEN as u16 {
             return Error::at(len, err::Kind::NameTooLong).into();
         }
         let tag = TagSpan::new(&src[len as usize..]) // can be None
@@ -255,7 +250,7 @@ impl<'src> RefStr<'src> {
 /// produce an u8 representing the amount of information contained in the span
 /// higher = more information, lower = less information
 fn rank(span: &RefSpan) -> u8 {
-    span.domain.map(|_| 1 << 3).unwrap_or(0)
+    span.name.domain.map(|_| 1 << 3).unwrap_or(0)
         | span.tag.map(|_| 1 << 1).unwrap_or(0)
         | span.digest.map(|_| 1 << 0).unwrap_or(0)
 }
@@ -339,8 +334,10 @@ impl<'src> From<CanonicalStr<'src>> for RefStr<'src> {
         Self {
             src: value.src,
             span: RefSpan {
-                domain: Some(value.span.domain),
-                path: value.span.path,
+                name: NameSpan {
+                    domain: Some(value.span.domain),
+                    path: value.span.path,
+                },
                 tag: value.span.tag,
                 digest: Some(value.span.digest),
             },
@@ -350,9 +347,18 @@ impl<'src> From<CanonicalStr<'src>> for RefStr<'src> {
 impl<'src> TryInto<CanonicalSpan<'src>> for RefSpan<'src> {
     type Error = Error;
     fn try_into(self) -> Result<CanonicalSpan<'src>, self::Error> {
-        // a canonical reference needs a domain, path, and digest
-        let domain = self.domain.ok_or(Error::at(0, err::Kind::HostMissing))?;
-        let path = self.path;
+        // a canonical reference needs a domain and digest
+        let domain = self
+            .name
+            .domain
+            .ok_or(Error::at(0, err::Kind::HostMissing))?;
+        if self.digest.is_none() {
+            return Error::at(
+                self.digest_index().try_into().unwrap(),
+                err::Kind::AlgorithmMissing,
+            )
+            .into();
+        }
         let digest = self.digest.ok_or(Error::at(
             self.digest_index().try_into().unwrap(), // safe to unwrap since host + path + tag + algorithm MUST be under u16::MAX
             err::Kind::AlgorithmMissing,             // TODO: more specific error?
@@ -360,7 +366,7 @@ impl<'src> TryInto<CanonicalSpan<'src>> for RefSpan<'src> {
 
         Ok(CanonicalSpan {
             domain,
-            path,
+            path: self.name.path,
             tag: self.tag,
             digest,
         })

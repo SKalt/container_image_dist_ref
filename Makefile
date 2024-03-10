@@ -59,8 +59,7 @@ grammars:                          \
 .PHONY: link-check
 link-check:
 	cargo doc
-	lychee --exclude=./target .
-	lychee ./target/doc
+	lychee --exclude=./target/package .
 
 rust-docs:
 	cargo doc --open

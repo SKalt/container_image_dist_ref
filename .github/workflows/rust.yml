@@ -2,25 +2,40 @@ name: Rust
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
-    - name: Build
-      run: cargo build --verbose
-    - name: Clippy
-      run: cargo clippy
-    - name: fmt
-      run: cargo fmt --check
-    - name: Run tests
-      run: cargo test --verbose
+      - uses: actions/checkout@v3
+      - name: Build
+        run: cargo build --verbose
+      - name: Clippy
+        run: cargo clippy
+      - name: fmt
+        run: cargo fmt --check
+      - name: Run tests
+        run: cargo test --verbose
+      - name: build docs
+        run: cargo doc
+
+      - name: Link Checker
+        id: lychee
+        uses: lycheeverse/lychee-action@v1.9.0
+        with:
+          args: --base . --verbose --no-progress --exclude=./target/package
+
+      - name: Create Issue From File
+        if: env.lychee_exit_code != 0
+        uses: peter-evans/create-issue-from-file@v4
+        with:
+          title: Link Checker Report
+          content-filepath: ./lychee/out.md
+          labels: report, automated issue

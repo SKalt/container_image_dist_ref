@@ -46,7 +46,14 @@ use PortOrTagKind::Port;
 pub(crate) type Error = err::Error<u16>;
 /// represents a colon-delimited string of the form "left:right"
 pub(crate) enum DomainOrRefSpan<'src> {
-    Domain(DomainSpan<'src>), // TODO: document why a DomainSpan can't be a PathSpan
+    /// A span that must be a domain since either:
+    /// - it's started by an IPv6 address
+    /// - it's followed by a `/`
+    Domain(DomainSpan<'src>),
+    /// A span that must be a path since either:
+    /// - its left side contains underscores
+    /// - it contains a tag with non-digit characters
+    /// - it's followed by a `@`
     TaggedRef((PathSpan<'src>, Option<TagSpan<'src>>)),
 }
 
@@ -122,7 +129,7 @@ impl<'src> DomainOrRefSpan<'src> {
             }
             Some(b'/') => {
                 // needs to be a name
-                return if right.is_some() {
+                if right.is_some() {
                     // right must be a port, so left must be a domain
                     DomainSpan::from_ambiguous(left, right).map(Self::Domain)
                 } else {
@@ -149,13 +156,10 @@ impl<'src> DomainOrRefSpan<'src> {
                             DomainSpan::from_ambiguous(left, right).map(Self::Domain)
                         }
                         Any => {
-                            return Err(Error::at(
-                                len.try_into().unwrap(),
-                                err::Kind::HostOrPathMissing,
-                            ))
+                            Error::at(len.try_into().unwrap(), err::Kind::HostOrPathMissing).into()
                         }
                     }
-                };
+                }
             }
             _ => unreachable!(
                 "PortOrTagSpan::new() only terminates successfully at '/', '@', or EOF"

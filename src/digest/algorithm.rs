@@ -82,14 +82,15 @@ impl<'src> AlgorithmSpan<'src> {
 
 pub struct AlgorithmStr<'src>(&'src str);
 impl<'src> AlgorithmStr<'src> {
-    pub fn src(&self) -> &'src str {
+    #[inline]
+    pub fn to_str(&self) -> &'src str {
         self.0
     }
     pub fn len(&self) -> usize {
-        self.src().len()
+        self.to_str().len()
     }
     pub fn is_empty(&self) -> bool {
-        self.src().is_empty()
+        self.to_str().is_empty()
     }
     pub fn from_prefix(src: &'src str) -> Result<(Self, Compliance), Error> {
         let (span, compliance) = AlgorithmSpan::new(src)?;
@@ -103,10 +104,10 @@ impl<'src> AlgorithmStr<'src> {
         Self(span.span_of(src))
     }
     pub fn parts(&self) -> impl Iterator<Item = &str> {
-        self.src().split(|c| is_separator(c as u8))
+        self.to_str().split(|c| is_separator(c as u8))
     }
     pub fn compliance(&self) -> Compliance {
-        let mut bytes = self.src().bytes();
+        let mut bytes = self.to_str().bytes();
         match bytes.next().unwrap() {
             b'a'..=b'z' => {}
             b'0'..=b'9' => return Compliance::Oci,

@@ -13,12 +13,12 @@ fn main() {
     match result {
         Ok(ref_str) => {
             let input = escape(&input);
-            let name = escape(ref_str.name());
-            let domain = escape(ref_str.domain());
-            let path = escape(ref_str.path());
+            let name = escape(ref_str.name().to_str());
+            let domain = escape(ref_str.domain_str());
+            let path = escape(ref_str.path_str());
             let tag = escape(ref_str.tag().unwrap_or(""));
-            let digest_algo = escape(ref_str.digest().algorithm().src());
-            let digest_encoded = escape(ref_str.digest().encoded().src());
+            let digest_algo = escape(ref_str.digest().algorithm().to_str());
+            let digest_encoded = escape(ref_str.digest().encoded().to_str());
             let err = "";
             println!(
                 "{input}\t{name}\t{domain}\t{path}\t{tag}\t{digest_algo}\t{digest_encoded}\t{err}"

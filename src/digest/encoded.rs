@@ -71,7 +71,7 @@ impl<'src> EncodedSpan<'src> {
 
 pub struct EncodedStr<'src>(&'src str);
 impl<'src> EncodedStr<'src> {
-    pub fn src(&self) -> &'src str {
+    pub fn to_str(&self) -> &'src str {
         self.0
     }
     // no implementation of from_prefix(&str) because digests MUST terminate a
@@ -82,7 +82,7 @@ impl<'src> EncodedStr<'src> {
     }
     /// validates whether every ascii character is a lowercase hex digit
     fn is_lower_hex(&self) -> Result<(), Error> {
-        self.src().bytes().enumerate().try_for_each(|(i, c)| {
+        self.to_str().bytes().enumerate().try_for_each(|(i, c)| {
             if matches!(c, b'a'..=b'f' | b'0'..=b'9') {
                 Ok(())
             } else {
@@ -93,10 +93,10 @@ impl<'src> EncodedStr<'src> {
     /// check that the encoded string is an appropriate hex length for the registered
     /// algorithms `sha256` and `sha512`.
     fn validate_registered_algorithms(&self, algorithm: &AlgorithmStr<'src>) -> Result<(), Error> {
-        match algorithm.src() {
+        match algorithm.to_str() {
             "sha256" | "sha512" => {
                 self.is_lower_hex()?;
-                match (algorithm.src(), self.len()) {
+                match (algorithm.to_str(), self.len()) {
                     ("sha256", 64) => Ok(()),
                     ("sha512", 128) => Ok(()),
                     (_, _) => Error::at(

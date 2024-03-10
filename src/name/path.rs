@@ -28,7 +28,7 @@ use core::num::NonZeroU8;
 use crate::{
     ambiguous::host_or_path::{HostOrPathSpan, Kind as PathKind},
     err,
-    span::{impl_span_methods_on_tuple, Length, Lengthy, OptionallyZero, ShortLength},
+    span::{impl_span_methods_on_tuple, Length, Lengthy, ShortLength},
 };
 type Error = err::Error<u8>;
 
@@ -104,7 +104,7 @@ impl<'src> PathSpan<'src> {
         let first_component = Self::parse_component(src)?;
         if let Some(first_component) = first_component {
             first_component
-                .extend(&src[first_component.short_len().as_usize()..])
+                .extend(&src[first_component.len()..])
                 .map(Some)
         } else {
             Ok(None)
@@ -117,19 +117,26 @@ impl<'src> PathSpan<'src> {
     }
 }
 
+/// Not including a leading `/`
 pub struct PathStr<'src> {
     src: &'src str,
     span: PathSpan<'src>,
 }
 impl<'src> PathStr<'src> {
-    pub fn new(src: &'src str) -> Result<Option<Self>, Error> {
-        Ok(PathSpan::new(src)?.map(|span| Self { src, span }))
+    #[inline]
+    pub(crate) fn from_span(span: PathSpan<'src>, src: &'src str) -> Self {
+        debug_assert_eq!(span.len(), src.len(), "src: {src:?}");
+        // TODO: enforce exact-match invariant on all from_span methods
+        Self { src, span }
     }
-    pub fn src(&self) -> &'src str {
+    pub fn new(src: &'src str) -> Result<Option<Self>, Error> {
+        Ok(PathSpan::new(src)?.map(|span| Self::from_span(span, src)))
+    }
+    pub fn to_str(&self) -> &'src str {
         self.span.span_of(self.src)
     }
     pub fn parts(&self) -> impl Iterator<Item = &'src str> {
-        self.src().split('/')
+        self.to_str().split('/')
     }
 }
 #[cfg(test)]

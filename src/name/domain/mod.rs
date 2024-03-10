@@ -117,7 +117,7 @@ pub struct DomainStr<'src> {
     span: DomainSpan<'src>,
 }
 impl<'src> DomainStr<'src> {
-    pub fn src(&self) -> &'src str {
+    pub fn to_str(&self) -> &'src str {
         self.src
     }
     pub fn len(&self) -> usize {
@@ -125,6 +125,11 @@ impl<'src> DomainStr<'src> {
     }
     pub fn is_empty(&self) -> bool {
         self.src.is_empty()
+    }
+    #[inline]
+    pub(crate) fn from_span(span: DomainSpan<'src>, src: &'src str) -> Self {
+        debug_assert_eq!(span.len(), src.len(), "{src:?}.len() != {}", span.len());
+        Self { src, span }
     }
     pub fn from_prefix(src: &'src str) -> Result<Option<Self>, Error> {
         Ok(DomainSpan::new(src)?.map(|span| Self { src, span }))

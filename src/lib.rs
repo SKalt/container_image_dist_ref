@@ -9,8 +9,8 @@ pub mod name;
 mod span;
 pub mod tag;
 
-use name::NameSpan;
 pub use name::{domain, path};
+use name::{domain::DomainStr, path::PathStr, NameSpan, NameStr};
 
 use core::ops::{Range, RangeFrom};
 
@@ -23,39 +23,45 @@ use self::{
     span::Lengthy, tag::TagSpan,
 };
 pub(crate) type Error = err::Error<u16>;
-/// A reference to an image by any combination of name, tag, and digest.
-// TODO: doctest
+/// A reference to a container image. Must contain at least a name, but it may
+/// also contain a tag and/or digest.
 #[derive(PartialEq, Eq)]
-pub struct RefSpan<'src> {
+struct RefSpan<'src> {
+    /// the name of the image. This is the domain and path, but not the tag or digest.
     name: NameSpan<'src>,
+    /// The image digest, if present
     tag: Option<TagSpan<'src>>,
     digest: Option<DigestSpan<'src>>,
 }
 
 impl<'src> RefSpan<'src> {
-    pub fn new(src: &'src str) -> Result<Self, Error> {
+    fn new(src: &'src str) -> Result<Self, Error> {
         if src.is_empty() {
             return Error::at(0, err::Kind::RefMissing).into();
         };
         let prefix = DomainOrRefSpan::new(src)?;
-        let rest = &src[prefix.len()..];
         let domain = match prefix {
             DomainOrRefSpan::Domain(domain) => Some(domain),
             DomainOrRefSpan::TaggedRef(_) => None,
         };
-        let mut index: u16 = domain.map(|d| d.short_len().into()).unwrap_or(0);
+        let mut index: u16 = domain.map(|d| d.short_len().upcast()).unwrap_or(0);
+        let rest = &src[prefix.len()..];
         let path = match rest.bytes().next() {
             Some(b'/') => match prefix {
                 DomainOrRefSpan::TaggedRef((path_start, tag)) => match tag {
-                    Some(_) => {
-                        unreachable!("a:0/b should always be parsed as Domain(host=a, port=0)")
-                    }
+                    Some(_) => unreachable!(),
+                    //         ^^^^^^^^^^^^ if a tag is present and is followed
+                    //                      by a `/`, it's PortInvalidChar error
                     None => path_start.extend(rest).map_err(|e| e.into()),
                     // e.g. "cant_be_host/more_path" needs to entirely match as path
                 },
-                DomainOrRefSpan::Domain(_) => PathSpan::parse_from_slash(rest)
-                    .and_then(|p| p.ok_or(err::Error::<u8>::at(0, err::Kind::PathMissing)))
-                    .map_err(|e| e.into()),
+                DomainOrRefSpan::Domain(_) => {
+                    index += 1; // consume the leading slash
+                    let rest = &rest[1..];
+                    PathSpan::new(rest)
+                        .and_then(|p| p.ok_or(err::Error::<u8>::at(0, err::Kind::PathMissing)))
+                        .map_err(|e| e.into())
+                }
             }
             .map_err(|e: err::Error<u16>| e + prefix.short_len()),
             Some(b'@') | Some(b':') | None => match prefix {
@@ -68,7 +74,6 @@ impl<'src> RefSpan<'src> {
         }
         .map_err(|e| e + index)?;
         index += path.short_len().upcast() as u16;
-        let path = path;
         if index > name::MAX_LEN.into() {
             return Error::at(index, err::Kind::NameTooLong).into();
         }
@@ -117,9 +122,10 @@ impl<'src> RefSpan<'src> {
             digest,
         })
     }
+
     /// the offset at which the path starts.
     fn path_index(&self) -> usize {
-        self.name.domain.map(|d| d.len()).unwrap_or(0)
+        self.name.domain.map(|d| d.len() + 1).unwrap_or(0)
     }
     /// the at which the tag starts. If a tag is present, tag_index is AFTER the leading ':'.
     fn tag_index(&self) -> usize {
@@ -138,31 +144,49 @@ impl<'src> RefSpan<'src> {
     fn domain_range(&self) -> Option<Range<usize>> {
         self.name.domain.map(|d| 0..d.len())
     }
+
+    fn port_range(&self) -> Option<Range<usize>> {
+        let domain = self.name.domain?;
+        let port = domain.port?;
+        let start = domain.host.len() + 1; // +1 to consume the ':'
+        Some(start..start + port.len())
+    }
     fn path_range(&self) -> Range<usize> {
-        let mut start = self.path_index();
-        let end = start + self.name.path.len();
-        if self.name.domain.is_some() {
-            // don't emit the leading '/'
-            start += 1;
-        }
-        start..end
+        self.name
+            .domain
+            .map(|d| {
+                let start = d.len() + 1; // +1 to consume the leading '/'
+                start..(start + (self.name.path.len()))
+            })
+            .unwrap_or(0..self.name.path.len())
     }
     fn name_range(&self) -> Range<usize> {
         let end = self.path_index() + self.name.path.len();
         0..end
     }
     fn tag_range(&self) -> Option<Range<usize>> {
-        self.tag.map(|t| {
-            let start = self.tag_index();
-            start..(start + t.len())
-        })
+        let tag = self.tag?;
+        let start = self.tag_index();
+        Some(start..(start + tag.len()))
     }
     fn digest_range(&self) -> Option<RangeFrom<usize>> {
         self.digest.map(|_| self.digest_index()..)
     }
 }
 
-// TODO: add docs with doctest examples
+/// A reference to a container image. All references contain at least a name.
+/// ```rust
+/// use container_image_dist_ref::RefStr;
+/// let img_ref = RefStr::new("host.com/repo:tag@algo:encoded").unwrap();
+/// assert_eq!(img_ref.name().to_str(), "host.com/repo");
+/// assert_eq!(img_ref.domain().map(|d| d.to_str()), Some("host.com"));
+/// assert_eq!(img_ref.port(), None);
+/// assert_eq!(img_ref.path().to_str(), "repo");
+/// assert_eq!(img_ref.tag(), Some("tag"));
+/// assert!(img_ref.digest().is_some());
+/// let digest = img_ref.digest().unwrap();
+/// assert_eq!(digest.to_str(), "algo:encoded");
+/// ```
 #[derive(PartialEq)]
 pub struct RefStr<'src> {
     src: &'src str,
@@ -175,15 +199,32 @@ impl<'src> RefStr<'src> {
         Ok(Self { src, span })
     }
 
-    pub fn domain(&self) -> Option<&str> {
-        self.span.domain_range().map(|range| &self.src[range])
+    fn name_str(&self) -> &str {
+        self.span.name.span_of(self.src)
     }
-    pub fn path(&self) -> &str {
-        &self.src[self.span.path_range()]
+    pub fn name(&'src self) -> NameStr<'src> {
+        NameStr::from_span(self.span.name, self.name_str())
     }
-    pub fn name(&self) -> &str {
-        &self.src[self.span.name_range()]
+    pub fn domain(&'src self) -> Option<DomainStr<'src>> {
+        self.domain_str()
+            .map(|src| DomainStr::from_span(self.span.name.domain.unwrap(), src))
     }
+    fn domain_str(&self) -> Option<&str> {
+        self.span.domain_range().map(|r| &self.src[r])
+    }
+    /// The port part of the domain, if present. This does not include the leading `:`.
+    pub fn port(&self) -> Option<&str> {
+        self.span.port_range().map(|r| &self.src[r])
+    }
+    fn path_str(&self) -> &str {
+        let range = self.span.path_range();
+        &self.src[range]
+    }
+    /// the path portion of the reference, NOT including any leading `/` if a domain is present.
+    pub fn path(&'src self) -> PathStr<'src> {
+        PathStr::from_span(self.span.name.path, self.path_str())
+    }
+    // the tag part of the reference NOT including the leading `:`
     pub fn tag(&self) -> Option<&str> {
         self.span.tag_range().map(|range| &self.src[range])
     }
@@ -263,18 +304,18 @@ impl<'src> CanonicalSpan<'src> {
 /// ```rust
 /// use container_image_dist_ref::CanonicalStr;
 /// let img_ref = CanonicalStr::new("host.com/repo:tag@algo:encoded").unwrap();
-/// assert_eq!(img_ref.name(), "host.com/repo");
-/// assert_eq!(img_ref.domain(), "host.com");
-/// assert_eq!(img_ref.path(), "repo");
+/// assert_eq!(img_ref.name().to_str(), "host.com/repo");
+/// assert_eq!(img_ref.domain().to_str(), "host.com");
+/// assert_eq!(img_ref.path().to_str(), "repo");
 /// assert_eq!(img_ref.tag(), Some("tag"));
-/// assert_eq!(img_ref.digest().src(), "algo:encoded");
+/// assert_eq!(img_ref.digest().to_str(), "algo:encoded");
 ///
 /// let img_ref = CanonicalStr::new("no.tag/img@algo:encoded").unwrap();
-/// assert_eq!(img_ref.name(), "no.tag/img");
-/// assert_eq!(img_ref.domain(), "no.tag");
-/// assert_eq!(img_ref.path(), "img");
+/// assert_eq!(img_ref.name().to_str(), "no.tag/img");
+/// assert_eq!(img_ref.domain().to_str(), "no.tag");
+/// assert_eq!(img_ref.path().to_str(), "img");
 /// assert_eq!(img_ref.tag(), None);
-/// assert_eq!(img_ref.digest().src(), "algo:encoded");
+/// assert_eq!(img_ref.digest().to_str(), "algo:encoded");
 /// ```
 pub struct CanonicalStr<'src> {
     src: &'src str,
@@ -285,10 +326,10 @@ impl<'src> CanonicalStr<'src> {
         let span = CanonicalSpan::new(src)?;
         Ok(Self { src, span })
     }
-    pub fn domain(&self) -> &str {
+    pub fn domain_str(&self) -> &str {
         &self.src[self.span.domain_range()]
     }
-    pub fn path(&self) -> &str {
+    pub fn path_str(&self) -> &str {
         let path = &self.src[self.span.path_range()];
         debug_assert!(
             !path.is_empty(),
@@ -296,13 +337,22 @@ impl<'src> CanonicalStr<'src> {
         );
         path
     }
-    pub fn name(&self) -> &str {
+    fn name_str(&self) -> &str {
         let result = &self.src[self.span.name_range()];
         debug_assert!(
             !result.is_empty(),
             "canonical refs should have non-empty names by construction"
         );
         result
+    }
+    pub fn name(&'src self) -> NameStr<'src> {
+        NameStr::from_span(self.span.span.name, self.name_str())
+    }
+    pub fn domain(&'src self) -> DomainStr<'src> {
+        DomainStr::from_span(self.span.span.name.domain.unwrap(), self.domain_str())
+    }
+    pub fn path(&'src self) -> PathStr<'src> {
+        PathStr::from_span(self.span.span.name.path, self.path_str())
     }
     pub fn tag(&self) -> Option<&str> {
         // tags aren't required for canonical refs
@@ -376,13 +426,13 @@ mod tests {
         tag: Option<&str>,
         digest: Option<&str>,
     ) {
-        let span = should_parse(src);
-        let actual = (
-            span.domain(),
-            Some(span.path()),
-            span.tag(),
-            span.digest().map(|d| d.src()),
-        );
+        let actual = should_parse(src);
+        let actual_domain = actual.domain().map(|d| d.to_str());
+        let actual_path = actual.path();
+        let actual_path = actual_path.to_str();
+        let actual_tag = actual.tag();
+        let actual_digest = actual.digest().map(|d| d.to_str());
+        let actual = (actual_domain, Some(actual_path), actual_tag, actual_digest);
         let expected = (domain, path, tag, digest);
         assert_eq!(actual, expected, "differences parsing {:?}", src);
     }
@@ -535,11 +585,11 @@ mod tests {
     #[test]
     fn test_canonical() {
         let canonical = CanonicalStr::new("[2001:db8::1]:5000/repo@algo:encoded").unwrap();
-        assert_eq!(canonical.name(), "[2001:db8::1]:5000/repo");
-        assert_eq!(canonical.domain(), "[2001:db8::1]:5000");
-        assert_eq!(canonical.path(), "repo");
+        assert_eq!(canonical.name_str(), "[2001:db8::1]:5000/repo");
+        assert_eq!(canonical.domain_str(), "[2001:db8::1]:5000");
+        assert_eq!(canonical.path_str(), "repo");
         assert_eq!(canonical.tag(), None);
-        assert_eq!(canonical.digest().src(), "algo:encoded");
+        assert_eq!(canonical.digest().to_str(), "algo:encoded");
     }
 
     #[derive(Debug, PartialEq, Eq)]
@@ -638,15 +688,14 @@ mod tests {
         }
     }
     fn as_test_case<'s>(span: &'s RefStr<'s>) -> TestCase<'s> {
-        let digest = span.digest();
         TestCase {
             input: span.src,
-            name: Some(span.name()),
-            domain: span.domain(),
-            path: Some(span.path()),
+            name: Some(span.name_str()),
+            domain: span.domain().map(|d| d.to_str()),
+            path: Some(span.path().to_str()),
             tag: span.tag(),
-            digest_algo: digest.as_ref().map(|d| d.algorithm().src()),
-            digest_encoded: digest.map(|d| d.encoded().src()),
+            digest_algo: span.digest().map(|d| d.algorithm().to_str()),
+            digest_encoded: span.digest().map(|d| d.encoded().to_str()),
             err: None,
         }
     }

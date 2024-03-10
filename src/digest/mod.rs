@@ -140,10 +140,12 @@ impl<'src> DigestStr<'src> {
     pub fn new(src: &'src str) -> Result<Option<Self>, Error> {
         Ok(DigestSpan::new(src)?.map(|span| Self { src, span }))
     }
+    #[inline]
     pub(crate) fn from_span(src: &'src str, span: DigestSpan<'src>) -> Self {
         Self { src, span }
     }
-    pub fn src(self) -> &'src str {
+    #[inline]
+    pub fn to_str(self) -> &'src str {
         self.src
     }
     pub fn algorithm(&self) -> AlgorithmStr<'src> {
@@ -155,6 +157,7 @@ impl<'src> DigestStr<'src> {
             self.span.encoded,
         )
     }
+    #[inline]
     pub fn compliance(&self) -> Compliance {
         self.span.compliance
     }

@@ -251,8 +251,8 @@ impl<'src> HostOrPathSpan<'src> {
         self.1
     }
 
-    /// can return 0-length spans if at EOF or the first character is a `/` or `@`
-    pub(crate) fn new(src: &'src str, kind: Kind) -> Result<Option<Self>, Error> {
+    /// can return None if at EOF or the first character is a `/` or `@`
+    pub(crate) fn new(src: &'src str, kind: Kind) -> Result<Self, Error> {
         let mut state = State {
             len: 0,
             scan: kind.into(), // <- scan's setters will enforce the kind's constraint(s)
@@ -264,11 +264,13 @@ impl<'src> HostOrPathSpan<'src> {
             #[cfg(test)]
             let _c = c.map(|c| c as char);
             match c {
-                None => return Ok(None),
+                None => return Error::at(0, err::Kind::HostOrPathMissing).into(),
                 Some(b'[') => {
                     return match kind {
-                        Kind::IpV6 | Kind::Any => Ok(ipv6::Ipv6Span::new(src)?
-                            .map(|span| Self(span.into_length().unwrap(), Kind::IpV6, 0))),
+                        Kind::IpV6 | Kind::Any => {
+                            let span = ipv6::Ipv6Span::new(src)?;
+                            Ok(Self(span.into_length().unwrap(), Kind::IpV6, 0))
+                        }
                         _ => Err(Error::at(0, InvalidChar)),
                     }
                 }
@@ -300,8 +302,9 @@ impl<'src> HostOrPathSpan<'src> {
             state.len,
             src.len()
         );
-        Ok(ShortLength::new(state.len)
-            .map(|length| Self(length, state.scan.into(), state.deciding_char.unwrap_or(0))))
+        ShortLength::new(state.len)
+            .ok_or(Error::at(0, err::Kind::HostOrPathMissing))
+            .map(|length| Self(length, state.scan.into(), state.deciding_char.unwrap_or(0)))
     }
     pub(crate) fn narrow(self, target_kind: Kind) -> Result<Self, Error> {
         use Kind::*;
@@ -337,7 +340,6 @@ mod tests {
                 );
             })
             .unwrap()
-            .unwrap()
     }
     fn should_parse_as(src: &str, expected: &str, kind: Kind) {
         let host_or_path = should_parse(src);
@@ -361,7 +363,6 @@ mod tests {
 
     fn should_fail_with(src: &str, err_kind: err::Kind, bad_char_index: u8) {
         let err = super::HostOrPathSpan::new(src, Kind::Any)
-            .map(|e| e.unwrap())
             .map(|e| {
                 assert!(
                     false,

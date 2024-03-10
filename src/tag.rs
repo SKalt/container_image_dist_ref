@@ -25,7 +25,7 @@ use crate::{
     err,
     span::{impl_span_methods_on_tuple, nonzero, Lengthy, OptionallyZero, ShortLength},
 };
-
+/// The maximum length of a tag, as defined in [`distribution/reference`'s formal grammar](https://github.com/distribution/reference/blob/v0.5.0/reference.go#L18)
 pub const MAX_LEN: NonZeroU8 = nonzero!(u8, 128);
 
 // we can index all errors with a u8 since the longest possible tag is 128 characters
@@ -48,28 +48,35 @@ impl<'src> TryFrom<PortOrTagSpan<'src>> for TagSpan<'src> {
 
 impl<'src> TagSpan<'src> {
     /// can match an empty span if the first character in `src` is a `/` or `@`
-    pub(crate) fn new(src: &str) -> Result<Option<Self>, Error> {
-        Ok(PortOrTagSpan::new(src, TagKind::Tag)
-            .map_err(|e| {
-                let kind = match e.kind() {
-                    err::Kind::PortOrTagInvalidChar => err::Kind::TagInvalidChar,
-                    _ => e.kind(),
-                };
-                Error::at(e.index(), kind)
-            })?
-            .map(|span| Self(span.span())))
+    pub(crate) fn new(src: &str) -> Result<Self, Error> {
+        let span = PortOrTagSpan::new(src, TagKind::Tag).map_err(|e| {
+            let kind = match e.kind() {
+                err::Kind::PortOrTagInvalidChar => err::Kind::TagInvalidChar,
+                err::Kind::PortOrTagMissing => err::Kind::TagMissing,
+                // err::Kind::PortOrTagTooLong => err::Kind::TagTooLong,
+                _ => e.kind(),
+            };
+            Error::at(e.index(), kind)
+        })?;
+        Ok(Self(span.span())) // safe since we parsed in TagKind::Tag mode
     }
 }
 
-pub struct TagStr<'src> {
-    src: &'src str,
-    span: TagSpan<'src>,
-}
+/// A tag, not including any leading `:`.
+/// Only guarantees that it contains a valid tag.
+pub struct TagStr<'src>(&'src str);
 impl<'src> TagStr<'src> {
-    pub fn new(src: &'src str) -> Result<Option<Self>, Error> {
-        Ok(TagSpan::new(src)?.map(|span| Self { src, span }))
+    /// Parse a tag from a string.
+    /// Returns an error if the tag is missing or invalid.
+    /// Parsing may not consume the entire string if it encounters a valid stopping point,
+    /// i.e. '@'.
+    pub fn new(src: &'src str) -> Result<Self, Error> {
+        let span = TagSpan::new(src)?;
+        Ok(Self(span.span_of(src)))
     }
-    pub fn src(&self) -> &'src str {
-        self.span.span_of(self.src)
+    #[allow(missing_docs)]
+    #[inline]
+    pub fn to_str(&self) -> &'src str {
+        self.0
     }
 }

@@ -6,12 +6,13 @@ use_rule() {  grep -E "^$2 " "$1"; }
 fake_diff_line() {
   local rule="$1"
   local oci ref
-  oci="$(use_rule ./grammars/oci_digest.ebnf "$rule")"
   ref="$(use_rule ./grammars/reference.ebnf "$rule")"
+  oci="$(use_rule ./grammars/oci_digest.ebnf "$rule")"
   if [ "$oci" = "$ref" ]; then
     printf " %s\n" "$oci";
   else
-    printf "-"; printf "%s\n+%s\n" "$ref" "$oci";
+   printf "-%s\n" "$ref";
+   printf "+%s\n" "$oci";
   fi
 }
 

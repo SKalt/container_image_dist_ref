@@ -1,4 +1,5 @@
-//! # Algorithm
+//! # Digest Algorithm
+//!
 //! There are two specifications for a digest algorithm string:
 //! - the [OCI Image Spec](https://github.com/opencontainers/image-spec/blob/v1.0.2/descriptor.md#digests)
 //! - [github.com/distribution/reference](https://github.com/distribution/reference/blob/v0.5.0/reference.go#L21-L23)
@@ -41,6 +42,7 @@ fn try_add(a: NonZeroU8, b: u8) -> Result<NonZeroU8, Error> {
     a.checked_add(b)
         .ok_or(Error::at(u8::MAX.into(), err::Kind::AlgorithmTooLong))
 }
+
 /// While there's no specification for the max length of an algorithm string,
 /// 255 characters is a reasonable upper bound.
 pub const MAX_LEN: u8 = u8::MAX;
@@ -80,22 +82,44 @@ impl<'src> AlgorithmSpan<'src> {
     }
 }
 
+/// The algorithm section of a digest.
+/// ```rust
+/// use container_image_dist_ref::digest::{
+///     algorithm::AlgorithmStr, Compliance, Standard
+/// };
+/// let (algorithm, compliance) = AlgorithmStr::new("sha256").unwrap();
+/// assert_eq!(algorithm.to_str(), "sha256");
+/// assert_eq!(compliance, Compliance::Universal);
+/// assert_eq!(algorithm.compliance(), Compliance::Universal);
+/// assert!(compliance.compliant_with(Standard::Oci));
+/// assert!(compliance.compliant_with(Standard::Distribution));
+///
+/// let (algorithm, _) = AlgorithmStr::new("a+b").unwrap();
+/// assert_eq!(algorithm.to_str(), "a+b");
+/// assert_eq!(algorithm.parts().collect::<Vec<_>>(), vec!["a", "b"]);
+/// ```
 pub struct AlgorithmStr<'src>(&'src str);
 impl<'src> AlgorithmStr<'src> {
+    #[allow(missing_docs)]
     #[inline]
     pub fn to_str(&self) -> &'src str {
         self.0
     }
+    #[allow(missing_docs)]
     pub fn len(&self) -> usize {
         self.to_str().len()
     }
+    #[allow(missing_docs)]
     pub fn is_empty(&self) -> bool {
         self.to_str().is_empty()
     }
-    pub fn from_prefix(src: &'src str) -> Result<(Self, Compliance), Error> {
+    /// Parse an algorithm from the start of the string. Parsing may not consume the entire string
+    /// if it reaches a valid stopping point, i.e. `:`.
+    pub fn new(src: &'src str) -> Result<(Self, Compliance), Error> {
         let (span, compliance) = AlgorithmSpan::new(src)?;
         Ok((Self(span.span_of(src)), compliance))
     }
+    /// checks that the entire source string is parsed.
     pub fn from_exact_match(src: &'src str) -> Result<(Self, Compliance), Error> {
         let (span, compliance) = AlgorithmSpan::from_exact_match(src)?;
         Ok((Self(span.span_of(src)), compliance))
@@ -103,9 +127,11 @@ impl<'src> AlgorithmStr<'src> {
     pub(super) fn from_span(src: &'src str, span: AlgorithmSpan<'src>) -> Self {
         Self(span.span_of(src))
     }
+    /// Split the algorithm string into its components separated by `+`, `.`, `_`, or `-`.
     pub fn parts(&self) -> impl Iterator<Item = &str> {
         self.to_str().split(|c| is_separator(c as u8))
     }
+    /// Whether the algorithm is compliant with the OCI or distribution/reference specifications.
     pub fn compliance(&self) -> Compliance {
         let mut bytes = self.to_str().bytes();
         match bytes.next().unwrap() {

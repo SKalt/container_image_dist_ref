@@ -6,7 +6,8 @@ A docker/OCI image reference parser.
 [![docs.rs](https://img.shields.io/docsrs/container_image_dist_ref)](https://docs.rs/container_image_dist_ref/latest/container_image_dist_ref/)
 
 This library is extensively tested against the authoritative image reference implementation, https://github.com/distribution/reference.
-`distribution/reference` uses the following [EBNF](https://www.w3.org/TR/xml11/#sec-notation) grammar:
+
+Image references follow this [EBNF](https://www.w3.org/TR/xml11/#sec-notation) grammar:
 
 <!-- {{{sh cat ./grammars/reference.ebnf }}}{{{out skip=2 -->
 
@@ -36,6 +37,15 @@ identifier           ::= [a-f0-9]{64}
 <!-- }}} skip=2 -->
 
 (This is translated from [https://github.com/distribution/reference/blob/main/reference.go](https://github.com/distribution/reference/blob/main/reference.go#L4-L26))
+
+To avoid worst-case performance, image references are restricted further:
+
+| part        | maximum length |
+| ----------- | -------------: |
+| `name`      |            255 |
+| `tag`       |            127 |
+| `digest`    |           1024 |
+| `algorithm` |            255 |
 
 ## Motivation
 

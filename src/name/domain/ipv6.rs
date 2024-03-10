@@ -125,12 +125,12 @@ impl State {
     }
 }
 impl<'src> Ipv6Span<'src> {
-    pub(crate) fn new(src: &'src str) -> Result<Option<Self>, Error> {
+    pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
         let mut ascii = src.bytes();
         let mut index: NonZeroU8 = match ascii.next() {
-            None => return Ok(None),
+            None => Error::at(0, err::Kind::HostMissing).into(),
             Some(b'[') => Ok(nonzero!(u8, 1)), // consume the opening bracket
-            Some(_) => Err(Error::at(0, err::Kind::Ipv6InvalidChar)),
+            Some(_) => Error::at(0, err::Kind::Ipv6InvalidChar).into(),
         }?;
         let mut state = State(0);
         loop {
@@ -162,12 +162,12 @@ impl<'src> Ipv6Span<'src> {
         match state.current_group() {
             0..=6 => {
                 if state.double_colon_already_seen() {
-                    Ok(Some(Self(ShortLength::from_nonzero(index))))
+                    Ok(Self(ShortLength::from_nonzero(index)))
                 } else {
                     Err(Error::at(index.upcast(), err::Kind::Ipv6TooFewGroups))
                 }
             }
-            7 => Ok(Some(Self(ShortLength::from_nonzero(index)))),
+            7 => Ok(Self(ShortLength::from_nonzero(index))),
             _ => unreachable!("group_count <= 7 enforced by checks on state.increment_group()"),
         }
     }
@@ -180,10 +180,10 @@ mod test {
     fn should_work(ip: &str) {
         match super::Ipv6Span::new(ip) {
             Ok(span) => assert_eq!(
-                span.map(|p| p.span_of(ip)).unwrap_or(""),
+                span.span_of(ip),
                 ip,
                 "\n\tparsed: {:?}\n\tip    : {ip:?}",
-                span.map(|p| p.span_of(ip)).unwrap_or("")
+                span.span_of(ip),
             ),
             Err(e) => assert!(
                 false,
@@ -199,7 +199,7 @@ mod test {
             Ok(span) => assert!(
                 false,
                 "should have failed to parse\n{ip}\n{}",
-                span.map(|p| p.span_of(ip)).unwrap_or(""),
+                span.span_of(ip),
             ),
             Err(_) => {}
         }

@@ -1,3 +1,10 @@
+/*!
+# Image names: optional domain and a required path
+
+```ebnf
+name ::= (domain "/")? path
+```
+*/
 use core::num::NonZeroU16;
 
 use crate::span::{nonzero, Lengthy, OptionallyZero};
@@ -30,14 +37,19 @@ impl Lengthy<'_, u16, NonZeroU16> for NameSpan<'_> {
     }
 }
 
+/// Includes the domain and path portions of an image reference.
 pub struct NameStr<'src> {
     src: &'src str,
     span: NameSpan<'src>,
 }
 
 impl<'src> NameStr<'src> {
+    // the logic for constructing a name is tricky due to the domain:port/name:tag
+    // ambiguity, so adding a `fn new(&str) -> Self` constructor is a TODO for later
+
     #[inline]
     pub(crate) fn from_span(span: NameSpan<'src>, src: &'src str) -> Self {
+        debug_assert_eq!(span.len(), src.len());
         Self { src, span }
     }
     /// Returns the domain part of the name, if it exists.
@@ -51,6 +63,7 @@ impl<'src> NameStr<'src> {
         let src = &self.src[self.span.domain.map(|d| d.len() + 1).unwrap_or(0)..];
         path::PathStr::from_span(self.span.path, src)
     }
+    #[allow(missing_docs)]
     pub fn to_str(&self) -> &str {
         self.span.span_of(self.src)
     }

@@ -3,5 +3,5 @@
   "nixEnvSelector.nixFile": "${workspaceRoot}/flake.nix",
   "nix.enableLanguageServer": true,
   "nix.serverPath": "nil",
-  "cSpell.words": ["opencontainers", "repr"]
+  "cSpell.words": ["ebnf", "opencontainers", "repr"]
 }

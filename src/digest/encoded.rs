@@ -21,9 +21,11 @@
 use core::num::NonZeroU16;
 
 use super::{algorithm::AlgorithmStr, Compliance};
+use crate::err;
 use crate::span::{impl_span_methods_on_tuple, Lengthy, LongLength};
-
-pub const MAX_LEN: u16 = 1024; // arbitrary but realistic limit
+/// an arbitrary maximum length for the encoded section of a digest.
+/// This a realistic limit; hex-encoded sha512 digests are 128 characters long.
+pub const MAX_LEN: u16 = 1024;
 
 use crate::err::Kind::{
     EncodedInvalidChar, EncodedNonLowerHex, EncodingTooLong, EncodingTooShort,
@@ -35,10 +37,7 @@ type Error = crate::err::Error<u16>;
 pub(crate) struct EncodedSpan<'src>(LongLength<'src>);
 impl_span_methods_on_tuple!(EncodedSpan, u16, NonZeroU16);
 impl<'src> EncodedSpan<'src> {
-    pub(crate) fn new(
-        src: &'src str,
-        compliance: Compliance,
-    ) -> Result<Option<(Self, Compliance)>, Error> {
+    pub(crate) fn new(src: &'src str, compliance: Compliance) -> Result<(Self, Compliance), Error> {
         use Compliance::*;
         let mut len = 0;
         let mut compliance = compliance;
@@ -65,18 +64,27 @@ impl<'src> EncodedSpan<'src> {
 
         debug_assert!(len as usize == src.len(), "must have consume all src");
 
-        Ok(LongLength::new(len).map(|length| (Self(length), compliance)))
+        LongLength::new(len)
+            .ok_or(Error::at(0, err::Kind::EncodedMissing))
+            .map(|length| (Self(length), compliance))
     }
 }
 
+/// The encoded portion of a digest string. This may not be a hex-encoded value,
+/// since the OCI spec allows for base64 encoding.
 pub struct EncodedStr<'src>(&'src str);
 impl<'src> EncodedStr<'src> {
+    #[allow(missing_docs)]
     pub fn to_str(&self) -> &'src str {
         self.0
     }
-    // no implementation of from_prefix(&str) because digests MUST terminate a
-    // reference
-
+    /// Parses a string into an encoded digest value. The string must be a valid
+    /// with respect to the given standard (Oci, Distribution, or Universal).
+    /// Parsing always continues until the end of the string or an error.
+    pub fn new(src: &'src str, compliance: Compliance) -> Result<Self, Error> {
+        let (span, _compliance) = EncodedSpan::new(src, compliance)?;
+        Ok(Self::from_span(src, span))
+    }
     pub(crate) fn from_span(src: &'src str, span: EncodedSpan<'src>) -> Self {
         Self(span.span_of(src))
     }
@@ -160,7 +168,7 @@ mod tests {
     #[test]
     fn encoded_consumes_all() {
         fn consumes_all(src: &str) -> Result<(), Error> {
-            let (span, _) = EncodedSpan::new(src, Compliance::Oci)?.unwrap();
+            let (span, _) = EncodedSpan::new(src, Compliance::Oci)?;
             assert_eq!(span.len(), src.len());
             Ok(())
         }

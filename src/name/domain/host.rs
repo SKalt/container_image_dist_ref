@@ -6,7 +6,7 @@
 //! localhost:5000/registry/alpine:3.14
 //! ^^^^^^^^^^^^^^
 //! [2001:db8::1]:5000/registry/alpine:3.14
-//! ^^^^^^^^^^^^^^^^^
+//! ^^^^^^^^^^^^^^^^^^
 //! ```
 //!
 //! Specifically, the grammar is:
@@ -22,12 +22,15 @@
 //! ```
 
 // }}}
+//! Note that host names CANNOT include underscores, which are reserved for
+//! paths. This is a restriction that is not present in the URI spec (
+//! [RFC 3986](https://www.rfc-editor.org/rfc/rfc3986#appendix-A)).
 
 use core::num::NonZeroU8;
 
 use crate::{
     ambiguous::host_or_path::{HostOrPathSpan, Kind as HostKind},
-    err,
+    err::{self},
     span::{impl_span_methods_on_tuple, nonzero, Length, Lengthy},
 };
 
@@ -45,57 +48,39 @@ fn disambiguate_err(e: Error) -> Error {
 
 use super::ipv6::Ipv6Span;
 
+#[allow(missing_docs)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Kind {
     /// a span of ascii characters that represents a restricted domain name, e.g. "Example.com".
     /// Must match the regex `^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]$`
-    Domain,
+    Name,
     /// a restricted IPv6 address wrapped in square brackets, e.g. `[2001:db8::1]`
     /// Unlike the IPv6 described in [RFC 3986](https://www.rfc-editor.org/rfc/rfc3986#appendix-A),
     /// IPv4 mapping is forbidden: only hex digits and colons are allowed.
     Ipv6,
-    /// Missing altogether
-    Empty,
 }
 
 /// can be ipv6
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) struct HostSpan<'src>(Length<'src, NonZeroU8>, Kind);
 impl_span_methods_on_tuple!(HostSpan, u8, NonZeroU8);
-impl<'src> TryFrom<HostOrPathSpan<'src>> for HostSpan<'_> {
-    type Error = Error;
-    fn try_from(ambiguous: HostOrPathSpan) -> Result<Self, Error> {
-        use HostKind::*;
 
-        match ambiguous.kind() {
-            HostOrPath | Any | Host => Ok(Self(
-                Length::from_nonzero(ambiguous.short_len()),
-                Kind::Domain,
-            )),
-            IpV6 => Ok(Self(
-                Length::from_nonzero(ambiguous.short_len()),
-                Kind::Ipv6,
-            )),
-            Path => ambiguous.narrow(Host).map(|_| unreachable!()),
-            // ^yield an error at the deciding character
-        }
+impl<'src> HostSpan<'src> {
+    /// Parses a host from the start of a string. Can be either a domain name or an IPv6 address.
+    /// Can consume only part of the source string if it reaches a valid stopping point,
+    /// i.e. `:`, `/`, or `@`.
+    pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
+        let ambiguous = HostOrPathSpan::new(src, HostKind::Any).map_err(disambiguate_err)?;
+        // handle bracketed ipv6 addresses
+        Self::try_from(ambiguous)
     }
 }
 
-impl<'src> HostSpan<'src> {
-    pub(crate) fn new(src: &'src str) -> Result<Option<Self>, Error> {
-        // handle bracketed ipv6 addresses
-        if let Some(ambiguous) =
-            HostOrPathSpan::new(src, HostKind::Any).map_err(disambiguate_err)?
-        {
-            Self::from_ambiguous(ambiguous).map(Some)
-        } else {
-            Ok(None)
-        }
-    }
-    pub(crate) fn from_ambiguous(ambiguous: HostOrPathSpan<'src>) -> Result<Self, Error> {
+impl<'src> TryFrom<HostOrPathSpan<'src>> for HostSpan<'src> {
+    type Error = Error;
+    fn try_from(ambiguous: HostOrPathSpan) -> Result<Self, Error> {
         let kind = match ambiguous.kind() {
-            HostKind::Host | HostKind::HostOrPath => Ok(Kind::Domain),
+            HostKind::Host | HostKind::HostOrPath => Ok(Kind::Name),
             HostKind::IpV6 => Ok(Kind::Ipv6),
             HostKind::Path => ambiguous.narrow(HostKind::Host).map(|_| unreachable!()),
             HostKind::Any => unreachable!("HostKind::Any should have been disambiguated"),
@@ -103,43 +88,67 @@ impl<'src> HostSpan<'src> {
         Ok(Self(Length::from_nonzero(ambiguous.short_len()), kind))
     }
 }
+
 impl<'src> From<Ipv6Span<'src>> for HostSpan<'src> {
     fn from(ipv6: Ipv6Span<'src>) -> Self {
         Self(Length::from_nonzero(ipv6.short_len()), Kind::Ipv6)
     }
 }
-
+/// An underscore-free host name or a bracketed IPv6 address.
+///
+/// # Examples
+///
+/// ```rust
+/// use container_image_dist_ref::name::domain::{HostStr, Kind::*};
+/// let host = HostStr::new("docker.io").unwrap();
+/// assert_eq!(host.kind(), Name);
+/// assert_eq!(host.to_str(), "docker.io");
+///
+/// let host = HostStr::new("[2001:db8::1]").unwrap();
+/// assert_eq!(host.kind(), Ipv6);
+/// assert_eq!(host.to_str(), "[2001:db8::1]");
+/// ```
 pub struct HostStr<'src>(Kind, &'src str);
 impl<'src> HostStr<'src> {
-    pub fn src(&self) -> &'src str {
+    #[allow(missing_docs)]
+    pub fn to_str(&self) -> &'src str {
         self.1
     }
+    /// ipb6 or domain
     pub fn kind(&self) -> Kind {
         self.0
     }
+    #[allow(missing_docs)]
     #[inline]
     pub fn len(&self) -> usize {
-        self.src().len()
+        self.to_str().len()
     }
     #[inline]
-    pub fn short_len(&self) -> NonZeroU8 {
+    fn short_len(&self) -> NonZeroU8 {
         // unwrapping self.len() is safe since the length of a HostStr is always <= U::MAX
         let len: u8 = self.len().try_into().unwrap();
         // casting as nonzero is safe since the length of a HostStr is always > 0
         nonzero!(u8, len)
     }
-    pub(super) fn from_span_of(src: &'src str, HostSpan(span, kind): HostSpan<'src>) -> Self {
+    pub(super) fn from_span(src: &'src str, HostSpan(span, kind): HostSpan<'src>) -> Self {
+        debug_assert_eq!(span.len(), src.len(), "{src:?}");
         Self(kind, span.span_of(src))
     }
-    pub fn from_prefix(src: &'src str) -> Result<Option<Self>, Error> {
-        Ok(HostSpan::new(src)?.map(|span| Self::from_span_of(src, span)))
+    /// Parse a valid host from the start of the string. Parsing may not consume the entire string
+    /// if it reaches a valid stopping point, i.e. `:`, ` `/`, or `@`.
+    pub fn new(src: &'src str) -> Result<Self, Error> {
+        let span = HostSpan::new(src)?;
+        Ok(Self::from_span(src, span))
     }
-    pub fn from_exact_match(src: &'src str) -> Result<Option<Self>, Error> {
-        let result = HostSpan::new(src)?;
-        let len = result.as_ref().map(|r| r.short_len().into()).unwrap_or(0);
-        if (len as usize) != src.len() {
-            return Err(Error::at(len, crate::err::Kind::HostInvalidChar));
+    /// checks that the entire source string is consumed
+    pub fn from_exact_match(src: &'src str) -> Result<Self, Error> {
+        let result = Self::new(src)?;
+        if result.len() != src.len() {
+            return Err(Error::at(
+                result.short_len().into(),
+                crate::err::Kind::HostInvalidChar,
+            ));
         }
-        Ok(result.map(|r| Self::from_span_of(src, r)))
+        Ok(result)
     }
 }

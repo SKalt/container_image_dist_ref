@@ -97,8 +97,10 @@ impl<'src> PortOrTagSpan<'src> {
             first_tag_char: self.first_tag_char,
         })
     }
-    /// can match an empty span if the first character in src is a `/` or `@`
-    pub(crate) fn new(src: &str, kind: Kind) -> Result<Option<Self>, Error> {
+    /// Parse a port or tag from the start of a string.
+    /// Does NOT include the leading colon.
+    /// Can match an empty span if the first character in src is a `/` or `@`
+    pub(crate) fn new(src: &str, kind: Kind) -> Result<Self, Error> {
         let mut bytes = src.bytes();
 
         // the first character after the colon must be alphanumeric or an underscore
@@ -110,7 +112,7 @@ impl<'src> PortOrTagSpan<'src> {
             Some(b'a'..=b'z') | Some(b'A'..=b'Z') | Some(b'_') => kind
                 .update(Kind::Tag) // only tags can have non-numeric characters
                 .map_err(|_| err::Kind::PortInvalidChar),
-            None | Some(b'/') | Some(b'@') => return Ok(None),
+            None | Some(b'/') | Some(b'@') => Err(err::Kind::PortOrTagMissing),
             _ => Err(err::Kind::PortOrTagInvalidChar),
         }
         .map_err(|err_kind| Error::at(0, err_kind))?;
@@ -145,11 +147,11 @@ impl<'src> PortOrTagSpan<'src> {
             true
         });
 
-        Ok(Some(Self {
+        Ok(Self {
             length: ShortLength::from_nonzero(state.len),
             kind: state.kind,
             first_tag_char: state.first_tag_char,
-        }))
+        })
     }
 }
 
@@ -160,12 +162,9 @@ mod tests {
     fn should_parse_as(src: &str, kind: Kind) {
         let tag = PortOrTagSpan::new(src, kind);
         match tag {
-            Ok(Some(tag)) => {
+            Ok(tag) => {
                 assert_eq!(tag.span().span_of(src), src);
                 assert_eq!(tag.kind, kind);
-            }
-            Ok(None) => {
-                assert!(src.is_empty() || src.starts_with('/') || src.starts_with('@'));
             }
             Err(e) => panic!("failed to parse tag {src:?}: {:?}", e),
         }

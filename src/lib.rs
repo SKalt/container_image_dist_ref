@@ -1,7 +1,9 @@
 //! # Parse docker/OCI Image References
-//! This library is extensively tested against the authoritative image reference implementation, https://github.com/distribution/reference.
+//! This library is extensively tested against the authoritative image reference implementation,
+//! <https://github.com/distribution/reference>.
 
 #![no_std]
+#![warn(missing_docs)]
 pub(crate) mod ambiguous;
 pub mod digest;
 pub mod err;
@@ -9,6 +11,7 @@ pub mod name;
 mod span;
 pub mod tag;
 
+#[doc(inline)]
 pub use name::{domain, path};
 use name::{domain::DomainStr, path::PathStr, NameSpan, NameStr};
 
@@ -58,9 +61,7 @@ impl<'src> RefSpan<'src> {
                 DomainOrRefSpan::Domain(_) => {
                     index += 1; // consume the leading slash
                     let rest = &rest[1..];
-                    PathSpan::new(rest)
-                        .and_then(|p| p.ok_or(err::Error::<u8>::at(0, err::Kind::PathMissing)))
-                        .map_err(|e| e.into())
+                    PathSpan::new(rest).map_err(|e| e.into())
                 }
             }
             .map_err(|e: err::Error<u16>| e + prefix.short_len()),
@@ -82,13 +83,14 @@ impl<'src> RefSpan<'src> {
             DomainOrRefSpan::TaggedRef((_, right)) => match right {
                 Some(tag) => Ok(Some(tag)),
                 None => match rest.bytes().next() {
-                    Some(b':') => TagSpan::new(&rest[1..]).map_err(|e| e.into()),
+                    Some(b':') => TagSpan::new(&rest[1..]).map_err(|e| e.into()).map(Some),
                     Some(b'@') | None => Ok(None),
                     Some(_) => Error::at(0, err::Kind::PathInvalidChar).into(),
                 },
             },
             DomainOrRefSpan::Domain(_) => match rest.bytes().next() {
                 Some(b':') => TagSpan::new(&rest[1..])
+                    .map(Some)
                     .map_err(|e| e.into())
                     .map_err(|e: err::Error<u16>| e + 1u16), // +1 to account for the leading ':'
                 Some(_) | None => Ok(None),
@@ -103,7 +105,7 @@ impl<'src> RefSpan<'src> {
         let digest = match rest.bytes().next() {
             Some(b'@') => {
                 index += 1;
-                DigestSpan::new(&src[index as usize..])
+                DigestSpan::new(&src[index as usize..]).map(Some)
             }
             Some(_) => Error::at(index, err::Kind::AlgorithmMissing).into(),
             None => Ok(None),
@@ -194,6 +196,8 @@ pub struct RefStr<'src> {
     span: RefSpan<'src>,
 }
 impl<'src> RefStr<'src> {
+    /// Parse an image reference string. The entire source string must be one
+    /// valid image reference.
     pub fn new(src: &'src str) -> Result<Self, Error> {
         let span = RefSpan::new(src)?;
         Ok(Self { src, span })
@@ -202,9 +206,11 @@ impl<'src> RefStr<'src> {
     fn name_str(&self) -> &str {
         self.span.name.span_of(self.src)
     }
+    /// Accessor for the name part of the reference, including the domain and path.
     pub fn name(&'src self) -> NameStr<'src> {
         NameStr::from_span(self.span.name, self.name_str())
     }
+    #[allow(missing_docs)]
     pub fn domain(&'src self) -> Option<DomainStr<'src>> {
         self.domain_str()
             .map(|src| DomainStr::from_span(self.span.name.domain.unwrap(), src))
@@ -224,10 +230,11 @@ impl<'src> RefStr<'src> {
     pub fn path(&'src self) -> PathStr<'src> {
         PathStr::from_span(self.span.name.path, self.path_str())
     }
-    // the tag part of the reference NOT including the leading `:`
+    /// Accessor the tag part of the reference NOT including the leading `:`
     pub fn tag(&self) -> Option<&str> {
         self.span.tag_range().map(|range| &self.src[range])
     }
+    /// Accessor for the optional digest part of the reference NOT including the leading `@`
     pub fn digest(&self) -> Option<DigestStr<'src>> {
         self.span.digest_range().and_then(|range| {
             self.span
@@ -322,14 +329,16 @@ pub struct CanonicalStr<'src> {
     span: CanonicalSpan<'src>,
 }
 impl<'src> CanonicalStr<'src> {
+    /// Parse a canonical image reference string. The entire source string must be one
+    /// valid canonical reference.
     pub fn new(src: &'src str) -> Result<Self, Error> {
         let span = CanonicalSpan::new(src)?;
         Ok(Self { src, span })
     }
-    pub fn domain_str(&self) -> &str {
+    fn domain_str(&self) -> &str {
         &self.src[self.span.domain_range()]
     }
-    pub fn path_str(&self) -> &str {
+    fn path_str(&self) -> &str {
         let path = &self.src[self.span.path_range()];
         debug_assert!(
             !path.is_empty(),
@@ -345,19 +354,25 @@ impl<'src> CanonicalStr<'src> {
         );
         result
     }
+    /// The name component of the parse canonical image reference, including a
+    /// required domain and path.
     pub fn name(&'src self) -> NameStr<'src> {
         NameStr::from_span(self.span.span.name, self.name_str())
     }
+    /// The domain component of the canonical image reference.
     pub fn domain(&'src self) -> DomainStr<'src> {
         DomainStr::from_span(self.span.span.name.domain.unwrap(), self.domain_str())
     }
+    /// The path component of the canonical image reference.
     pub fn path(&'src self) -> PathStr<'src> {
         PathStr::from_span(self.span.span.name.path, self.path_str())
     }
+    /// The tag component of the canonical image reference, if present.
     pub fn tag(&self) -> Option<&str> {
         // tags aren't required for canonical refs
         self.span.tag_range().map(|range| &self.src[range])
     }
+    /// The digest component of the canonical image reference.
     pub fn digest(&self) -> DigestStr<'src> {
         let digest = &self.src[self.span.digest_range()];
         debug_assert!(

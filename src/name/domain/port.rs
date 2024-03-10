@@ -23,12 +23,16 @@ fn disambiguate_err(e: Error) -> Error {
 }
 
 impl<'src> PortSpan<'src> {
-    pub(super) fn new(src: &'src str) -> Result<Option<Self>, Error> {
-        Ok(PortOrTagSpan::new(src, PortKind::Port)
-            .map_err(disambiguate_err)?
-            .map(|span| Self(span.span())))
+    /// parse a port from the start of a string. Does NOT include the leading colon.
+    pub(super) fn new(src: &'src str) -> Result<Self, Error> {
+        let span = PortOrTagSpan::new(src, PortKind::Port).map_err(disambiguate_err)?;
+        Ok(Self(span.span())) // ^ OK since we pre-narrowed to PortKind::Port
     }
-    pub(super) fn from_ambiguous(ambiguous: PortOrTagSpan<'src>) -> Result<Self, Error> {
+}
+
+impl<'src> TryFrom<PortOrTagSpan<'src>> for PortSpan<'src> {
+    type Error = Error;
+    fn try_from(ambiguous: PortOrTagSpan<'src>) -> Result<Self, Error> {
         ambiguous
             .narrow(PortKind::Port)
             .map(|span| Self(span.span()))

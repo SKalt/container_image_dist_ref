@@ -14,8 +14,8 @@ fn main() {
         Ok(ref_str) => {
             let input = escape(&input);
             let name = escape(ref_str.name().to_str());
-            let domain = escape(ref_str.domain_str());
-            let path = escape(ref_str.path_str());
+            let domain = escape(ref_str.domain().to_str());
+            let path = escape(ref_str.path().to_str());
             let tag = escape(ref_str.tag().unwrap_or(""));
             let digest_algo = escape(ref_str.digest().algorithm().to_str());
             let digest_encoded = escape(ref_str.digest().encoded().to_str());

@@ -39,6 +39,8 @@ use self::{
     encoded::{EncodedSpan, EncodedStr},
 };
 type Error = err::Error<u16>;
+/// The standard or specification that a digest string must comply with. Used in
+/// [`Compliance::compliant_with`].
 pub enum Standard {
     /// Matching [0-9a-f]{32,} per distribution/reference.
     ///
@@ -51,6 +53,7 @@ pub enum Standard {
     Oci,
 }
 
+/// Whether a digest string is compliant with the OCI image spec, distribution/reference, or both.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Compliance {
     /// Not compliant with distribution/reference: at least one algorithm component
@@ -62,8 +65,14 @@ pub enum Compliance {
     Universal,
     // non-compliance will always result in an error, so we don't need a variant
 }
+impl Default for Compliance {
+    fn default() -> Self {
+        Self::Universal
+    }
+}
 
 impl Compliance {
+    /// Checks whether a given compliance level is compliant with a given standard.
     pub fn compliant_with(self, standard: Standard) -> bool {
         matches!(
             (self, standard),
@@ -84,10 +93,7 @@ pub(crate) struct DigestSpan<'src> {
 }
 
 impl<'src> DigestSpan<'src> {
-    pub(crate) fn new(src: &'src str) -> Result<Option<Self>, Error> {
-        if src.is_empty() {
-            return Ok(None);
-        }
+    pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
         let (algorithm, compliance) = AlgorithmSpan::new(src)?;
         let mut len = algorithm.short_len().widen();
         let rest = &src[len.as_usize()..];
@@ -98,8 +104,7 @@ impl<'src> DigestSpan<'src> {
         }
         .map_err(|kind| Error::at(len.into(), kind))?;
         let rest = &src[len.as_usize()..];
-        let (encoded, compliance) = EncodedSpan::new(rest, compliance)?
-            .ok_or(Error::at(len.into(), err::Kind::EncodedMissing))?;
+        let (encoded, compliance) = EncodedSpan::new(rest, compliance).map_err(|e| e + len)?;
 
         {
             let rest = &src[len.as_usize()..];
@@ -108,11 +113,11 @@ impl<'src> DigestSpan<'src> {
             encoded.validate_algorithm(&algorithm, compliance)?;
         }
 
-        Ok(Some(Self {
+        Ok(Self {
             algorithm,
             encoded,
             compliance,
-        }))
+        })
     }
 }
 impl Lengthy<'_, u16, NonZeroU16> for DigestSpan<'_> {
@@ -131,32 +136,41 @@ impl Lengthy<'_, u16, NonZeroU16> for DigestSpan<'_> {
     }
 }
 
+/// A parsed digest string. Includes the algorithm and encoded digest value,
+/// along with information about whether the digest is compliant with the OCI image spec,
+/// distribution/reference, or both.
 pub struct DigestStr<'src> {
     src: &'src str,
     span: DigestSpan<'src>,
 }
 
 impl<'src> DigestStr<'src> {
-    pub fn new(src: &'src str) -> Result<Option<Self>, Error> {
-        Ok(DigestSpan::new(src)?.map(|span| Self { src, span }))
+    /// Parse a digest string NOT starting with a leading '@'. Parsing continues to the end of the string.
+    pub fn new(src: &'src str) -> Result<Self, Error> {
+        let span = DigestSpan::new(src)?;
+        Ok(Self::from_span(&src[0..span.len()], span))
     }
     #[inline]
     pub(crate) fn from_span(src: &'src str, span: DigestSpan<'src>) -> Self {
         Self { src, span }
     }
+    /// The original digest string, not including any leading '@'.
     #[inline]
     pub fn to_str(self) -> &'src str {
         self.src
     }
+    /// The algorithm component of the digest string.
     pub fn algorithm(&self) -> AlgorithmStr<'src> {
         AlgorithmStr::from_span(self.src, self.span.algorithm)
     }
+    /// The encoded digest value.
     pub fn encoded(&self) -> EncodedStr<'src> {
         EncodedStr::from_span(
             &self.src[self.span.algorithm.len() + 1..],
             self.span.encoded,
         )
     }
+    /// Whether this digest is compliant with the OCI image spec, distribution/reference, or both.
     #[inline]
     pub fn compliance(&self) -> Compliance {
         self.span.compliance

@@ -1,7 +1,11 @@
-//! # Errors
+//! # Error types
 //! This module supplies the global error types for the crate.
+//! Each `Error` includes a variant of `Kind` and the index of the first invalid
+//! ascii character in the source string.
 
+#[allow(missing_docs)]
 // TODO: more docs
+// FIXME: reduce number of **public** errors.
 // since ErrorKind can fit 256 unique errors, use it for all non-ambiguous cases
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
@@ -11,6 +15,7 @@ pub enum Kind {
     HostOrPathMissing,
     /// parsing the host or path section exceeded 255 characters.
     HostOrPathTooLong,
+    #[allow(missing_docs)]
     HostOrPathInvalidChar,
     /// Caused by two incompatible path-component separators in a row, such as
     /// "..", "_.", "-.", etc.
@@ -18,6 +23,7 @@ pub enum Kind {
     // ambiguous::port_or_tag ----------------------------------
     /// caused by a colon immediately followed by EOF, "/", or "@"
     PortOrTagMissing,
+    #[allow(missing_docs)]
     PortOrTagInvalidChar,
     // name ----------------------------------------------------------
     /// the name (including host, port, and path) is over 255 characters long.
@@ -50,6 +56,8 @@ pub enum Kind {
     /// 129 or more characters after the ":".
     TagTooLong,
     TagInvalidChar,
+    #[allow(missing_docs)]
+    TagMissing,
 
     // digest::algorithm ----------------------------------------
     /// 0-length algorithm in an "algorithm:encoded" section detected

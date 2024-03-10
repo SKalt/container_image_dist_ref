@@ -1,3 +1,5 @@
+//! # Path parsing
+//!
 //! The current RC of the OCI distribution spec and distribution/reference agree
 //! on the format of a path component. The OCI distribution spec's current RC is
 //! a strict superset of the previous path pattern, so implementing the newer, more-
@@ -50,14 +52,9 @@ impl_span_methods_on_tuple!(PathSpan, u8, NonZeroU8);
 const ERR_PATH_TOO_LONG: Error = Error::at(u8::MAX, err::Kind::PathTooLong);
 
 impl<'src> PathSpan<'src> {
-    fn parse_component(src: &'src str) -> Result<Option<Self>, Error> {
+    fn parse_component(src: &'src str) -> Result<Self, Error> {
         let ambiguous = HostOrPathSpan::new(src, PathKind::Path).map_err(map_error)?;
-        let result = if let Some(ambiguous) = ambiguous {
-            Some(Self::from_ambiguous(ambiguous)?)
-        } else {
-            None
-        };
-        Ok(result)
+        Self::try_from(ambiguous)
     }
     pub(crate) fn parse_from_slash(src: &'src str) -> Result<Option<Self>, Error> {
         let mut index: u8 = 0;
@@ -70,22 +67,21 @@ impl<'src> PathSpan<'src> {
             }
             .map_err(|kind| Error::at(index, kind))?;
             let rest = &src[index as usize..];
-            let update = Self::parse_component(rest)
-                .map_err(|e| {
-                    e.index()
-                        .checked_add(index)
-                        .map(|i| Error::at(i, e.kind()))
-                        .unwrap_or(ERR_PATH_TOO_LONG)
-                })?
-                .map(|p| p.short_len().into())
-                .map(|len| index.checked_add(len).ok_or(ERR_PATH_TOO_LONG));
-            if let Some(update) = update {
-                index = update?;
-            } else {
-                return Error::at(index, err::Kind::PathComponentInvalidEnd).into();
-            }
+            let component = Self::parse_component(rest).map_err(|e| {
+                let kind = match e.kind() {
+                    err::Kind::PathMissing => err::Kind::PathComponentInvalidEnd,
+                    kind => kind,
+                };
+                e.index()
+                    .checked_add(index)
+                    .map(|i| Error::at(i, kind))
+                    .unwrap_or(ERR_PATH_TOO_LONG)
+            })?;
+            index = index
+                .checked_add(component.short_len().into())
+                .ok_or(ERR_PATH_TOO_LONG)?;
         }
-        Ok(Length::new(index).map(Self))
+        Ok(Length::new(index).map(|len| Self(len)))
     }
     pub(crate) fn extend(&self, rest: &'src str) -> Result<Self, Error> {
         let extension = Self::parse_from_slash(rest).map_err(|e| {
@@ -100,24 +96,22 @@ impl<'src> PathSpan<'src> {
             .ok_or(ERR_PATH_TOO_LONG)?;
         Ok(Self(Length::from_nonzero(len)))
     }
-    pub fn new(src: &'src str) -> Result<Option<Self>, Error> {
+    pub fn new(src: &'src str) -> Result<Self, Error> {
         let first_component = Self::parse_component(src)?;
-        if let Some(first_component) = first_component {
-            first_component
-                .extend(&src[first_component.len()..])
-                .map(Some)
-        } else {
-            Ok(None)
-        }
+        first_component.extend(&src[first_component.len()..])
     }
-    pub(crate) fn from_ambiguous(ambiguous: HostOrPathSpan<'src>) -> Result<Self, Error> {
+}
+
+impl<'src> TryFrom<HostOrPathSpan<'src>> for PathSpan<'src> {
+    type Error = Error;
+    fn try_from(ambiguous: HostOrPathSpan<'src>) -> Result<Self, Error> {
         ambiguous
             .narrow(PathKind::Path)
             .map(|disambiguated| Self(Length::from_nonzero(disambiguated.short_len())))
     }
 }
 
-/// Not including a leading `/`
+/// Not including any leading `/`.
 pub struct PathStr<'src> {
     src: &'src str,
     span: PathSpan<'src>,
@@ -129,12 +123,17 @@ impl<'src> PathStr<'src> {
         // TODO: enforce exact-match invariant on all from_span methods
         Self { src, span }
     }
-    pub fn new(src: &'src str) -> Result<Option<Self>, Error> {
-        Ok(PathSpan::new(src)?.map(|span| Self::from_span(span, src)))
+    /// Parse a path string NOT starting with a leading `/`. Parsing continues until it
+    /// reaches a `:`, `@`, or the end of the string.
+    pub fn new(src: &'src str) -> Result<Self, Error> {
+        let span = PathSpan::new(src)?;
+        Ok(Self::from_span(span, src))
     }
+    #[allow(missing_docs)]
     pub fn to_str(&self) -> &'src str {
         self.span.span_of(self.src)
     }
+    /// Yields an iterator over the `/`-delimited components of the path.
     pub fn parts(&self) -> impl Iterator<Item = &'src str> {
         self.to_str().split('/')
     }
@@ -146,12 +145,12 @@ mod tests {
     fn test_this() {
         // some strings in front of "/" must be paths since they include a underscores:
         let src = "not_a_host/path:tag";
-        let span = PathSpan::new(src).unwrap().unwrap();
+        let span = PathSpan::new(src).unwrap();
         assert_eq!(span.span_of(src), "not_a_host/path");
 
         // watch out, though: host names are also valid paths
         let src = "test.com/path:tag";
-        let span = PathSpan::new(src).unwrap().unwrap();
+        let span = PathSpan::new(src).unwrap();
         assert_eq!(span.span_of(src), "test.com/path");
     }
 }

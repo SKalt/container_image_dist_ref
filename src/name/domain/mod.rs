@@ -1,4 +1,4 @@
-//! # Domain
+//! # Domain: host and an optional port
 //! Parsers for the domain section of a reference:
 //! ```txt
 //! docker.io/library/alpine:3.14
@@ -34,13 +34,11 @@ pub(crate) mod host;
 pub(crate) mod ipv6;
 pub(crate) mod port;
 use core::num::NonZeroU16;
+pub use host::{HostStr, Kind};
 
 use crate::{
     ambiguous::{host_or_path::HostOrPathSpan, port_or_tag::PortOrTagSpan},
-    domain::{
-        host::{HostSpan, HostStr},
-        port::PortSpan,
-    },
+    domain::{host::HostSpan, port::PortSpan},
     err::{self, Kind as ErrorKind},
     span::{Lengthy, OptionallyZero},
 };
@@ -84,25 +82,29 @@ impl<'src> DomainSpan<'src> {
         }
         Ok(Self { host, port })
     }
-    /// parse a domain from the start of a string.
-    pub(crate) fn new(src: &'src str) -> Result<Option<Self>, Error> {
-        if let Some(host) = HostSpan::new(src)? {
-            let port = PortSpan::new(&src[host.len()..])
-                .map_err(|e| e.into())
-                .map_err(|e: Error| e + host.short_len().widen())?;
-            Self::from_parts(host, port).map(Some)
-        } else {
-            Ok(None)
+    /// parse a domain from the start of a string. Can consume only part of the source
+    /// string if it reaches a valid stopping point, i.e. `/` or `@`
+    pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
+        let host = HostSpan::new(src)?;
+        let port = match &src[host.len()..].bytes().next() {
+            Some(b':') => PortSpan::new(&src[host.len() + 1..])
+                .map(Some)
+                .map_err(|e| e.into()),
+            Some(b'/' | b'@') | None => Ok(None),
+            _ => Error::at(0, err::Kind::HostInvalidChar).into(),
         }
+        .map_err(|e: Error| e + host.short_len().widen())?;
+        Self::from_parts(host, port)
     }
 
     pub(crate) fn from_ambiguous(
         host: HostOrPathSpan<'src>,
         port: Option<PortOrTagSpan<'src>>,
     ) -> Result<Self, Error> {
-        let host = HostSpan::from_ambiguous(host)?;
+        let host = HostSpan::try_from(host)?;
+        // FIXME: peek at next char
         let port = if let Some(p) = port {
-            Some(PortSpan::from_ambiguous(p)?)
+            Some(PortSpan::try_from(p)?)
         } else {
             None
         };
@@ -110,6 +112,14 @@ impl<'src> DomainSpan<'src> {
     }
 }
 
+/// The domain component of an image reference is composed of a host name or ip
+/// literal and an optional port number.
+/// ```rust
+/// use container_image_dist_ref::name::domain::DomainStr;
+/// let domain = DomainStr::new("localhost:5000").unwrap();
+/// assert_eq!(domain.host().to_str(), "localhost");
+/// assert_eq!(domain.port(), Some("5000"));
+/// ```
 pub struct DomainStr<'src> {
     src: &'src str,
     /// the host part of the domain. It can be an IPv4 address, an IPv6 address,
@@ -117,12 +127,15 @@ pub struct DomainStr<'src> {
     span: DomainSpan<'src>,
 }
 impl<'src> DomainStr<'src> {
+    #[allow(missing_docs)]
     pub fn to_str(&self) -> &'src str {
         self.src
     }
+    #[allow(missing_docs)]
     pub fn len(&self) -> usize {
         self.src.len()
     }
+    #[allow(missing_docs)]
     pub fn is_empty(&self) -> bool {
         self.src.is_empty()
     }
@@ -131,24 +144,40 @@ impl<'src> DomainStr<'src> {
         debug_assert_eq!(span.len(), src.len(), "{src:?}.len() != {}", span.len());
         Self { src, span }
     }
-    pub fn from_prefix(src: &'src str) -> Result<Option<Self>, Error> {
-        Ok(DomainSpan::new(src)?.map(|span| Self { src, span }))
+    /// parse a domain from the start of a string. Can consume only part of the source
+    /// string if it reaches a valid stopping point, i.e. `/` or `@`
+    pub fn new(src: &'src str) -> Result<Self, Error> {
+        let span = DomainSpan::new(src)?;
+        Ok(Self::from_span(span, &src[..span.len()]))
     }
-    pub fn from_exact_match(src: &'src str) -> Result<Option<Self>, Error> {
-        let result = DomainSpan::new(src)?;
-        let len = result.as_ref().map(|r| r.short_len().into()).unwrap_or(0);
-        if (len as usize) != src.len() {
-            return Err(Error::at(len, ErrorKind::HostInvalidChar));
+    /// checks that the entire string is parsed
+    pub fn from_exact_match(src: &'src str) -> Result<Self, Error> {
+        let result = Self::new(src)?;
+        if result.len() != src.len() {
+            return Err(Error::at(
+                result.span.short_len().into(),
+                ErrorKind::HostInvalidChar,
+            ));
         }
-        Ok(result.map(|span| Self { src, span }))
+        Ok(result)
     }
+    #[allow(missing_docs)]
     pub fn host(&self) -> HostStr<'src> {
-        HostStr::from_span_of(self.src, self.span.host)
+        HostStr::from_span(&self.src[0..self.span.host.len()], self.span.host)
     }
+    /// Not including any leading `:`.
     pub fn port(&self) -> Option<&str> {
-        self.span.port.map(|port| {
-            let start = self.span.host.len();
-            &self.src[start..start + port.len()]
-        })
+        let port = self.span.port?;
+        let start = self.span.host.len() + 1; // +1 for the leading ':'
+        Some(&self.src[start..start + port.len()])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn temp() {
+        DomainStr::new("localhost:5000").unwrap();
     }
 }

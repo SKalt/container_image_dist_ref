@@ -86,34 +86,27 @@ fn map_err(e: err::Error<u8>) -> err::Error<u16> {
 
 impl<'src> DomainOrRefSpan<'src> {
     pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
-        let left = HostOrPathSpan::new(src, HostOrPathKind::Any)?
-            .ok_or(Error::at(0, err::Kind::HostOrPathMissing))?;
-        let right_src = &src[left.len()..];
+        let left = HostOrPathSpan::new(src, HostOrPathKind::Any)?;
+        let mut len = left.short_len().widen().upcast();
+        let right_src = &src[len as usize..];
         let right = match right_src.bytes().next() {
             Some(b':') => {
-                let len = left.short_len().widen().upcast() + 1;
-                // +1 for the leading ':'
-                let right = PortOrTagSpan::new(&right_src[1..], Port)
+                len += 1; // +1 for the leading ':'
+                PortOrTagSpan::new(&right_src[1..], Port)
                     .map_err(map_err)
-                    .map_err(|e| e + len)?;
-                Ok(Some(
-                    right.ok_or(Error::at(len, err::Kind::PortOrTagMissing))?,
-                ))
+                    .map(Some)
             }
             Some(b'/') | Some(b'@') | None => Ok(None),
-            Some(_) => Error::at(
-                left.short_len().upcast().into(),
-                err::Kind::PortOrTagInvalidChar,
-            )
-            .into(),
-        }?;
+            Some(_) => Error::at(0, err::Kind::PortOrTagInvalidChar).into(),
+        }
+        .map_err(|e| e + len)?;
 
-        let len = left.len() + right.map(|r| r.len() + 1).unwrap_or(0); // +1 for the leading ':'
-        let rest = &src[len..];
+        len += right.map(|r| r.short_len().widen().upcast()).unwrap_or(0);
+        let rest = &src[len as usize..];
         match rest.bytes().next() {
             Some(b'@') | None => {
                 // since the next section must be a digest, the right side must be a tag
-                let path = PathSpan::from_ambiguous(left).map_err(map_err)?;
+                let path = PathSpan::try_from(left).map_err(map_err)?;
                 let tag = if let Some(tag) = right {
                     Some(
                         tag.try_into()
@@ -136,9 +129,7 @@ impl<'src> DomainOrRefSpan<'src> {
                     match left.kind() {
                         Path => {
                             // need to extend the path
-                            let path = PathSpan::from_ambiguous(left)?
-                                .extend(rest)
-                                .map_err(map_err)?;
+                            let path = PathSpan::try_from(left)?.extend(rest).map_err(map_err)?;
 
                             let tag = if let Some(t) = right {
                                 Some(

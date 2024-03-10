@@ -98,6 +98,7 @@ where
     }
 }
 
+#[allow(clippy::len_without_is_empty)]
 pub(crate) trait Lengthy<'src, OriginalSize, NonZeroSize>
 where
     Self: Sized,
@@ -113,10 +114,6 @@ where
     #[inline]
     fn len(&self) -> usize {
         self.short_len().as_usize()
-    }
-    #[inline]
-    fn is_empty(&self) -> bool {
-        self.len() == 0
     }
     #[inline]
     fn span_of(&self, src: &'src str) -> &'src str {

@@ -146,9 +146,7 @@ impl<'src> DomainOrRefSpan<'src> {
                         Host | IpV6 | HostOrPath => {
                             DomainSpan::from_ambiguous(left, right).map(Self::Domain)
                         }
-                        Any => {
-                            Error::at(len.try_into().unwrap(), err::Kind::HostOrPathMissing).into()
-                        }
+                        Any => Error::at(len, err::Kind::HostOrPathMissing).into(),
                     }
                 }
             }

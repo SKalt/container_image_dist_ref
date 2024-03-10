@@ -109,6 +109,7 @@ impl<'src> From<Ipv6Span<'src>> for HostSpan<'src> {
 /// assert_eq!(host.to_str(), "[2001:db8::1]");
 /// ```
 pub struct HostStr<'src>(Kind, &'src str);
+#[allow(clippy::len_without_is_empty)]
 impl<'src> HostStr<'src> {
     #[allow(missing_docs)]
     pub fn to_str(&self) -> &'src str {

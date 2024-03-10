@@ -99,6 +99,7 @@ impl<'src> AlgorithmSpan<'src> {
 /// assert_eq!(algorithm.parts().collect::<Vec<_>>(), vec!["a", "b"]);
 /// ```
 pub struct AlgorithmStr<'src>(&'src str);
+#[allow(clippy::len_without_is_empty)]
 impl<'src> AlgorithmStr<'src> {
     #[allow(missing_docs)]
     #[inline]
@@ -108,10 +109,6 @@ impl<'src> AlgorithmStr<'src> {
     #[allow(missing_docs)]
     pub fn len(&self) -> usize {
         self.to_str().len()
-    }
-    #[allow(missing_docs)]
-    pub fn is_empty(&self) -> bool {
-        self.to_str().is_empty()
     }
     /// Parse an algorithm from the start of the string. Parsing may not consume the entire string
     /// if it reaches a valid stopping point, i.e. `:`.

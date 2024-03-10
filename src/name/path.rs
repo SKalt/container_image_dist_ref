@@ -81,7 +81,7 @@ impl<'src> PathSpan<'src> {
                 .checked_add(component.short_len().into())
                 .ok_or(ERR_PATH_TOO_LONG)?;
         }
-        Ok(Length::new(index).map(|len| Self(len)))
+        Ok(Length::new(index).map(Self))
     }
     pub(crate) fn extend(&self, rest: &'src str) -> Result<Self, Error> {
         let extension = Self::parse_from_slash(rest).map_err(|e| {

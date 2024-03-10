@@ -126,6 +126,7 @@ pub struct DomainStr<'src> {
     /// or a restricted, non-percent-encoded domain name.
     span: DomainSpan<'src>,
 }
+#[allow(clippy::len_without_is_empty)]
 impl<'src> DomainStr<'src> {
     #[allow(missing_docs)]
     pub fn to_str(&self) -> &'src str {
@@ -134,10 +135,6 @@ impl<'src> DomainStr<'src> {
     #[allow(missing_docs)]
     pub fn len(&self) -> usize {
         self.src.len()
-    }
-    #[allow(missing_docs)]
-    pub fn is_empty(&self) -> bool {
-        self.src.is_empty()
     }
     #[inline]
     pub(crate) fn from_span(span: DomainSpan<'src>, src: &'src str) -> Self {

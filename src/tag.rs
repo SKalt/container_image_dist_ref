@@ -64,8 +64,8 @@ impl<'src> TagSpan<'src> {
 
 /// A tag, not including any leading `:`.
 /// Only guarantees that it contains a valid tag.
-pub struct TagStr<'src>(&'src str);
-impl<'src> TagStr<'src> {
+pub struct Tag<'src>(&'src str);
+impl<'src> Tag<'src> {
     /// Parse a tag from a string.
     /// Returns an error if the tag is missing or invalid.
     /// Parsing may not consume the entire string if it encounters a valid stopping point,

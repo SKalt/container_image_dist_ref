@@ -20,7 +20,7 @@
 
 use core::num::NonZeroU16;
 
-use super::{algorithm::AlgorithmStr, Compliance};
+use super::{algorithm::Algorithm, Compliance};
 use crate::err;
 use crate::span::{impl_span_methods_on_tuple, Lengthy, LongLength};
 /// an arbitrary maximum length for the encoded section of a digest.
@@ -72,8 +72,8 @@ impl<'src> EncodedSpan<'src> {
 
 /// The encoded portion of a digest string. This may not be a hex-encoded value,
 /// since the OCI spec allows for base64 encoding.
-pub struct EncodedStr<'src>(&'src str);
-impl<'src> EncodedStr<'src> {
+pub struct Encoded<'src>(&'src str);
+impl<'src> Encoded<'src> {
     #[allow(missing_docs)]
     pub fn to_str(&self) -> &'src str {
         self.0
@@ -100,7 +100,7 @@ impl<'src> EncodedStr<'src> {
     }
     /// check that the encoded string is an appropriate hex length for the registered
     /// algorithms `sha256` and `sha512`.
-    fn validate_registered_algorithms(&self, algorithm: &AlgorithmStr<'src>) -> Result<(), Error> {
+    fn validate_registered_algorithms(&self, algorithm: &Algorithm<'src>) -> Result<(), Error> {
         match algorithm.to_str() {
             "sha256" | "sha512" => {
                 self.is_lower_hex()?;
@@ -131,7 +131,7 @@ impl<'src> EncodedStr<'src> {
     /// distribution/reference specifications' constraints.
     pub fn validate_algorithm(
         &self,
-        algorithm: &AlgorithmStr<'src>,
+        algorithm: &Algorithm<'src>,
         compliance: Compliance,
     ) -> Result<Compliance, Error> {
         self.validate_registered_algorithms(algorithm)?;
@@ -150,7 +150,7 @@ impl<'src> EncodedStr<'src> {
         }
     }
 }
-impl Lengthy<'_, u16, NonZeroU16> for EncodedStr<'_> {
+impl Lengthy<'_, u16, NonZeroU16> for Encoded<'_> {
     #[inline]
     fn len(&self) -> usize {
         self.0.len()

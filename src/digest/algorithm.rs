@@ -85,22 +85,22 @@ impl<'src> AlgorithmSpan<'src> {
 /// The algorithm section of a digest.
 /// ```rust
 /// use container_image_dist_ref::digest::{
-///     algorithm::AlgorithmStr, Compliance, Standard
+///     algorithm::Algorithm, Compliance, Standard
 /// };
-/// let (algorithm, compliance) = AlgorithmStr::new("sha256").unwrap();
+/// let (algorithm, compliance) = Algorithm::new("sha256").unwrap();
 /// assert_eq!(algorithm.to_str(), "sha256");
 /// assert_eq!(compliance, Compliance::Universal);
 /// assert_eq!(algorithm.compliance(), Compliance::Universal);
 /// assert!(compliance.compliant_with(Standard::Oci));
 /// assert!(compliance.compliant_with(Standard::Distribution));
 ///
-/// let (algorithm, _) = AlgorithmStr::new("a+b").unwrap();
+/// let (algorithm, _) = Algorithm::new("a+b").unwrap();
 /// assert_eq!(algorithm.to_str(), "a+b");
 /// assert_eq!(algorithm.parts().collect::<Vec<_>>(), vec!["a", "b"]);
 /// ```
-pub struct AlgorithmStr<'src>(&'src str);
+pub struct Algorithm<'src>(&'src str);
 #[allow(clippy::len_without_is_empty)]
-impl<'src> AlgorithmStr<'src> {
+impl<'src> Algorithm<'src> {
     #[allow(missing_docs)]
     #[inline]
     pub fn to_str(&self) -> &'src str {
@@ -135,13 +135,13 @@ impl<'src> AlgorithmStr<'src> {
             b'a'..=b'z' => {}
             b'0'..=b'9' => return Compliance::Oci,
             b'A'..=b'Z' => return Compliance::Distribution,
-            _ => unreachable!("by construction, an AlgorithmStr may contain only [a-zA-Z0-9]"),
+            _ => unreachable!("by construction, an Algorithm may contain only [a-zA-Z0-9]"),
         };
         for c in bytes {
             match c {
                 b'a'..=b'z' | b'0'..=b'9' => {}
                 b'A'..=b'Z' => return Compliance::Distribution,
-                _ => unreachable!("by construction, an AlgorithmStr may contain only [a-zA-Z0-9]"),
+                _ => unreachable!("by construction, an Algorithm may contain only [a-zA-Z0-9]"),
             }
         }
         Compliance::Universal

@@ -9,7 +9,7 @@ use core::num::NonZeroU16;
 
 use crate::span::{nonzero, Lengthy, OptionallyZero};
 
-use self::domain::{DomainSpan, DomainStr};
+use self::domain::{Domain, DomainSpan};
 
 pub mod domain;
 pub mod path;
@@ -38,12 +38,12 @@ impl Lengthy<'_, u16, NonZeroU16> for NameSpan<'_> {
 }
 
 /// Includes the domain and path portions of an image reference.
-pub struct NameStr<'src> {
+pub struct Name<'src> {
     src: &'src str,
     span: NameSpan<'src>,
 }
 
-impl<'src> NameStr<'src> {
+impl<'src> Name<'src> {
     // the logic for constructing a name is tricky due to the domain:port/name:tag
     // ambiguity, so adding a `fn new(&str) -> Self` constructor is a TODO for later
 
@@ -53,15 +53,15 @@ impl<'src> NameStr<'src> {
         Self { src, span }
     }
     /// Returns the domain part of the name, if it exists.
-    pub fn domain(&self) -> Option<DomainStr<'_>> {
+    pub fn domain(&self) -> Option<Domain<'_>> {
         self.span
             .domain
-            .map(|span| DomainStr::from_span(span, span.span_of(self.src)))
+            .map(|span| Domain::from_span(span, span.span_of(self.src)))
     }
     /// Returns the path part of the name, which always exists.
-    pub fn path(&self) -> path::PathStr<'_> {
+    pub fn path(&self) -> path::Path<'_> {
         let src = &self.src[self.span.domain.map(|d| d.len() + 1).unwrap_or(0)..];
-        path::PathStr::from_span(self.span.path, src)
+        path::Path::from_span(self.span.path, src)
     }
     #[allow(missing_docs)]
     pub fn to_str(&self) -> &str {

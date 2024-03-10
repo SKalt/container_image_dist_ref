@@ -112,11 +112,11 @@ impl<'src> TryFrom<HostOrPathSpan<'src>> for PathSpan<'src> {
 }
 
 /// Not including any leading `/`.
-pub struct PathStr<'src> {
+pub struct Path<'src> {
     src: &'src str,
     span: PathSpan<'src>,
 }
-impl<'src> PathStr<'src> {
+impl<'src> Path<'src> {
     #[inline]
     pub(crate) fn from_span(span: PathSpan<'src>, src: &'src str) -> Self {
         debug_assert_eq!(span.len(), src.len(), "src: {src:?}");

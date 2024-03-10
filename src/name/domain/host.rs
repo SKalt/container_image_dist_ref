@@ -99,18 +99,18 @@ impl<'src> From<Ipv6Span<'src>> for HostSpan<'src> {
 /// # Examples
 ///
 /// ```rust
-/// use container_image_dist_ref::name::domain::{HostStr, Kind::*};
-/// let host = HostStr::new("docker.io").unwrap();
+/// use container_image_dist_ref::name::domain::{Host, Kind::*};
+/// let host = Host::new("docker.io").unwrap();
 /// assert_eq!(host.kind(), Name);
 /// assert_eq!(host.to_str(), "docker.io");
 ///
-/// let host = HostStr::new("[2001:db8::1]").unwrap();
+/// let host = Host::new("[2001:db8::1]").unwrap();
 /// assert_eq!(host.kind(), Ipv6);
 /// assert_eq!(host.to_str(), "[2001:db8::1]");
 /// ```
-pub struct HostStr<'src>(Kind, &'src str);
+pub struct Host<'src>(Kind, &'src str);
 #[allow(clippy::len_without_is_empty)]
-impl<'src> HostStr<'src> {
+impl<'src> Host<'src> {
     #[allow(missing_docs)]
     pub fn to_str(&self) -> &'src str {
         self.1
@@ -126,9 +126,9 @@ impl<'src> HostStr<'src> {
     }
     #[inline]
     fn short_len(&self) -> NonZeroU8 {
-        // unwrapping self.len() is safe since the length of a HostStr is always <= U::MAX
+        // unwrapping self.len() is safe since the length of a Host is always <= U::MAX
         let len: u8 = self.len().try_into().unwrap();
-        // casting as nonzero is safe since the length of a HostStr is always > 0
+        // casting as nonzero is safe since the length of a Host is always > 0
         nonzero!(u8, len)
     }
     pub(super) fn from_span(src: &'src str, HostSpan(span, kind): HostSpan<'src>) -> Self {

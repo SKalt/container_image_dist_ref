@@ -1,4 +1,4 @@
-use container_image_dist_ref::CanonicalStr;
+use container_image_dist_ref::CanonicalImgRef;
 fn escape(s: &str) -> String {
     s.replace("\t", "\\t")
         .replace("\n", "\\n")
@@ -9,7 +9,7 @@ fn main() {
     let mut input = String::new();
     std::io::stdin().read_line(&mut input).unwrap();
     let input = input.trim_end_matches(&['\r', '\n']);
-    let result = CanonicalStr::new(input);
+    let result = CanonicalImgRef::new(input);
     match result {
         Ok(ref_str) => {
             let input = escape(&input);

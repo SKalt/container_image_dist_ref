@@ -35,8 +35,8 @@ use crate::{
 };
 
 use self::{
-    algorithm::{AlgorithmSpan, AlgorithmStr},
-    encoded::{EncodedSpan, EncodedStr},
+    algorithm::{Algorithm, AlgorithmSpan},
+    encoded::{Encoded, EncodedSpan},
 };
 type Error = err::Error<u16>;
 /// The standard or specification that a digest string must comply with. Used in
@@ -108,8 +108,8 @@ impl<'src> DigestSpan<'src> {
 
         {
             let rest = &src[len.as_usize()..];
-            let algorithm = AlgorithmStr::from_span(src, algorithm);
-            let encoded = EncodedStr::from_span(rest, encoded);
+            let algorithm = Algorithm::from_span(src, algorithm);
+            let encoded = Encoded::from_span(rest, encoded);
             encoded.validate_algorithm(&algorithm, compliance)?;
         }
 
@@ -139,12 +139,12 @@ impl Lengthy<'_, u16, NonZeroU16> for DigestSpan<'_> {
 /// A parsed digest string. Includes the algorithm and encoded digest value,
 /// along with information about whether the digest is compliant with the OCI image spec,
 /// distribution/reference, or both.
-pub struct DigestStr<'src> {
+pub struct Digest<'src> {
     src: &'src str,
     span: DigestSpan<'src>,
 }
 
-impl<'src> DigestStr<'src> {
+impl<'src> Digest<'src> {
     /// Parse a digest string NOT starting with a leading '@'. Parsing continues to the end of the string.
     pub fn new(src: &'src str) -> Result<Self, Error> {
         let span = DigestSpan::new(src)?;
@@ -160,12 +160,12 @@ impl<'src> DigestStr<'src> {
         self.src
     }
     /// The algorithm component of the digest string.
-    pub fn algorithm(&self) -> AlgorithmStr<'src> {
-        AlgorithmStr::from_span(self.src, self.span.algorithm)
+    pub fn algorithm(&self) -> Algorithm<'src> {
+        Algorithm::from_span(self.src, self.span.algorithm)
     }
     /// The encoded digest value.
-    pub fn encoded(&self) -> EncodedStr<'src> {
-        EncodedStr::from_span(
+    pub fn encoded(&self) -> Encoded<'src> {
+        Encoded::from_span(
             &self.src[self.span.algorithm.len() + 1..],
             self.span.encoded,
         )

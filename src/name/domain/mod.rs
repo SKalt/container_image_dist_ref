@@ -34,7 +34,7 @@ pub(crate) mod host;
 pub(crate) mod ipv6;
 pub(crate) mod port;
 use core::num::NonZeroU16;
-pub use host::{HostStr, Kind};
+pub use host::{Host, Kind};
 
 use crate::{
     ambiguous::{host_or_path::HostOrPathSpan, port_or_tag::PortOrTagSpan},
@@ -115,19 +115,19 @@ impl<'src> DomainSpan<'src> {
 /// The domain component of an image reference is composed of a host name or ip
 /// literal and an optional port number.
 /// ```rust
-/// use container_image_dist_ref::name::domain::DomainStr;
-/// let domain = DomainStr::new("localhost:5000").unwrap();
+/// use container_image_dist_ref::name::domain::Domain;
+/// let domain = Domain::new("localhost:5000").unwrap();
 /// assert_eq!(domain.host().to_str(), "localhost");
 /// assert_eq!(domain.port(), Some("5000"));
 /// ```
-pub struct DomainStr<'src> {
+pub struct Domain<'src> {
     src: &'src str,
     /// the host part of the domain. It can be an IPv4 address, an IPv6 address,
     /// or a restricted, non-percent-encoded domain name.
     span: DomainSpan<'src>,
 }
 #[allow(clippy::len_without_is_empty)]
-impl<'src> DomainStr<'src> {
+impl<'src> Domain<'src> {
     #[allow(missing_docs)]
     pub fn to_str(&self) -> &'src str {
         self.src
@@ -159,8 +159,8 @@ impl<'src> DomainStr<'src> {
         Ok(result)
     }
     #[allow(missing_docs)]
-    pub fn host(&self) -> HostStr<'src> {
-        HostStr::from_span(&self.src[0..self.span.host.len()], self.span.host)
+    pub fn host(&self) -> Host<'src> {
+        Host::from_span(&self.src[0..self.span.host.len()], self.span.host)
     }
     /// Not including any leading `:`.
     pub fn port(&self) -> Option<&str> {
@@ -175,6 +175,6 @@ mod tests {
     use super::*;
     #[test]
     fn temp() {
-        DomainStr::new("localhost:5000").unwrap();
+        Domain::new("localhost:5000").unwrap();
     }
 }

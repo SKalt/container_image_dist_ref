@@ -1,0 +1,26 @@
+[package]
+name = "container_image_dist_ref__wasm_lib"
+description = "A library for parsing and validating container image references."
+version = "0.3.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/skalt/container_image_dist_ref.git"
+readme = "README.md"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+container_image_dist_ref = { workspace = true }
+
+[profile.release] # 824k
+opt-level = "z"   # 824k
+lto = true        # 824k
+codegen-units = 1 # 824k
+panic = "abort"   # 824k
+# split-debuginfo = "unpacked"
+# ^ see https://doc.rust-lang.org/rustc/codegen-options/index.html#split-debuginfo
+# ^ fails to remove .debug_info, .debug_str, etc from output .wasm
+# strip = true
+# ^ fails to remove .debug_info, .debug_str, etc from output .wasm
+# ^ see https://doc.rust-lang.org/rustc/codegen-options/index.html#strip

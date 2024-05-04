@@ -59,6 +59,11 @@
               rust-analyzer-unwrapped
               cargo-flamegraph
 
+              # wasm tools
+              twiggy # wasm size profiler
+              binaryen # for wasm-opt
+              # TODO: wasm-snip (need to cargo-install it for now)
+
               # nix support
               nixpkgs-fmt
               nil

@@ -29,3 +29,8 @@ harness = false
 [[example]]
 name = "parse_stdin"
 crate-type = ["bin"]
+
+[workspace]
+members = [".", "build/package/wasm_lib"]
+[workspace.dependencies]
+container_image_dist_ref = { path = "." }

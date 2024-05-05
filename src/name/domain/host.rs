@@ -36,7 +36,7 @@ use crate::{
 
 type Error = err::Error<u8>;
 
-fn disambiguate_err(e: Error) -> Error {
+const fn disambiguate_err(e: Error) -> Error {
     let kind = match e.kind() {
         err::Kind::HostOrPathInvalidChar => err::Kind::HostInvalidChar,
         err::Kind::HostOrPathTooLong => err::Kind::HostTooLong,
@@ -112,16 +112,16 @@ pub struct Host<'src>(Kind, &'src str);
 #[allow(clippy::len_without_is_empty)]
 impl<'src> Host<'src> {
     #[allow(missing_docs)]
-    pub fn to_str(&self) -> &'src str {
+    pub const fn to_str(&self) -> &'src str {
         self.1
     }
     /// ipb6 or domain
-    pub fn kind(&self) -> Kind {
+    pub const fn kind(&self) -> Kind {
         self.0
     }
     #[allow(missing_docs)]
     #[inline]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.to_str().len()
     }
     #[inline]

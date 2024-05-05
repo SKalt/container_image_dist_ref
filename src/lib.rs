@@ -5,10 +5,32 @@
 #![no_std]
 #![warn(missing_docs)]
 // #![warn(clippy::arithmetic_side_effects)]
-// #![warn(clippy::index_refutable_slice)]
+#![warn(clippy::index_refutable_slice)]
 // #![warn(clippy::indexing_slicing)]
-// #![warn(clippy::doc_markdown)]
-#![warn(clippy::trivially_copy_pass_by_ref)]
+#![warn(clippy::doc_markdown)]
+#![warn(clippy::trivially_copy_pass_by_ref)] // TODO: consider inlining
+#![deny(clippy::cast_possible_truncation)]
+#![deny(clippy::cast_possible_wrap)]
+#![deny(clippy::bad_bit_mask)]
+#![warn(clippy::cast_enum_truncation)]
+#![warn(clippy::checked_conversions)]
+#![warn(clippy::copy_iterator)]
+#![warn(clippy::deref_by_slicing)]
+#![warn(clippy::cloned_instead_of_copied)]
+// #![warn(clippy::default_numeric_fallback)]
+#![warn(clippy::expect_used)]
+#![warn(clippy::explicit_iter_loop)]
+#![warn(clippy::get_unwrap)]
+#![warn(clippy::invalid_upcast_comparisons)]
+#![warn(clippy::missing_const_for_fn)]
+#![warn(clippy::needless_borrow)]
+// #![warn(clippy::unwrap_used)] // TODO!
+// #![warn(clippy::unwrap_in_result)] // TODO!
+#![warn(clippy::verbose_bit_mask)]
+#![warn(clippy::try_err)]
+#![warn(clippy::todo)]
+#![warn(clippy::redundant_clone)]
+// #![warn(clippy::or_fun_call)] warns about ok_or(Error::at(...))
 pub(crate) mod ambiguous;
 pub mod digest;
 pub mod err;
@@ -293,12 +315,14 @@ impl<'src> CanonicalSpan<'src> {
     fn new(src: &'src str) -> Result<Self, Error> {
         Self::from_span(RefSpan::new(src)?)
     }
+    // FIXME: move from_span -> TryFrom<RefSpan> impl
     fn from_span(span: RefSpan<'src>) -> Result<Self, Error> {
         span.name
             .domain
             .ok_or(Error::at(0, err::Kind::HostMissing))?;
+        #[allow(clippy::cast_possible_truncation)]
         span.digest.ok_or(Error::at(
-            span.digest_index().try_into().unwrap(),
+            span.digest_index() as u16, // safe since digest_index must be less than  u16::MAX
             err::Kind::AlgorithmMissing,
         ))?;
         Ok(Self { span })

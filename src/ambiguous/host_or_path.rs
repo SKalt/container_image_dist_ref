@@ -158,19 +158,19 @@ impl Scan {
     }
 
     // getters -----------------------------------------------------------------
-    fn has_upper(&self) -> bool {
+    const fn has_upper(&self) -> bool {
         self.0 & Self::HAS_UPPERCASE == Self::HAS_UPPERCASE
     }
-    fn last_was_dot(&self) -> bool {
+    const fn last_was_dot(&self) -> bool {
         self.0 & Self::LAST_WAS_DOT == Self::LAST_WAS_DOT
     }
-    fn last_was_dash(&self) -> bool {
+    const fn last_was_dash(&self) -> bool {
         self.0 & Self::LAST_WAS_DASH == Self::LAST_WAS_DASH
     }
-    fn underscore_count(&self) -> u8 {
+    const fn underscore_count(&self) -> u8 {
         self.0 & Self::UNDERSCORE_COUNT
     }
-    fn has_underscore(&self) -> bool {
+    const fn has_underscore(&self) -> bool {
         self.0 & Self::HAS_UNDERSCORE == Self::HAS_UNDERSCORE
     }
 }
@@ -205,7 +205,7 @@ impl State {
         }
         .map_err(|err_kind| Error::at(self.len, err_kind))
     }
-    fn check_component_end(&self) -> Result<(), Error> {
+    const fn check_component_end(&self) -> Result<(), Error> {
         let ok = !self.scan.last_was_dash()
             && !self.scan.last_was_dot()
             && self.scan.underscore_count() == 0;
@@ -248,7 +248,7 @@ impl_span_methods_on_tuple!(HostOrPathSpan, u8, NonZeroU8);
 
 impl<'src> HostOrPathSpan<'src> {
     #[inline]
-    pub(crate) fn kind(self) -> Kind {
+    pub(crate) const fn kind(self) -> Kind {
         self.1
     }
 

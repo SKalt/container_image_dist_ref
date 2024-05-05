@@ -44,7 +44,7 @@ impl OptionallyZero for NonZeroU16 {
 macro_rules! nonzero {
     (u8, $n:expr) => {
         unsafe {
-            debug_assert!($n != 0);
+            debug_assert!($n != 0u8);
             NonZeroU8::new_unchecked($n)
         }
     };

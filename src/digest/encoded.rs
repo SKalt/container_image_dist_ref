@@ -75,7 +75,7 @@ impl<'src> EncodedSpan<'src> {
 pub struct Encoded<'src>(&'src str);
 impl<'src> Encoded<'src> {
     #[allow(missing_docs)]
-    pub fn to_str(&self) -> &'src str {
+    pub const fn to_str(&self) -> &'src str {
         self.0
     }
     /// Parses a string into an encoded digest value. The string must be a valid
@@ -104,11 +104,12 @@ impl<'src> Encoded<'src> {
         match algorithm.to_str() {
             "sha256" | "sha512" => {
                 self.is_lower_hex()?;
+                #[allow(clippy::cast_possible_truncation)]
                 match (algorithm.to_str(), self.len()) {
                     ("sha256", 64) => Ok(()),
                     ("sha512", 128) => Ok(()),
                     (_, _) => Error::at(
-                        self.len().try_into().unwrap(),
+                        self.len() as u16, // safe since self.len() is at most 1024
                         OciRegisteredAlgorithmWrongDigestLength,
                     )
                     .into(),

@@ -35,7 +35,7 @@ use crate::{
 type Error = err::Error<u8>;
 
 /// adapt ambiguous error kinds into path-specific error kinds
-fn map_error(e: Error) -> Error {
+const fn map_error(e: Error) -> Error {
     let kind = match e.kind() {
         err::Kind::HostOrPathMissing => err::Kind::PathMissing,
         err::Kind::HostOrPathInvalidChar => err::Kind::PathInvalidChar,

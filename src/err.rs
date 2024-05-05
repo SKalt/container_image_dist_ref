@@ -109,12 +109,12 @@ where
 {
     /// The byte index within the source string where the error occurred.
     #[inline]
-    pub fn index(&self) -> Size {
+    pub const fn index(&self) -> Size {
         self.0
     }
     /// the kind of error
     #[inline]
-    pub fn kind(&self) -> Kind {
+    pub const fn kind(&self) -> Kind {
         self.1
     }
 

@@ -18,7 +18,7 @@ pub(crate) enum Kind {
     Tag,
 }
 impl Kind {
-    fn update(self, other: Self) -> Result<Self, ()> {
+    const fn update(self, other: Self) -> Result<Self, ()> {
         match (self, other) {
             (Kind::Port, Kind::Port) | (Kind::Tag, Kind::Tag) => Ok(self),
             (Kind::Port, Kind::Tag) => Ok(Kind::Tag), // all ports are valid tags
@@ -83,7 +83,7 @@ impl State {
 
 impl<'src> PortOrTagSpan<'src> {
     #[inline]
-    pub(crate) fn span(self) -> ShortLength<'src> {
+    pub(crate) const fn span(self) -> ShortLength<'src> {
         self.length
     }
     pub(crate) fn narrow(self, kind: Kind) -> Result<PortOrTagSpan<'src>, Error> {

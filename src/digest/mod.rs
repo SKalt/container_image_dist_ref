@@ -73,7 +73,7 @@ impl Default for Compliance {
 
 impl Compliance {
     /// Checks whether a given compliance level is compliant with a given standard.
-    pub fn compliant_with(self, standard: Standard) -> bool {
+    pub const fn compliant_with(self, standard: Standard) -> bool {
         matches!(
             (self, standard),
             (Compliance::Universal, _)
@@ -151,12 +151,12 @@ impl<'src> Digest<'src> {
         Ok(Self::from_span(&src[0..span.len()], span))
     }
     #[inline]
-    pub(crate) fn from_span(src: &'src str, span: DigestSpan<'src>) -> Self {
+    pub(crate) const fn from_span(src: &'src str, span: DigestSpan<'src>) -> Self {
         Self { src, span }
     }
     /// The original digest string, not including any leading '@'.
     #[inline]
-    pub fn to_str(self) -> &'src str {
+    pub const fn to_str(self) -> &'src str {
         self.src
     }
     /// The algorithm component of the digest string.
@@ -172,7 +172,7 @@ impl<'src> Digest<'src> {
     }
     /// Whether this digest is compliant with the OCI image spec, distribution/reference, or both.
     #[inline]
-    pub fn compliance(&self) -> Compliance {
+    pub const fn compliance(&self) -> Compliance {
         self.span.compliance
     }
 }

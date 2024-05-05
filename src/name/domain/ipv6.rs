@@ -110,20 +110,20 @@ impl State {
     }
     // getters -------------------------------------------------------------
     /// returns the group index, 0-7.
-    fn current_group(&self) -> u8 {
+    const fn current_group(&self) -> u8 {
         self.0 & Self::CURRENT_GROUP
     }
-    fn double_colon_already_seen(&self) -> bool {
+    const fn double_colon_already_seen(&self) -> bool {
         (self.0 & Self::DOUBLE_COLON) == Self::DOUBLE_COLON
     }
-    fn last_was_colon(&self) -> bool {
+    const fn last_was_colon(&self) -> bool {
         self.colon_count() > 0
     }
-    fn position_in_group(&self) -> u8 {
+    const fn position_in_group(&self) -> u8 {
         (self.0 & Self::POSITION_IN_GROUP) >> 3
     }
-    fn colon_count(&self) -> u8 {
-        (self.0 & Self::COLON_COUNT) >> 5
+    const fn colon_count(&self) -> u8 {
+        (self.0 & Self::COLON_COUNT) >> 5_u8
     }
 }
 impl<'src> Ipv6Span<'src> {
@@ -131,7 +131,7 @@ impl<'src> Ipv6Span<'src> {
         let mut ascii = src.bytes();
         let mut index: NonZeroU8 = match ascii.next() {
             None => Error::at(0, err::Kind::HostMissing).into(),
-            Some(b'[') => Ok(nonzero!(u8, 1)), // consume the opening bracket
+            Some(b'[') => Ok(nonzero!(u8, 1_u8)), // consume the opening bracket
             Some(_) => Error::at(0, err::Kind::Ipv6InvalidChar).into(),
         }?;
         let mut state = State(0);

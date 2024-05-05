@@ -103,11 +103,11 @@ pub struct Algorithm<'src>(&'src str);
 impl<'src> Algorithm<'src> {
     #[allow(missing_docs)]
     #[inline]
-    pub fn to_str(&self) -> &'src str {
+    pub const fn to_str(&self) -> &'src str {
         self.0
     }
     #[allow(missing_docs)]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.to_str().len()
     }
     /// Parse an algorithm from the start of the string. Parsing may not consume the entire string
@@ -149,7 +149,7 @@ impl<'src> Algorithm<'src> {
 }
 
 /// match a single separator character: matching the regular expression /[+._-]/
-fn is_separator(c: u8) -> bool {
+const fn is_separator(c: u8) -> bool {
     matches!(c, b'+' | b'.' | b'_' | b'-')
 }
 

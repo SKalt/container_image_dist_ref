@@ -99,7 +99,7 @@ impl<'src> DomainOrRefSpan<'src> {
             Some(b'/') | Some(b'@') | None => Ok(None),
             Some(_) => Error::at(0, err::Kind::PortOrTagInvalidChar).into(),
         }
-        .map_err(|e| e + len)?;
+        .map_err(|e| e + len)?; // FIXME: safe since len is at most 255 and e is at most 255
 
         len += right.map(|r| r.short_len().widen().upcast()).unwrap_or(0);
         let rest = &src[len as usize..];

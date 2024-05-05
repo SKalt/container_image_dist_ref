@@ -129,11 +129,11 @@ pub struct Domain<'src> {
 #[allow(clippy::len_without_is_empty)]
 impl<'src> Domain<'src> {
     #[allow(missing_docs)]
-    pub fn to_str(&self) -> &'src str {
+    pub const fn to_str(&self) -> &'src str {
         self.src
     }
     #[allow(missing_docs)]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.src.len()
     }
     #[inline]

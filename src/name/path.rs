@@ -83,7 +83,7 @@ impl<'src> PathSpan<'src> {
         }
         Ok(Length::new(index).map(Self))
     }
-    pub(crate) fn extend(&self, rest: &'src str) -> Result<Self, Error> {
+    pub(crate) fn extend(self, rest: &'src str) -> Result<Self, Error> {
         let extension = Self::parse_from_slash(rest).map_err(|e| {
             e.index()
                 .checked_add(self.short_len().into())

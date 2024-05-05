@@ -247,7 +247,8 @@ pub(crate) struct HostOrPathSpan<'src>(ShortLength<'src>, Kind, u8);
 impl_span_methods_on_tuple!(HostOrPathSpan, u8, NonZeroU8);
 
 impl<'src> HostOrPathSpan<'src> {
-    pub(crate) fn kind(&self) -> Kind {
+    #[inline]
+    pub(crate) fn kind(self) -> Kind {
         self.1
     }
 

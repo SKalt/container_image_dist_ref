@@ -72,7 +72,7 @@ impl Lengthy<'_, u16, NonZeroU16> for DomainSpan<'_> {
 
 /// constructor methods
 impl<'src> DomainSpan<'src> {
-    /// check that a given HostSpan and PortSpan can be combined into a DomainSpan
+    /// check that a given `HostSpan` and `PortSpan` can be combined into a `DomainSpan`
     /// without overflowing the 255 char limit
     fn from_parts(host: HostSpan<'src>, port: Option<PortSpan<'src>>) -> Result<Self, Error> {
         if let Some(port) = port {

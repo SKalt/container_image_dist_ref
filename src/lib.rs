@@ -4,6 +4,11 @@
 
 #![no_std]
 #![warn(missing_docs)]
+// #![warn(clippy::arithmetic_side_effects)]
+// #![warn(clippy::index_refutable_slice)]
+// #![warn(clippy::indexing_slicing)]
+// #![warn(clippy::doc_markdown)]
+#![warn(clippy::trivially_copy_pass_by_ref)]
 pub(crate) mod ambiguous;
 pub mod digest;
 pub mod err;
@@ -129,7 +134,7 @@ impl<'src> RefSpan<'src> {
     fn path_index(&self) -> usize {
         self.name.domain.map(|d| d.len() + 1).unwrap_or(0)
     }
-    /// the at which the tag starts. If a tag is present, tag_index is AFTER the leading ':'.
+    /// the at which the tag starts. If a tag is present, `tag_index` is AFTER the leading ':'.
     fn tag_index(&self) -> usize {
         self.path_index()
             + self.name.path.len()

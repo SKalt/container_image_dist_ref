@@ -83,10 +83,10 @@ impl State {
 
 impl<'src> PortOrTagSpan<'src> {
     #[inline]
-    pub(crate) fn span(&self) -> ShortLength<'src> {
+    pub(crate) fn span(self) -> ShortLength<'src> {
         self.length
     }
-    pub(crate) fn narrow(&self, kind: Kind) -> Result<PortOrTagSpan<'src>, Error> {
+    pub(crate) fn narrow(self, kind: Kind) -> Result<PortOrTagSpan<'src>, Error> {
         let kind = self
             .kind
             .update(kind)

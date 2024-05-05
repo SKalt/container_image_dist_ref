@@ -136,7 +136,7 @@ impl<'src> Host<'src> {
         Self(kind, span.span_of(src))
     }
     /// Parse a valid host from the start of the string. Parsing may not consume the entire string
-    /// if it reaches a valid stopping point, i.e. `:`, ` `/`, or `@`.
+    /// if it reaches a valid stopping point, i.e. `:`, `/`, or `@`.
     pub fn new(src: &'src str) -> Result<Self, Error> {
         let span = HostSpan::new(src)?;
         Ok(Self::from_span(src, span))

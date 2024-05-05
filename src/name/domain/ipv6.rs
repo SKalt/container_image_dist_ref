@@ -16,7 +16,7 @@ use crate::{
 
 type Error = err::Error<u8>;
 
-/// recognize an IPv6 address as defined in https://www.rfc-editor.org/rfc/rfc3986#appendix-A
+/// recognize an IPv6 address as defined in [RFC 3986](https://www.rfc-editor.org/rfc/rfc3986#appendix-A)
 /// and then subsequently restricted by distribution/reference:
 /// > ipv6address are enclosed between square brackets and may be represented
 /// > in many ways, see rfc5952. Only IPv6 in compressed or uncompressed format
@@ -25,7 +25,9 @@ type Error = err::Error<u8>;
 /// > ```go
 /// > ipv6address = `\[(?:[a-fA-F0-9:]+)\]`
 /// > ```
-/// > -- https://github.com/distribution/reference/blob/main/regexp.go#L87-90
+/// > -- [github.com/distribution/reference][dist]
+///
+/// [dist]: https://github.com/distribution/reference/blob/main/regexp.go#L87-90
 #[derive(Clone, Copy)]
 pub(crate) struct Ipv6Span<'src>(ShortLength<'src>);
 impl_span_methods_on_tuple!(Ipv6Span, u8, NonZeroU8);

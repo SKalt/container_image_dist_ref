@@ -72,7 +72,7 @@ impl<'src, NonZero, Original> Length<'src, NonZero>
 where
     NonZero: OptionallyZero<Possible = Original> + Clone + Copy,
 {
-    /// new() is needed to create a span with PhantomData tied to a specific lifetime.
+    /// new() is needed to create a span with `PhantomData` tied to a specific lifetime.
     /// Returns None iff the input length is zero.
     pub(crate) fn new(len: Original) -> Option<Self> {
         NonZero::new(len).map(|len| Self::from_nonzero(len))

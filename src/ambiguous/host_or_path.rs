@@ -34,7 +34,7 @@ use crate::{
             HostOrPathInvalidChar as InvalidChar, HostOrPathInvalidComponentEnd, HostOrPathTooLong,
         },
     },
-    span::{impl_span_methods_on_tuple, Lengthy, ShortLength},
+    span::{impl_span_methods_on_tuple, Length, Lengthy, ShortLength},
 };
 
 type Error = err::Error<u8>;
@@ -157,6 +157,7 @@ impl Scan {
         self.0 &= !Self::LAST_WAS_DASH;
     }
 
+    #[allow(clippy::unwrap_used)]
     fn reset_underscore_count(&mut self) {
         self.set_underscore_count(0).unwrap()
     }
@@ -277,7 +278,7 @@ impl<'src> HostOrPathSpan<'src> {
                     return match kind {
                         Kind::IpV6 | Kind::Any => {
                             let span = ipv6::Ipv6Span::new(src)?;
-                            Ok(Self(span.into_length().unwrap(), Kind::IpV6, 0))
+                            Ok(Self(Length::from_nonzero(span.short_len()), Kind::IpV6, 0))
                         }
                         _ => Err(Error::at(0, InvalidChar)),
                     }
@@ -332,7 +333,11 @@ impl<'src> HostOrPathSpan<'src> {
 }
 
 #[cfg(test)]
-#[allow(clippy::cast_possible_truncation, clippy::arithmetic_side_effects)]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::arithmetic_side_effects,
+    clippy::unwrap_used
+)]
 mod tests {
     use super::*;
     use crate::span::Lengthy;

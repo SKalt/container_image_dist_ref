@@ -56,16 +56,13 @@ pub(crate) struct DomainSpan<'src> {
 impl Lengthy<'_, u16, NonZeroU16> for DomainSpan<'_> {
     #[inline]
     fn short_len(&self) -> NonZeroU16 {
-        let mut len = self.host.short_len().widen(); // since host can be up to 255 chars, pad to avoid overflow
-        len = len
-            .checked_add(
-                self
-                .port.map(|p: PortSpan| p.short_len().upcast().saturating_add(1).into()) // +1 for the leading ':'
+        self.host.short_len().widen()// since host can be up to 255 chars, pad to avoid overflow
+            .saturating_add(
+                self.port
+                    .map(|p: PortSpan| p.short_len().upcast().saturating_add(1).into()) // +1 for the leading ':'
                     // safe since port is at most 128 chars
-                .unwrap_or(0u16),
-            )
-            .unwrap();
-        len
+                    .unwrap_or(0u16),
+        )
     }
     #[inline]
     fn len(&self) -> usize {
@@ -174,6 +171,7 @@ impl<'src> Domain<'src> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     #[test]

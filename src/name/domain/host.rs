@@ -125,6 +125,7 @@ impl<'src> Host<'src> {
         self.to_str().len()
     }
     #[inline]
+    #[allow(clippy::unwrap_used)]
     fn short_len(&self) -> NonZeroU8 {
         // unwrapping self.len() is safe since the length of a Host is always <= U::MAX
         let len: u8 = self.len().try_into().unwrap();

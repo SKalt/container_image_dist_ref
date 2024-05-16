@@ -132,10 +132,10 @@ impl<'src> Algorithm<'src> {
     /// Whether the algorithm is compliant with the OCI or distribution/reference specifications.
     pub fn compliance(&self) -> Compliance {
         let mut bytes = self.to_str().bytes();
-        match bytes.next().unwrap() {
-            b'a'..=b'z' => {}
-            b'0'..=b'9' => return Compliance::Oci,
-            b'A'..=b'Z' => return Compliance::Distribution,
+        match bytes.next() {
+            Some(b'a'..=b'z') => {}
+            Some(b'0'..=b'9') => return Compliance::Oci,
+            Some(b'A'..=b'Z') => return Compliance::Distribution,
             _ => unreachable!("by construction, an Algorithm may contain only [a-zA-Z0-9]"),
         };
         for c in bytes {

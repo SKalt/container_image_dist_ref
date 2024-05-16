@@ -17,15 +17,14 @@
 #![warn(clippy::copy_iterator)]
 #![warn(clippy::deref_by_slicing)]
 #![warn(clippy::cloned_instead_of_copied)]
-// #![warn(clippy::default_numeric_fallback)]
 #![warn(clippy::expect_used)]
 #![warn(clippy::explicit_iter_loop)]
 #![warn(clippy::get_unwrap)]
 #![warn(clippy::invalid_upcast_comparisons)]
 #![warn(clippy::missing_const_for_fn)]
 #![warn(clippy::needless_borrow)]
-// #![warn(clippy::unwrap_used)] // TODO!
-// #![warn(clippy::unwrap_in_result)] // TODO!
+#![warn(clippy::unwrap_used)]
+#![warn(clippy::unwrap_in_result)]
 #![warn(clippy::verbose_bit_mask)]
 #![warn(clippy::try_err)]
 #![warn(clippy::todo)]
@@ -182,8 +181,8 @@ impl<'src> RefSpan<'src> {
             .unwrap_or(0)
     }
 
-    fn domain_range(&self) -> Option<Range<usize>> {
-        self.name.domain.map(|d| 0..d.len())
+    fn domain_range(&self) -> Range<usize> {
+        0..self.name.domain.map(|d| d.len()).unwrap_or(0)
     }
 
     fn port_range(&self) -> Option<Range<usize>> {
@@ -250,11 +249,10 @@ impl<'src> ImgRef<'src> {
     }
     #[allow(missing_docs)]
     pub fn domain(&'src self) -> Option<Domain<'src>> {
-        self.domain_str()
-            .map(|src| Domain::from_span(self.span.name.domain.unwrap(), src)) // TODO: unwrap_unsafe
-    }
-    fn domain_str(&self) -> Option<&str> {
-        self.span.domain_range().map(|r| &self.src[r])
+        self.span
+            .name
+            .domain
+            .map(|d| Domain::from_span(d, d.span_of(self.src))) // TODO: unwrap_unsafe
     }
     /// The port part of the domain, if present. This does not include the leading `:`.
     pub fn port(&self) -> Option<&str> {
@@ -339,7 +337,7 @@ impl<'src> CanonicalSpan<'src> {
         ))?;
         Ok(Self { span })
     }
-    unwrap_inner_method!(domain_range, Range<usize>);
+    mirror_inner_method!(domain_range, Range<usize>);
     mirror_inner_method!(path_range, Range<usize>);
     mirror_inner_method!(name_range, Range<usize>);
     mirror_inner_method!(tag_range, Option<Range<usize>>);
@@ -400,6 +398,7 @@ impl<'src> CanonicalImgRef<'src> {
         Name::from_span(self.span.span.name, self.name_str())
     }
     /// The domain component of the canonical image reference.
+    #[allow(clippy::unwrap_used)]
     pub fn domain(&'src self) -> Domain<'src> {
         Domain::from_span(self.span.span.name.domain.unwrap(), self.domain_str())
     }
@@ -412,6 +411,7 @@ impl<'src> CanonicalImgRef<'src> {
         // tags aren't required for canonical refs
         self.span.tag_range().map(|range| &self.src[range])
     }
+    #[allow(clippy::unwrap_used)]
     /// The digest component of the canonical image reference.
     pub fn digest(&self) -> Digest<'src> {
         let digest = &self.src[self.span.digest_range()];
@@ -448,6 +448,7 @@ impl<'src> TryInto<CanonicalImgRef<'src>> for ImgRef<'src> {
     }
 }
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
 
     extern crate alloc;

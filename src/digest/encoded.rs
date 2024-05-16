@@ -22,7 +22,7 @@ use core::num::NonZeroU16;
 
 use super::{algorithm::Algorithm, Compliance};
 use crate::err;
-use crate::span::{impl_span_methods_on_tuple, Lengthy, LongLength};
+use crate::span::{impl_span_methods_on_tuple, nonzero, Lengthy, LongLength};
 /// an arbitrary maximum length for the encoded section of a digest.
 /// This a realistic limit; hex-encoded sha512 digests are 128 characters long.
 pub const MAX_LEN: u16 = 1024;
@@ -90,6 +90,7 @@ impl<'src> Encoded<'src> {
     pub(crate) fn from_span(src: &'src str, span: EncodedSpan<'src>) -> Self {
         Self(span.span_of(src))
     }
+    #[allow(clippy::unwrap_used)]
     /// validates whether every ascii character is a lowercase hex digit
     fn is_lower_hex(&self) -> Result<(), Error> {
         self.to_str().bytes().enumerate().try_for_each(|(i, c)| {
@@ -159,8 +160,12 @@ impl Lengthy<'_, u16, NonZeroU16> for Encoded<'_> {
         self.0.len()
     }
     #[inline]
+    #[allow(clippy::unwrap_used)]
     fn short_len(&self) -> NonZeroU16 {
-        NonZeroU16::new(self.len().try_into().unwrap()).unwrap()
+        nonzero!(
+            u16,
+            core::convert::TryInto::<u16>::try_into(self.len()).unwrap()
+        )
     }
 }
 

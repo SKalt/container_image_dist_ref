@@ -67,8 +67,8 @@ impl Lengthy<'_, u16, NonZeroU16> for DomainOrRefSpan<'_> {
                     unsafe { NonZeroU16::new_unchecked(u8::from(left.short_len()) as u16) };
                 if let Some(tag) = right {
                     // safe to unwrap since left can be at most 255 and right can be at most 128
-                    len = len.checked_add(1).unwrap(); // add 1 for the leading ':'
-                    len = len.checked_add(tag.short_len().upcast().into()).unwrap();
+                    len = len.saturating_add(1); // add 1 for the leading ':'
+                    len = len.saturating_add(tag.short_len().upcast().into());
                 }
                 len
             }

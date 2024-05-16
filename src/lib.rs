@@ -4,7 +4,7 @@
 
 #![no_std]
 #![warn(missing_docs)]
-// #![warn(clippy::arithmetic_side_effects)]
+#![warn(clippy::arithmetic_side_effects)]
 #![warn(clippy::index_refutable_slice)]
 // #![warn(clippy::indexing_slicing)]
 #![warn(clippy::doc_markdown)]
@@ -74,7 +74,7 @@ impl<'src> RefSpan<'src> {
             DomainOrRefSpan::Domain(domain) => Some(domain),
             DomainOrRefSpan::TaggedRef(_) => None,
         };
-        let mut index: u16 = domain.map(|d| d.short_len().upcast()).unwrap_or(0);
+        let mut index: u16 = domain.map(|d| d.short_len().upcast()).unwrap_or(0); // current max: 256
         let rest = &src[prefix.len()..];
         let path = match rest.bytes().next() {
             Some(b'/') => match prefix {
@@ -82,28 +82,32 @@ impl<'src> RefSpan<'src> {
                     Some(_) => unreachable!(),
                     //         ^^^^^^^^^^^^ if a tag is present and is followed
                     //                      by a `/`, it's PortInvalidChar error
-                    None => path_start.extend(rest).map_err(|e| e.into()),
+                    None => path_start.extend(rest),
                     // e.g. "cant_be_host/more_path" needs to entirely match as path
                 },
                 DomainOrRefSpan::Domain(_) => {
-                    index += 1; // consume the leading slash
+                    index = index.saturating_add(1); // consume the leading slash; ok since index <= 256
                     let rest = &rest[1..];
-                    PathSpan::new(rest).map_err(|e| e.into())
+                    PathSpan::new(rest)
                 }
             }
-            .map_err(|e: err::Error<u16>| e + prefix.short_len()),
+            .map_err(|e: err::Error<u8>| {
+                Error::at(
+                    prefix.short_len().upcast().saturating_add(e.index() as u16),
+                    e.kind(),
+                )
+            }),
             Some(b'@') | Some(b':') | None => match prefix {
                 DomainOrRefSpan::TaggedRef((name, _)) => Ok(name),
                 DomainOrRefSpan::Domain(_) => {
                     unreachable!("if the left segment peeked an '@', it would parse as a TaggedRef")
                 }
             },
-            Some(_) => Error::at(0, err::Kind::PathInvalidChar).into(),
-        }
-        .map_err(|e| e + index)?;
-        index += path.short_len().upcast() as u16;
+            Some(_) => Error::at(index, err::Kind::PathInvalidChar).into(),
+        }?; // TODO: check correctness
+        index = index.saturating_add(path.short_len().upcast().into()); // ok since index <= 256, path <= 256
         if index > name::MAX_LEN.into() {
-            return Error::at(index, err::Kind::NameTooLong).into();
+            return Error::at(255, err::Kind::NameTooLong).into();
         }
         let rest = &src[index as usize..];
         let tag = match prefix {
@@ -116,29 +120,37 @@ impl<'src> RefSpan<'src> {
                 },
             },
             DomainOrRefSpan::Domain(_) => match rest.bytes().next() {
-                Some(b':') => TagSpan::new(&rest[1..])
-                    .map(Some)
-                    .map_err(|e| e.into())
-                    .map_err(|e: err::Error<u16>| e + 1u16), // +1 to account for the leading ':'
+                Some(b':') => TagSpan::new(&rest[1..]).map(Some).map_err(|e| {
+                    Error::at(
+                        index
+                        .saturating_add(1u16) // +1 to account for the leading ':'
+                        .saturating_add(e.index().into()),
+                        e.kind(),
+                    )
+                }),
                 Some(_) | None => Ok(None),
             },
-        }
-        .map_err(|e| e + index)?;
-        index += tag
-            .map(|t| t.short_len().upcast().into())
-            .map(|l: u16| l + 1) // +1 for the leading ':'
-            .unwrap_or(0);
+        }?;
+        index = index.saturating_add(
+            // safe since tag <= 128ch and index <= 256ch -> max index = 384
+            tag
+                .map(|t: TagSpan| t.short_len().upcast().into())
+                .map(|t: u16| t.saturating_add(1)) // +1 for the leading ':'
+                .unwrap_or(0_u16),
+        );
         let rest = &src[index as usize..];
         let digest = match rest.bytes().next() {
             Some(b'@') => {
-                index += 1;
-                DigestSpan::new(&src[index as usize..]).map(Some)
+                index = index.saturating_add(1); // max 385
+                DigestSpan::new(&src[index as usize..])
+                    .map(Some)
+                    .map_err(|e| Error::at(index.saturating_add(e.index()), e.kind()))
+                // safe since e.index() <= 1024
             }
             Some(_) => Error::at(index, err::Kind::AlgorithmMissing).into(),
             None => Ok(None),
-        }
-        .map_err(|e| e + index)?;
-        index += digest.map(|d| d.short_len().upcast()).unwrap_or(0);
+        }?;
+        index = index.saturating_add(digest.map(|d| d.short_len().upcast()).unwrap_or(0));
         debug_assert!(
             index as usize == src.len(),
             "index {} != src.len() {}",
@@ -239,7 +251,7 @@ impl<'src> ImgRef<'src> {
     #[allow(missing_docs)]
     pub fn domain(&'src self) -> Option<Domain<'src>> {
         self.domain_str()
-            .map(|src| Domain::from_span(self.span.name.domain.unwrap(), src))
+            .map(|src| Domain::from_span(self.span.name.domain.unwrap(), src)) // TODO: unwrap_unsafe
     }
     fn domain_str(&self) -> Option<&str> {
         self.span.domain_range().map(|r| &self.src[r])
@@ -450,8 +462,7 @@ mod tests {
         if let Err(e) = result {
             panic!("{}", pretty_err(e, src));
         }
-        let span = result.unwrap();
-        span
+        result.unwrap()
     }
     // TODO: expose this kind of error-formatting functionality in the err module
     // behind an `alloc` feature flag
@@ -462,8 +473,8 @@ mod tests {
         let padding = " ".repeat(msg.len() + 2 + index as usize);
         format!("{msg} \"{src}\": {kind:?} @ {index}\n{padding}^")
     }
-    fn should_parse_as<'src>(
-        src: &'src str,
+    fn should_parse_as(
+        src: &str,
         domain: Option<&str>,
         path: Option<&str>,
         tag: Option<&str>,
@@ -527,8 +538,8 @@ mod tests {
             let mut src = String::with_capacity(130);
             src.push_str("0:");
             let tag = &"0".repeat(128); // max tag length
-            src.push_str(&tag);
-            should_parse_as(&src, None, Some("0"), Some(&tag), None);
+            src.push_str(tag);
+            should_parse_as(&src, None, Some("0"), Some(tag), None);
         }
         {
             let mut src = String::with_capacity(u8::MAX as usize * 2 + 1);
@@ -590,7 +601,7 @@ mod tests {
         );
         {
             let mut src = String::with_capacity(2 + 256);
-            src.push_str("0");
+            src.push('0');
             src.push('@');
             src.push_str(&"0".repeat(256)); // too long
             let too_long = 1 // '0', the name
@@ -601,10 +612,10 @@ mod tests {
         };
         {
             let mut src = String::with_capacity(2 + 257);
-            src.push_str("0");
+            src.push('0');
             src.push('@');
             src.push_str(&"0".repeat(128));
-            src.push_str("+");
+            src.push('+');
             src.push_str(&"0".repeat(128)); // too long!
             let too_long = 1 // '0', the name
                 + 1 // '@'
@@ -616,7 +627,7 @@ mod tests {
             let mut src = String::with_capacity(2 + 256);
             src.push_str("0@");
             src.push_str(&"0".repeat(255));
-            src.push_str(":");
+            src.push(':');
             should_fail_with(&src, Error::at(258, err::Kind::EncodedMissing))
         };
     }
@@ -648,7 +659,7 @@ mod tests {
     }
     impl<'src> From<&'src str> for TestCase<'src> {
         fn from(line: &'src str) -> Self {
-            fn maybe(s: &str) -> Option<&str> {
+            const fn maybe(s: &str) -> Option<&str> {
                 if s.is_empty() {
                     None
                 } else {
@@ -774,7 +785,7 @@ mod tests {
             .lines()
             .skip(1) // the header
             .filter(|line| !line.is_empty())
-            .map(|line| TestCase::from(line));
+            .map(TestCase::from);
         valid_inputs
             .chain(invalid_inputs)
             .zip(expected_outputs)

@@ -33,10 +33,12 @@ use crate::err::Kind::{
 };
 type Error = crate::err::Error<u16>;
 
+/// max length of an encoded string = 1024
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) struct EncodedSpan<'src>(LongLength<'src>);
 impl_span_methods_on_tuple!(EncodedSpan, u16, NonZeroU16);
 impl<'src> EncodedSpan<'src> {
+    #[allow(clippy::arithmetic_side_effects)]
     pub(crate) fn new(src: &'src str, compliance: Compliance) -> Result<(Self, Compliance), Error> {
         use Compliance::*;
         let mut len = 0;
@@ -56,10 +58,10 @@ impl<'src> EncodedSpan<'src> {
                 _ => Err(EncodedInvalidChar),
             }
             .map_err(|kind| Error::at(len, kind))?;
-            if len == MAX_LEN {
+            if len >= MAX_LEN {
                 return Error::at(len, EncodingTooLong).into();
             }
-            len += 1;
+            len += 1; // safe since len < MAX_LEN < u16::MAX
         }
 
         debug_assert!(len as usize == src.len(), "must have consume all src");
@@ -163,6 +165,7 @@ impl Lengthy<'_, u16, NonZeroU16> for Encoded<'_> {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
     use super::*;
 

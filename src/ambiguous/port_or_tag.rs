@@ -100,6 +100,7 @@ impl<'src> PortOrTagSpan<'src> {
     /// Parse a port or tag from the start of a string.
     /// Does NOT include the leading colon.
     /// Can match an empty span if the first character in src is a `/` or `@`
+    /// Max length = 128, enforced in [`State::advance`]
     pub(crate) fn new(src: &str, kind: Kind) -> Result<Self, Error> {
         let mut bytes = src.bytes();
 

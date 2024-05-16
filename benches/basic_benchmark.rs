@@ -4,8 +4,8 @@ fn parse_test_corpus(c: &mut Criterion) {
     const VALID: &str = include_str!("../tests/fixtures/references/valid/inputs.txt");
     const INVALID: &str = include_str!("../tests/fixtures/references/invalid/inputs.txt");
     let inputs: Vec<&str> = VALID
-        .split("\n")
-        .chain(INVALID.split("\n"))
+        .split('\n')
+        .chain(INVALID.split('\n'))
         .filter(|s| !s.is_empty())
         .collect();
     c.bench_function("entire_test_suite", |b| {

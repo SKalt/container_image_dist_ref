@@ -60,7 +60,7 @@ pub enum Kind {
     Ipv6,
 }
 
-/// can be ipv6
+/// can be ipv6. Max length = ???
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) struct HostSpan<'src>(Length<'src, NonZeroU8>, Kind);
 impl_span_methods_on_tuple!(HostSpan, u8, NonZeroU8);

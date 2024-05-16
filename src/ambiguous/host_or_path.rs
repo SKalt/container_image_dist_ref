@@ -133,7 +133,11 @@ impl Scan {
             Err(HostOrPathInvalidComponentEnd)
         } else {
             self.0 |= Self::HAS_UNDERSCORE;
-            self.set_underscore_count(self.underscore_count() + 1)
+            let x = self
+                .underscore_count()
+                .checked_add(1)
+                .ok_or(HostOrPathTooLong)?;
+            self.set_underscore_count(x)
         }
     }
 
@@ -211,7 +215,10 @@ impl State {
             && self.scan.underscore_count() == 0;
         match ok {
             true => Ok(()),
-            false => Err(Error::at(self.len - 1, HostOrPathInvalidComponentEnd)),
+            false => Err(Error::at(
+                self.len.saturating_sub(1),
+                HostOrPathInvalidComponentEnd,
+            )),
         }
     }
 }
@@ -325,14 +332,14 @@ impl<'src> HostOrPathSpan<'src> {
 }
 
 #[cfg(test)]
+#[allow(clippy::cast_possible_truncation, clippy::arithmetic_side_effects)]
 mod tests {
     use super::*;
     use crate::span::Lengthy;
     fn should_parse(src: &str) -> super::HostOrPathSpan<'_> {
         HostOrPathSpan::new(src, Kind::Any)
             .map_err(|e| {
-                assert!(
-                    false,
+                panic!(
                     "failed to parse {:?}: {:?} @ {} ({:?})",
                     src,
                     e.kind(),
@@ -365,8 +372,7 @@ mod tests {
     fn should_fail_with(src: &str, err_kind: err::Kind, bad_char_index: u8) {
         let err = super::HostOrPathSpan::new(src, Kind::Any)
             .map(|e| {
-                assert!(
-                    false,
+                panic!(
                     "should have failed to parse {:?}: {:?} @ {}",
                     src,
                     e.kind(),
@@ -392,8 +398,8 @@ mod tests {
         should_parse_as("123.456.789.101", "123.456.789.101", HostOrPath);
         should_parse_as("0.0", "0.0", HostOrPath);
         should_parse_as("1.2.3.4.5", "1.2.3.4.5", HostOrPath);
-        should_parse_as("sub_domain.ex.com", "sub_domain.ex.com", Path.into());
-        should_parse_as("Example.Com", "Example.Com", Host.into());
+        should_parse_as("sub_domain.ex.com", "sub_domain.ex.com", Path);
+        should_parse_as("Example.Com", "Example.Com", Host);
         should_parse_as("example.com:tag", "example.com", HostOrPath);
     }
     #[test]
@@ -405,6 +411,7 @@ mod tests {
         should_parse_incomplete("foo@algo:aaa", "@algo:aaa");
     }
     #[test]
+    #[allow(clippy::cast_possible_truncation)]
     fn test_invalid() {
         should_fail_with("$", InvalidChar, 0);
         should_fail_with(

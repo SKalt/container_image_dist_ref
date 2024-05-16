@@ -85,6 +85,7 @@ impl Compliance {
 
 // Note: DigestSpan doesn't own a leading '@'; that's only implied when DigestSpan
 // is part of a larger ReferenceSpan.
+/// Max length of a digest string is 255+1+1024 = 1280ch
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) struct DigestSpan<'src> {
     algorithm: AlgorithmSpan<'src>,
@@ -95,7 +96,7 @@ pub(crate) struct DigestSpan<'src> {
 impl<'src> DigestSpan<'src> {
     pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
         let (algorithm, compliance) = AlgorithmSpan::new(src)?;
-        let mut len = algorithm.short_len().widen();
+        let mut len = algorithm.short_len().widen(); // max 255
         let rest = &src[len.as_usize()..];
         len = match rest.bytes().next() {
             Some(b':') => len.checked_add(1).ok_or(err::Kind::AlgorithmTooLong),
@@ -104,7 +105,8 @@ impl<'src> DigestSpan<'src> {
         }
         .map_err(|kind| Error::at(len.into(), kind))?;
         let rest = &src[len.as_usize()..];
-        let (encoded, compliance) = EncodedSpan::new(rest, compliance).map_err(|e| e + len)?;
+        let (encoded, compliance) = EncodedSpan::new(rest, compliance)
+            .map_err(|e| Error::at(e.index().saturating_add(len.into()), e.kind()))?; // safe since len can be at most 256 and e.index() can be at most 1024
 
         {
             let rest = &src[len.as_usize()..];
@@ -123,12 +125,10 @@ impl<'src> DigestSpan<'src> {
 impl Lengthy<'_, u16, NonZeroU16> for DigestSpan<'_> {
     fn short_len(&self) -> NonZeroU16 {
         self.algorithm
-            .short_len()
+            .short_len()// max 255
             .widen()
-            .checked_add(1)
-            .unwrap()
-            .checked_add(self.encoded.short_len().upcast())
-            .unwrap()
+            .saturating_add(1)
+            .saturating_add(self.encoded.short_len().upcast()) // max 1024+255 = 1279
     }
     #[inline]
     fn len(&self) -> usize {

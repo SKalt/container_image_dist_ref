@@ -58,9 +58,12 @@ impl Lengthy<'_, u16, NonZeroU16> for DomainSpan<'_> {
     fn short_len(&self) -> NonZeroU16 {
         let mut len = self.host.short_len().widen(); // since host can be up to 255 chars, pad to avoid overflow
         len = len
-            .checked_add(self
-                .port.map(|p| p.short_len().upcast() + 1) // +1 for the leading ':'
-                .unwrap_or(0) as u16)
+            .checked_add(
+                self
+                .port.map(|p: PortSpan| p.short_len().upcast().saturating_add(1).into()) // +1 for the leading ':'
+                    // safe since port is at most 128 chars
+                .unwrap_or(0u16),
+            )
             .unwrap();
         len
     }
@@ -86,14 +89,14 @@ impl<'src> DomainSpan<'src> {
     /// string if it reaches a valid stopping point, i.e. `/` or `@`
     pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
         let host = HostSpan::new(src)?;
+        let len: u16 = host.short_len().widen().into(); // max 255 chars
         let port = match &src[host.len()..].bytes().next() {
             Some(b':') => PortSpan::new(&src[host.len() + 1..])
                 .map(Some)
-                .map_err(|e| e.into()),
+                .map_err(|e| Error::at(len.saturating_add(e.index().into()), e.kind())),
             Some(b'/' | b'@') | None => Ok(None),
-            _ => Error::at(0, err::Kind::HostInvalidChar).into(),
-        }
-        .map_err(|e: Error| e + host.short_len().widen())?;
+            _ => Error::at(len, err::Kind::HostInvalidChar).into(),
+        }?; // FIXME: checked add
         Self::from_parts(host, port)
     }
 

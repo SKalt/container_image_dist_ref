@@ -58,6 +58,8 @@ macro_rules! nonzero {
 
 pub(crate) use nonzero;
 
+// pub(crate) const fn safe_add
+
 /// To avoid lugging around an entire &str (which costs 2 pointer-sizes), we can
 /// use a span to represent a length of string with a lifetime tied to the original
 /// string slice.

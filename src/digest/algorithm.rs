@@ -30,6 +30,7 @@ use crate::{
     err,
     span::{impl_span_methods_on_tuple, nonzero, Lengthy, OptionallyZero, ShortLength},
 };
+/// max length of an algorithm string = 255
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) struct AlgorithmSpan<'src>(ShortLength<'src>);
 impl_span_methods_on_tuple!(AlgorithmSpan, u8, NonZeroU8);

@@ -34,20 +34,24 @@ impl_span_methods_on_tuple!(Ipv6Span, u8, NonZeroU8);
 
 struct State(u8);
 impl State {
-    const CURRENT_GROUP: u8 = 0b0111; //     0b00000111 = 0-7 = 8 0-indexed groups
-    const POSITION_IN_GROUP: u8 = 3 << 3; // 0b00011000 = 0-3 = 4 0-indexed positions
-    const COLON_COUNT: u8 = 0b0011 << 5; //  0b01100000 = 0-3 = 3 1-indexed colons
-    const DOUBLE_COLON: u8 = 1 << 7; //      0b10000000 = 0-1 = bool
+    /// 0b00000111 possible values ina 0-7: 8 0-indexed groups
+    const CURRENT_GROUP: u8 = 0b0111;
+    /// 0b00011000 possible values ina 0-3: 4 0-indexed positions
+    const POSITION_IN_GROUP: u8 = 3 << 3;
+    /// 0b01100000 possible values in 0-3: 3 1-indexed colons
+    const COLON_COUNT: u8 = 0b0011 << 5;
+    /// 0b10000000 possible values in 0-1: bool
+    const DOUBLE_COLON: u8 = 1 << 7;
 
     // setters -------------------------------------------------------------
     fn increment_position_in_group(&mut self) -> Result<(), err::Kind> {
+        self.set_colon_count(0)?;
         let pos = if self.last_was_colon() {
-            self.position_in_group() + 1
+            self.position_in_group().saturating_add(1)
         } else {
             0
         };
-        self.set_colon_count(0)?;
-        self.set_position_in_group(pos)
+        self.set_position_in_group(pos) // checks for overflow of max possible position
     }
     fn set_colon_count(&mut self, count: u8) -> Result<(), err::Kind> {
         match count {
@@ -67,7 +71,7 @@ impl State {
         Ok(())
     }
     fn increment_colon_count(&mut self) -> Result<(), err::Kind> {
-        self.set_colon_count(self.colon_count() + 1)
+        self.set_colon_count(self.colon_count().saturating_add(1))
     }
     fn set_position_in_group(&mut self, pos: u8) -> Result<(), err::Kind> {
         match pos {
@@ -90,7 +94,7 @@ impl State {
         }
     }
     fn increment_group(&mut self) -> Result<(), err::Kind> {
-        self.set_group(self.current_group() + 1)
+        self.set_group(self.current_group().saturating_add(1))
     }
     fn set_colon(&mut self) -> Result<(), err::Kind> {
         self.increment_colon_count()?;
@@ -122,6 +126,7 @@ impl State {
     const fn position_in_group(&self) -> u8 {
         (self.0 & Self::POSITION_IN_GROUP) >> 3
     }
+    // max value: 3
     const fn colon_count(&self) -> u8 {
         (self.0 & Self::COLON_COUNT) >> 5_u8
     }
@@ -187,8 +192,7 @@ mod test {
                 "\n\tparsed: {:?}\n\tip    : {ip:?}",
                 span.span_of(ip),
             ),
-            Err(e) => assert!(
-                false,
+            Err(e) => panic!(
                 "failed to parse\n{ip}\n{}^\n{:?} @ {}",
                 &ip[0..e.index() as usize + 1],
                 e.kind(),
@@ -197,13 +201,8 @@ mod test {
         }
     }
     fn should_fail(ip: &str) {
-        match super::Ipv6Span::new(ip) {
-            Ok(span) => assert!(
-                false,
-                "should have failed to parse\n{ip}\n{}",
-                span.span_of(ip),
-            ),
-            Err(_) => {}
+        if let Ok(span) = super::Ipv6Span::new(ip) {
+            panic!("should have failed to parse\n{ip}\n{}", span.span_of(ip),)
         }
     }
 
@@ -214,7 +213,7 @@ mod test {
     #[test]
     fn test_parsing_valid_ips() {
         for ip in include_str!("./valid_ipv6.tsv")
-            .split("\n")
+            .split('\n')
             .filter(|s| !s.is_empty())
         {
             should_work(ip)

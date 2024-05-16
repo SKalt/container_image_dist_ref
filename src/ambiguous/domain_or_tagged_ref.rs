@@ -44,7 +44,8 @@ use HostOrPathKind::{Any, Host, HostOrPath, IpV6, Path};
 use PortOrTagKind::Port;
 
 pub(crate) type Error = err::Error<u16>;
-/// represents a colon-delimited string of the form "left:right"
+/// represents a colon-delimited string of the form `left:right`, with a max possible length
+/// of 255+1+128 = 384
 pub(crate) enum DomainOrRefSpan<'src> {
     /// A span that must be a domain since either:
     /// - it's started by an IPv6 address
@@ -80,40 +81,52 @@ impl Lengthy<'_, u16, NonZeroU16> for DomainOrRefSpan<'_> {
 }
 
 #[inline]
-fn map_err(e: err::Error<u8>) -> err::Error<u16> {
+fn to_large_err(e: err::Error<u8>) -> err::Error<u16> {
     e.into()
 }
 
 impl<'src> DomainOrRefSpan<'src> {
     pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
         let left = HostOrPathSpan::new(src, HostOrPathKind::Any)?;
-        let mut len = left.short_len().widen().upcast();
-        let right_src = &src[len as usize..];
+        let right_src = &src[left.len()..]; // TODO: consolidate with rest
+        let mut len = left.short_len().widen().upcast(); // current possible max: 255
         let right = match right_src.bytes().next() {
+            Some(b'/') | Some(b'@') | None => None,
             Some(b':') => {
-                len += 1; // +1 for the leading ':'
-                PortOrTagSpan::new(&right_src[1..], Port)
-                    .map_err(map_err)
-                    .map(Some)
+                len = len.saturating_add(1); // +1 for the ':'
+                let right = PortOrTagSpan::new(&right_src[1..], Port).map_err(|e| {
+                    Error::at(
+                        len.saturating_add(e.index() as u16), // ok since len <= 256, so len + u8::MAX < u16::MAX
+                        e.kind(),
+                    )
+                })?;
+                Some(right)
             }
-            Some(b'/') | Some(b'@') | None => Ok(None),
-            Some(_) => Error::at(0, err::Kind::PortOrTagInvalidChar).into(),
-        }
-        .map_err(|e| e + len)?; // FIXME: safe since len is at most 255 and e is at most 255
+            Some(_) => {
+                return Err(Error::at(
+                    left.short_len().widen().into(),
+                    err::Kind::PortOrTagInvalidChar,
+                ))
+            }
+        };
 
-        len += right.map(|r| r.short_len().widen().upcast()).unwrap_or(0);
+        len = len.saturating_add(right.map(|r| r.short_len().widen().upcast()).unwrap_or(0));
         let rest = &src[len as usize..];
         match rest.bytes().next() {
             Some(b'@') | None => {
                 // since the next section must be a digest, the right side must be a tag
-                let path = PathSpan::try_from(left).map_err(map_err)?;
+                let path = PathSpan::try_from(left).map_err(to_large_err)?;
                 let tag = if let Some(tag) = right {
-                    Some(
-                        tag.try_into()
-                            .map_err(map_err)
-                            .map_err(|e| e + path.short_len().upcast())
-                            .map_err(|e| e + 1u16)?, // the only error is TagTooLong, which gets thrown if there's a tag. Thus, add +1 for the leading ':'
-                    )
+                    Some(tag.try_into().map_err(|e: err::Error<u8>| {
+                        Error::at(
+                            path.short_len()
+                                        .widen()
+                                        .upcast()
+                                        .saturating_add(1u16) // for the leading ':'
+                                        .saturating_add(e.index() as u16),
+                            e.kind(),
+                        )
+                    })?)
                     // addition is safe since path can be at most 255ch and tag can be at most 128ch
                 } else {
                     None
@@ -129,15 +142,21 @@ impl<'src> DomainOrRefSpan<'src> {
                     match left.kind() {
                         Path => {
                             // need to extend the path
-                            let path = PathSpan::try_from(left)?.extend(rest).map_err(map_err)?;
+                            let path = PathSpan::try_from(left)?
+                                .extend(rest)
+                                .map_err(to_large_err)?;
 
                             let tag = if let Some(t) = right {
-                                Some(
-                                    t.try_into()
-                                    .map_err(map_err)
-                                    .map_err(|e| e + 1u8) // +1 for the leading ':'
-                                    .map_err(|e| e + path.short_len().upcast())?,
-                                )
+                                Some(t.try_into().map_err(|e: err::Error<u8>| {
+                                    Error::at(
+                                        path.short_len()
+                                        .widen()
+                                        .upcast()
+                                        .saturating_add(1u16) // for the leading ':'
+                                        .saturating_add(e.index() as u16),
+                                        e.kind(),
+                                    )
+                                })?)
                             } else {
                                 None
                             };

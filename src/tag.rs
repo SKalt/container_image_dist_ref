@@ -31,6 +31,7 @@ pub const MAX_LEN: NonZeroU8 = nonzero!(u8, 128_u8);
 // we can index all errors with a u8 since the longest possible tag is 128 characters
 type Error = err::Error<u8>;
 
+/// max length = 128ch
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) struct TagSpan<'src>(ShortLength<'src>);
 impl_span_methods_on_tuple!(TagSpan, u8, NonZeroU8);

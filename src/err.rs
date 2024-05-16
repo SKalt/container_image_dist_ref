@@ -130,6 +130,7 @@ where
     Int: Into<Size>,
 {
     type Output = Self;
+    #[allow(clippy::arithmetic_side_effects)] // FIXME: check for overflow
     fn add(self, rhs: Int) -> Self {
         Self(self.0 + rhs.into(), self.1)
     }

@@ -319,7 +319,7 @@ impl<'src> HostOrPathSpan<'src> {
         use Kind::*;
         let decider = self.2;
         match (self.kind(), target_kind) {
-            (_, Any) => unreachable!("calls to .narrow() must narrow, not broaden"),
+            (_, Any) => unreachable!(), // calls to .narrow() must narrow, not broaden
             (Path, HostOrPath) | (Host, HostOrPath) => Ok(self),
             (Any, _) | (HostOrPath, Path) | (HostOrPath, Host) => {
                 Ok(Self(self.0, target_kind, decider))
@@ -336,7 +336,8 @@ impl<'src> HostOrPathSpan<'src> {
 #[allow(
     clippy::cast_possible_truncation,
     clippy::arithmetic_side_effects,
-    clippy::unwrap_used
+    clippy::unwrap_used,
+    clippy::indexing_slicing
 )]
 mod tests {
     use super::*;

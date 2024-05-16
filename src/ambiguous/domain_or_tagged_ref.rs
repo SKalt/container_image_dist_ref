@@ -169,14 +169,13 @@ impl<'src> DomainOrRefSpan<'src> {
                     }
                 }
             }
-            _ => unreachable!(
-                "PortOrTagSpan::new() only terminates successfully at '/', '@', or EOF"
-            ),
+            _ => unreachable!(), //PortOrTagSpan::new() only terminates successfully at '/', '@', or EOF
         }
     }
 }
 
 #[cfg(test)]
+#[allow(clippy::indexing_slicing)]
 mod tests {
     use super::*;
     use crate::span::Lengthy;

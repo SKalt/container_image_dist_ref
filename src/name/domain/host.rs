@@ -82,8 +82,8 @@ impl<'src> TryFrom<HostOrPathSpan<'src>> for HostSpan<'src> {
         let kind = match ambiguous.kind() {
             HostKind::Host | HostKind::HostOrPath => Ok(Kind::Name),
             HostKind::IpV6 => Ok(Kind::Ipv6),
-            HostKind::Path => ambiguous.narrow(HostKind::Host).map(|_| unreachable!()),
-            HostKind::Any => unreachable!("HostKind::Any should have been disambiguated"),
+            HostKind::Path => ambiguous.narrow(HostKind::Host).map(|_| unreachable!()), // just to unwrap the error
+            HostKind::Any => unreachable!(), // HostKind::Any should have been disambiguated
         }?;
         Ok(Self(Length::from_nonzero(ambiguous.short_len()), kind))
     }

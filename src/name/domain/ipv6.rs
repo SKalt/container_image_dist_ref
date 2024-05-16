@@ -175,7 +175,7 @@ impl<'src> Ipv6Span<'src> {
                 }
             }
             7 => Ok(Self(ShortLength::from_nonzero(index))),
-            _ => unreachable!("group_count <= 7 enforced by checks on state.increment_group()"),
+            _ => unreachable!(), // group_count <= 7 enforced by checks on state.increment_group()
         }
     }
 }

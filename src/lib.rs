@@ -6,7 +6,6 @@
 #![warn(missing_docs)]
 #![warn(clippy::arithmetic_side_effects)]
 #![warn(clippy::index_refutable_slice)]
-// #![warn(clippy::indexing_slicing)]
 #![warn(clippy::doc_markdown)]
 #![warn(clippy::trivially_copy_pass_by_ref)] // TODO: consider inlining
 #![deny(clippy::cast_possible_truncation)]
@@ -29,7 +28,9 @@
 #![warn(clippy::try_err)]
 #![warn(clippy::todo)]
 #![warn(clippy::redundant_clone)]
-// #![warn(clippy::or_fun_call)] warns about ok_or(Error::at(...))
+// #![warn(clippy::unreachable)]      // used too often to enable
+// #![warn(clippy::indexing_slicing)] // used too often to enable
+// #![warn(clippy::or_fun_call)]      // warns about ok_or(Error::at(...))
 pub(crate) mod ambiguous;
 pub mod digest;
 pub mod err;
@@ -98,9 +99,8 @@ impl<'src> RefSpan<'src> {
             }),
             Some(b'@') | Some(b':') | None => match prefix {
                 DomainOrRefSpan::TaggedRef((name, _)) => Ok(name),
-                DomainOrRefSpan::Domain(_) => {
-                    unreachable!("if the left segment peeked an '@', it would parse as a TaggedRef")
-                }
+                DomainOrRefSpan::Domain(_) => unreachable!(),
+                // ^ if the left segment peeked an '@', it would parse as a TaggedRef
             },
             Some(_) => Error::at(index, err::Kind::PathInvalidChar).into(),
         }?; // TODO: check correctness

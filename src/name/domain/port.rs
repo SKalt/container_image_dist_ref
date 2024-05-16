@@ -8,13 +8,13 @@ use crate::{
 
 type Error = err::Error<u8>;
 
-// pub(crate) use crate::ambiguous::port_or_tag::Error;
 /// a span representing a port number **WITH** the leading colon. Can be empty.
+/// Max length = 128ch, enforced in [`PortOrTagSpan::new`]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) struct PortSpan<'src>(ShortLength<'src>);
 impl_span_methods_on_tuple!(PortSpan, u8, NonZeroU8);
 
-fn disambiguate_err(e: Error) -> Error {
+const fn disambiguate_err(e: Error) -> Error {
     let kind = match e.kind() {
         err::Kind::PortOrTagInvalidChar => err::Kind::PortInvalidChar,
         _ => e.kind(),

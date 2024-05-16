@@ -34,7 +34,7 @@ use crate::{
             HostOrPathInvalidChar as InvalidChar, HostOrPathInvalidComponentEnd, HostOrPathTooLong,
         },
     },
-    span::{impl_span_methods_on_tuple, Lengthy, ShortLength},
+    span::{impl_span_methods_on_tuple, Length, Lengthy, ShortLength},
 };
 
 type Error = err::Error<u8>;
@@ -133,7 +133,11 @@ impl Scan {
             Err(HostOrPathInvalidComponentEnd)
         } else {
             self.0 |= Self::HAS_UNDERSCORE;
-            self.set_underscore_count(self.underscore_count() + 1)
+            let x = self
+                .underscore_count()
+                .checked_add(1)
+                .ok_or(HostOrPathTooLong)?;
+            self.set_underscore_count(x)
         }
     }
 
@@ -153,24 +157,25 @@ impl Scan {
         self.0 &= !Self::LAST_WAS_DASH;
     }
 
+    #[allow(clippy::unwrap_used)]
     fn reset_underscore_count(&mut self) {
         self.set_underscore_count(0).unwrap()
     }
 
     // getters -----------------------------------------------------------------
-    fn has_upper(&self) -> bool {
+    const fn has_upper(&self) -> bool {
         self.0 & Self::HAS_UPPERCASE == Self::HAS_UPPERCASE
     }
-    fn last_was_dot(&self) -> bool {
+    const fn last_was_dot(&self) -> bool {
         self.0 & Self::LAST_WAS_DOT == Self::LAST_WAS_DOT
     }
-    fn last_was_dash(&self) -> bool {
+    const fn last_was_dash(&self) -> bool {
         self.0 & Self::LAST_WAS_DASH == Self::LAST_WAS_DASH
     }
-    fn underscore_count(&self) -> u8 {
+    const fn underscore_count(&self) -> u8 {
         self.0 & Self::UNDERSCORE_COUNT
     }
-    fn has_underscore(&self) -> bool {
+    const fn has_underscore(&self) -> bool {
         self.0 & Self::HAS_UNDERSCORE == Self::HAS_UNDERSCORE
     }
 }
@@ -205,13 +210,16 @@ impl State {
         }
         .map_err(|err_kind| Error::at(self.len, err_kind))
     }
-    fn check_component_end(&self) -> Result<(), Error> {
+    const fn check_component_end(&self) -> Result<(), Error> {
         let ok = !self.scan.last_was_dash()
             && !self.scan.last_was_dot()
             && self.scan.underscore_count() == 0;
         match ok {
             true => Ok(()),
-            false => Err(Error::at(self.len - 1, HostOrPathInvalidComponentEnd)),
+            false => Err(Error::at(
+                self.len.saturating_sub(1),
+                HostOrPathInvalidComponentEnd,
+            )),
         }
     }
 }
@@ -247,7 +255,8 @@ pub(crate) struct HostOrPathSpan<'src>(ShortLength<'src>, Kind, u8);
 impl_span_methods_on_tuple!(HostOrPathSpan, u8, NonZeroU8);
 
 impl<'src> HostOrPathSpan<'src> {
-    pub(crate) fn kind(&self) -> Kind {
+    #[inline]
+    pub(crate) const fn kind(self) -> Kind {
         self.1
     }
 
@@ -269,7 +278,7 @@ impl<'src> HostOrPathSpan<'src> {
                     return match kind {
                         Kind::IpV6 | Kind::Any => {
                             let span = ipv6::Ipv6Span::new(src)?;
-                            Ok(Self(span.into_length().unwrap(), Kind::IpV6, 0))
+                            Ok(Self(Length::from_nonzero(span.short_len()), Kind::IpV6, 0))
                         }
                         _ => Err(Error::at(0, InvalidChar)),
                     }
@@ -310,7 +319,7 @@ impl<'src> HostOrPathSpan<'src> {
         use Kind::*;
         let decider = self.2;
         match (self.kind(), target_kind) {
-            (_, Any) => unreachable!("calls to .narrow() must narrow, not broaden"),
+            (_, Any) => unreachable!(), // calls to .narrow() must narrow, not broaden
             (Path, HostOrPath) | (Host, HostOrPath) => Ok(self),
             (Any, _) | (HostOrPath, Path) | (HostOrPath, Host) => {
                 Ok(Self(self.0, target_kind, decider))
@@ -324,14 +333,19 @@ impl<'src> HostOrPathSpan<'src> {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::arithmetic_side_effects,
+    clippy::unwrap_used,
+    clippy::indexing_slicing
+)]
 mod tests {
     use super::*;
     use crate::span::Lengthy;
     fn should_parse(src: &str) -> super::HostOrPathSpan<'_> {
         HostOrPathSpan::new(src, Kind::Any)
             .map_err(|e| {
-                assert!(
-                    false,
+                panic!(
                     "failed to parse {:?}: {:?} @ {} ({:?})",
                     src,
                     e.kind(),
@@ -364,8 +378,7 @@ mod tests {
     fn should_fail_with(src: &str, err_kind: err::Kind, bad_char_index: u8) {
         let err = super::HostOrPathSpan::new(src, Kind::Any)
             .map(|e| {
-                assert!(
-                    false,
+                panic!(
                     "should have failed to parse {:?}: {:?} @ {}",
                     src,
                     e.kind(),
@@ -391,8 +404,8 @@ mod tests {
         should_parse_as("123.456.789.101", "123.456.789.101", HostOrPath);
         should_parse_as("0.0", "0.0", HostOrPath);
         should_parse_as("1.2.3.4.5", "1.2.3.4.5", HostOrPath);
-        should_parse_as("sub_domain.ex.com", "sub_domain.ex.com", Path.into());
-        should_parse_as("Example.Com", "Example.Com", Host.into());
+        should_parse_as("sub_domain.ex.com", "sub_domain.ex.com", Path);
+        should_parse_as("Example.Com", "Example.Com", Host);
         should_parse_as("example.com:tag", "example.com", HostOrPath);
     }
     #[test]
@@ -404,6 +417,7 @@ mod tests {
         should_parse_incomplete("foo@algo:aaa", "@algo:aaa");
     }
     #[test]
+    #[allow(clippy::cast_possible_truncation)]
     fn test_invalid() {
         should_fail_with("$", InvalidChar, 0);
         should_fail_with(

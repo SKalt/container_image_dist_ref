@@ -36,7 +36,7 @@ use crate::{
 
 type Error = err::Error<u8>;
 
-fn disambiguate_err(e: Error) -> Error {
+const fn disambiguate_err(e: Error) -> Error {
     let kind = match e.kind() {
         err::Kind::HostOrPathInvalidChar => err::Kind::HostInvalidChar,
         err::Kind::HostOrPathTooLong => err::Kind::HostTooLong,
@@ -60,7 +60,7 @@ pub enum Kind {
     Ipv6,
 }
 
-/// can be ipv6
+/// can be ipv6. Max length = ???
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) struct HostSpan<'src>(Length<'src, NonZeroU8>, Kind);
 impl_span_methods_on_tuple!(HostSpan, u8, NonZeroU8);
@@ -82,8 +82,8 @@ impl<'src> TryFrom<HostOrPathSpan<'src>> for HostSpan<'src> {
         let kind = match ambiguous.kind() {
             HostKind::Host | HostKind::HostOrPath => Ok(Kind::Name),
             HostKind::IpV6 => Ok(Kind::Ipv6),
-            HostKind::Path => ambiguous.narrow(HostKind::Host).map(|_| unreachable!()),
-            HostKind::Any => unreachable!("HostKind::Any should have been disambiguated"),
+            HostKind::Path => ambiguous.narrow(HostKind::Host).map(|_| unreachable!()), // just to unwrap the error
+            HostKind::Any => unreachable!(), // HostKind::Any should have been disambiguated
         }?;
         Ok(Self(Length::from_nonzero(ambiguous.short_len()), kind))
     }
@@ -112,19 +112,20 @@ pub struct Host<'src>(Kind, &'src str);
 #[allow(clippy::len_without_is_empty)]
 impl<'src> Host<'src> {
     #[allow(missing_docs)]
-    pub fn to_str(&self) -> &'src str {
+    pub const fn to_str(&self) -> &'src str {
         self.1
     }
     /// ipb6 or domain
-    pub fn kind(&self) -> Kind {
+    pub const fn kind(&self) -> Kind {
         self.0
     }
     #[allow(missing_docs)]
     #[inline]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.to_str().len()
     }
     #[inline]
+    #[allow(clippy::unwrap_used)]
     fn short_len(&self) -> NonZeroU8 {
         // unwrapping self.len() is safe since the length of a Host is always <= U::MAX
         let len: u8 = self.len().try_into().unwrap();
@@ -136,7 +137,7 @@ impl<'src> Host<'src> {
         Self(kind, span.span_of(src))
     }
     /// Parse a valid host from the start of the string. Parsing may not consume the entire string
-    /// if it reaches a valid stopping point, i.e. `:`, ` `/`, or `@`.
+    /// if it reaches a valid stopping point, i.e. `:`, `/`, or `@`.
     pub fn new(src: &'src str) -> Result<Self, Error> {
         let span = HostSpan::new(src)?;
         Ok(Self::from_span(src, span))

@@ -26,11 +26,12 @@ use crate::{
     span::{impl_span_methods_on_tuple, nonzero, Lengthy, OptionallyZero, ShortLength},
 };
 /// The maximum length of a tag, as defined in [`distribution/reference`'s formal grammar](https://github.com/distribution/reference/blob/v0.5.0/reference.go#L18)
-pub const MAX_LEN: NonZeroU8 = nonzero!(u8, 128);
+pub const MAX_LEN: NonZeroU8 = nonzero!(u8, 128_u8);
 
 // we can index all errors with a u8 since the longest possible tag is 128 characters
 type Error = err::Error<u8>;
 
+/// max length = 128ch
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) struct TagSpan<'src>(ShortLength<'src>);
 impl_span_methods_on_tuple!(TagSpan, u8, NonZeroU8);
@@ -76,7 +77,7 @@ impl<'src> Tag<'src> {
     }
     #[allow(missing_docs)]
     #[inline]
-    pub fn to_str(&self) -> &'src str {
+    pub const fn to_str(&self) -> &'src str {
         self.0
     }
 }

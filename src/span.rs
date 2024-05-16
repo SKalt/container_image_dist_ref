@@ -44,7 +44,7 @@ impl OptionallyZero for NonZeroU16 {
 macro_rules! nonzero {
     (u8, $n:expr) => {
         unsafe {
-            debug_assert!($n != 0);
+            debug_assert!($n != 0u8);
             NonZeroU8::new_unchecked($n)
         }
     };
@@ -57,6 +57,8 @@ macro_rules! nonzero {
 }
 
 pub(crate) use nonzero;
+
+// pub(crate) const fn safe_add
 
 /// To avoid lugging around an entire &str (which costs 2 pointer-sizes), we can
 /// use a span to represent a length of string with a lifetime tied to the original
@@ -72,7 +74,7 @@ impl<'src, NonZero, Original> Length<'src, NonZero>
 where
     NonZero: OptionallyZero<Possible = Original> + Clone + Copy,
 {
-    /// new() is needed to create a span with PhantomData tied to a specific lifetime.
+    /// new() is needed to create a span with `PhantomData` tied to a specific lifetime.
     /// Returns None iff the input length is zero.
     pub(crate) fn new(len: Original) -> Option<Self> {
         NonZero::new(len).map(|len| Self::from_nonzero(len))

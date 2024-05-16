@@ -27,12 +27,11 @@ pub(crate) struct NameSpan<'src> {
 impl Lengthy<'_, u16, NonZeroU16> for NameSpan<'_> {
     #[inline]
     fn short_len(&self) -> NonZeroU16 {
-        let len = self.path.short_len().widen().upcast();
-        let len = if let Some(domain) = self.domain {
-            len + domain.short_len().widen().upcast() + 1 // +1 for the '/' separator
-        } else {
-            len
-        };
+        let len = self.path.short_len().widen().upcast().saturating_add(
+            self.domain
+                .map(|d| d.short_len().upcast().saturating_add(1)) // +1 for the leading '/'
+                .unwrap_or(0),
+        );
         nonzero!(u16, len)
     }
 }

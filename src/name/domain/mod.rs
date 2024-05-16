@@ -56,13 +56,13 @@ pub(crate) struct DomainSpan<'src> {
 impl Lengthy<'_, u16, NonZeroU16> for DomainSpan<'_> {
     #[inline]
     fn short_len(&self) -> NonZeroU16 {
-        let mut len = self.host.short_len().widen(); // since host can be up to 255 chars, pad to avoid overflow
-        len = len
-            .checked_add(self
-                .port.map(|p| p.short_len().upcast() + 1) // +1 for the leading ':'
-                .unwrap_or(0) as u16)
-            .unwrap();
-        len
+        self.host.short_len().widen()// since host can be up to 255 chars, pad to avoid overflow
+            .saturating_add(
+                self.port
+                    .map(|p: PortSpan| p.short_len().upcast().saturating_add(1).into()) // +1 for the leading ':'
+                    // safe since port is at most 128 chars
+                    .unwrap_or(0u16),
+        )
     }
     #[inline]
     fn len(&self) -> usize {
@@ -72,7 +72,7 @@ impl Lengthy<'_, u16, NonZeroU16> for DomainSpan<'_> {
 
 /// constructor methods
 impl<'src> DomainSpan<'src> {
-    /// check that a given HostSpan and PortSpan can be combined into a DomainSpan
+    /// check that a given `HostSpan` and `PortSpan` can be combined into a `DomainSpan`
     /// without overflowing the 255 char limit
     fn from_parts(host: HostSpan<'src>, port: Option<PortSpan<'src>>) -> Result<Self, Error> {
         if let Some(port) = port {
@@ -86,14 +86,14 @@ impl<'src> DomainSpan<'src> {
     /// string if it reaches a valid stopping point, i.e. `/` or `@`
     pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
         let host = HostSpan::new(src)?;
+        let len: u16 = host.short_len().widen().into(); // max 255 chars
         let port = match &src[host.len()..].bytes().next() {
             Some(b':') => PortSpan::new(&src[host.len() + 1..])
                 .map(Some)
-                .map_err(|e| e.into()),
+                .map_err(|e| Error::at(len.saturating_add(e.index().into()), e.kind())),
             Some(b'/' | b'@') | None => Ok(None),
-            _ => Error::at(0, err::Kind::HostInvalidChar).into(),
-        }
-        .map_err(|e: Error| e + host.short_len().widen())?;
+            _ => Error::at(len, err::Kind::HostInvalidChar).into(),
+        }?; // FIXME: checked add
         Self::from_parts(host, port)
     }
 
@@ -129,11 +129,11 @@ pub struct Domain<'src> {
 #[allow(clippy::len_without_is_empty)]
 impl<'src> Domain<'src> {
     #[allow(missing_docs)]
-    pub fn to_str(&self) -> &'src str {
+    pub const fn to_str(&self) -> &'src str {
         self.src
     }
     #[allow(missing_docs)]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.src.len()
     }
     #[inline]
@@ -171,6 +171,7 @@ impl<'src> Domain<'src> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     #[test]

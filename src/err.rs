@@ -109,12 +109,12 @@ where
 {
     /// The byte index within the source string where the error occurred.
     #[inline]
-    pub fn index(&self) -> Size {
+    pub const fn index(&self) -> Size {
         self.0
     }
     /// the kind of error
     #[inline]
-    pub fn kind(&self) -> Kind {
+    pub const fn kind(&self) -> Kind {
         self.1
     }
 
@@ -130,6 +130,7 @@ where
     Int: Into<Size>,
 {
     type Output = Self;
+    #[allow(clippy::arithmetic_side_effects)] // FIXME: check for overflow
     fn add(self, rhs: Int) -> Self {
         Self(self.0 + rhs.into(), self.1)
     }

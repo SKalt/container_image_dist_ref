@@ -73,7 +73,7 @@ impl Default for Compliance {
 
 impl Compliance {
     /// Checks whether a given compliance level is compliant with a given standard.
-    pub fn compliant_with(self, standard: Standard) -> bool {
+    pub const fn compliant_with(self, standard: Standard) -> bool {
         matches!(
             (self, standard),
             (Compliance::Universal, _)
@@ -85,6 +85,7 @@ impl Compliance {
 
 // Note: DigestSpan doesn't own a leading '@'; that's only implied when DigestSpan
 // is part of a larger ReferenceSpan.
+/// Max length of a digest string is 255+1+1024 = 1280ch
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) struct DigestSpan<'src> {
     algorithm: AlgorithmSpan<'src>,
@@ -95,7 +96,7 @@ pub(crate) struct DigestSpan<'src> {
 impl<'src> DigestSpan<'src> {
     pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
         let (algorithm, compliance) = AlgorithmSpan::new(src)?;
-        let mut len = algorithm.short_len().widen();
+        let mut len = algorithm.short_len().widen(); // max 255
         let rest = &src[len.as_usize()..];
         len = match rest.bytes().next() {
             Some(b':') => len.checked_add(1).ok_or(err::Kind::AlgorithmTooLong),
@@ -104,7 +105,8 @@ impl<'src> DigestSpan<'src> {
         }
         .map_err(|kind| Error::at(len.into(), kind))?;
         let rest = &src[len.as_usize()..];
-        let (encoded, compliance) = EncodedSpan::new(rest, compliance).map_err(|e| e + len)?;
+        let (encoded, compliance) = EncodedSpan::new(rest, compliance)
+            .map_err(|e| Error::at(e.index().saturating_add(len.into()), e.kind()))?; // safe since len can be at most 256 and e.index() can be at most 1024
 
         {
             let rest = &src[len.as_usize()..];
@@ -123,12 +125,10 @@ impl<'src> DigestSpan<'src> {
 impl Lengthy<'_, u16, NonZeroU16> for DigestSpan<'_> {
     fn short_len(&self) -> NonZeroU16 {
         self.algorithm
-            .short_len()
+            .short_len()// max 255
             .widen()
-            .checked_add(1)
-            .unwrap()
-            .checked_add(self.encoded.short_len().upcast())
-            .unwrap()
+            .saturating_add(1)
+            .saturating_add(self.encoded.short_len().upcast()) // max 1024+255 = 1279
     }
     #[inline]
     fn len(&self) -> usize {
@@ -151,12 +151,12 @@ impl<'src> Digest<'src> {
         Ok(Self::from_span(&src[0..span.len()], span))
     }
     #[inline]
-    pub(crate) fn from_span(src: &'src str, span: DigestSpan<'src>) -> Self {
+    pub(crate) const fn from_span(src: &'src str, span: DigestSpan<'src>) -> Self {
         Self { src, span }
     }
     /// The original digest string, not including any leading '@'.
     #[inline]
-    pub fn to_str(self) -> &'src str {
+    pub const fn to_str(self) -> &'src str {
         self.src
     }
     /// The algorithm component of the digest string.
@@ -172,7 +172,7 @@ impl<'src> Digest<'src> {
     }
     /// Whether this digest is compliant with the OCI image spec, distribution/reference, or both.
     #[inline]
-    pub fn compliance(&self) -> Compliance {
+    pub const fn compliance(&self) -> Compliance {
         self.span.compliance
     }
 }

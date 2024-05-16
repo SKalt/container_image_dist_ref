@@ -1,8 +1,8 @@
 use container_image_dist_ref::CanonicalImgRef;
 fn escape(s: &str) -> String {
-    s.replace("\t", "\\t")
-        .replace("\n", "\\n")
-        .replace("\r", "\\r")
+    s.replace('\t', "\\t")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
 }
 fn main() {
     // read stdin to completion
@@ -12,7 +12,7 @@ fn main() {
     let result = CanonicalImgRef::new(input);
     match result {
         Ok(ref_str) => {
-            let input = escape(&input);
+            let input = escape(input);
             let name = escape(ref_str.name().to_str());
             let domain = escape(ref_str.domain().to_str());
             let path = escape(ref_str.path().to_str());
@@ -26,7 +26,7 @@ fn main() {
             std::process::exit(0);
         }
         Err(e) => {
-            let input = escape(&input);
+            let input = escape(input);
             let name = "";
             let domain = "";
             let path = "";

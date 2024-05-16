@@ -30,6 +30,7 @@ use crate::{
     err,
     span::{impl_span_methods_on_tuple, nonzero, Lengthy, OptionallyZero, ShortLength},
 };
+/// max length of an algorithm string = 255
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) struct AlgorithmSpan<'src>(ShortLength<'src>);
 impl_span_methods_on_tuple!(AlgorithmSpan, u8, NonZeroU8);
@@ -103,11 +104,11 @@ pub struct Algorithm<'src>(&'src str);
 impl<'src> Algorithm<'src> {
     #[allow(missing_docs)]
     #[inline]
-    pub fn to_str(&self) -> &'src str {
+    pub const fn to_str(&self) -> &'src str {
         self.0
     }
     #[allow(missing_docs)]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.to_str().len()
     }
     /// Parse an algorithm from the start of the string. Parsing may not consume the entire string
@@ -131,17 +132,17 @@ impl<'src> Algorithm<'src> {
     /// Whether the algorithm is compliant with the OCI or distribution/reference specifications.
     pub fn compliance(&self) -> Compliance {
         let mut bytes = self.to_str().bytes();
-        match bytes.next().unwrap() {
-            b'a'..=b'z' => {}
-            b'0'..=b'9' => return Compliance::Oci,
-            b'A'..=b'Z' => return Compliance::Distribution,
-            _ => unreachable!("by construction, an Algorithm may contain only [a-zA-Z0-9]"),
+        match bytes.next() {
+            Some(b'a'..=b'z') => {}
+            Some(b'0'..=b'9') => return Compliance::Oci,
+            Some(b'A'..=b'Z') => return Compliance::Distribution,
+            _ => unreachable!(), // by construction, an Algorithm may contain only [a-zA-Z0-9]
         };
         for c in bytes {
             match c {
                 b'a'..=b'z' | b'0'..=b'9' => {}
                 b'A'..=b'Z' => return Compliance::Distribution,
-                _ => unreachable!("by construction, an Algorithm may contain only [a-zA-Z0-9]"),
+                _ => unreachable!(), // by construction, an Algorithm may contain only [a-zA-Z0-9]
             }
         }
         Compliance::Universal
@@ -149,7 +150,7 @@ impl<'src> Algorithm<'src> {
 }
 
 /// match a single separator character: matching the regular expression /[+._-]/
-fn is_separator(c: u8) -> bool {
+const fn is_separator(c: u8) -> bool {
     matches!(c, b'+' | b'.' | b'_' | b'-')
 }
 

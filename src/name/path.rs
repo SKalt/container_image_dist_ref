@@ -35,7 +35,7 @@ use crate::{
 type Error = err::Error<u8>;
 
 /// adapt ambiguous error kinds into path-specific error kinds
-fn map_error(e: Error) -> Error {
+const fn map_error(e: Error) -> Error {
     let kind = match e.kind() {
         err::Kind::HostOrPathMissing => err::Kind::PathMissing,
         err::Kind::HostOrPathInvalidChar => err::Kind::PathInvalidChar,
@@ -44,7 +44,7 @@ fn map_error(e: Error) -> Error {
     };
     Error::at(e.index(), kind)
 }
-
+/// max length = `u8::MAX` = 255
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) struct PathSpan<'src>(ShortLength<'src>);
 impl_span_methods_on_tuple!(PathSpan, u8, NonZeroU8);
@@ -83,7 +83,7 @@ impl<'src> PathSpan<'src> {
         }
         Ok(Length::new(index).map(Self))
     }
-    pub(crate) fn extend(&self, rest: &'src str) -> Result<Self, Error> {
+    pub(crate) fn extend(self, rest: &'src str) -> Result<Self, Error> {
         let extension = Self::parse_from_slash(rest).map_err(|e| {
             e.index()
                 .checked_add(self.short_len().into())
@@ -139,6 +139,7 @@ impl<'src> Path<'src> {
     }
 }
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     #[test]

@@ -22,7 +22,7 @@ use core::num::NonZeroU16;
 
 use super::{algorithm::Algorithm, Compliance};
 use crate::err;
-use crate::span::{impl_span_methods_on_tuple, Lengthy, LongLength};
+use crate::span::{impl_span_methods_on_tuple, nonzero, Lengthy, LongLength};
 /// an arbitrary maximum length for the encoded section of a digest.
 /// This a realistic limit; hex-encoded sha512 digests are 128 characters long.
 pub const MAX_LEN: u16 = 1024;
@@ -33,10 +33,12 @@ use crate::err::Kind::{
 };
 type Error = crate::err::Error<u16>;
 
+/// max length of an encoded string = 1024
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) struct EncodedSpan<'src>(LongLength<'src>);
 impl_span_methods_on_tuple!(EncodedSpan, u16, NonZeroU16);
 impl<'src> EncodedSpan<'src> {
+    #[allow(clippy::arithmetic_side_effects)]
     pub(crate) fn new(src: &'src str, compliance: Compliance) -> Result<(Self, Compliance), Error> {
         use Compliance::*;
         let mut len = 0;
@@ -56,10 +58,10 @@ impl<'src> EncodedSpan<'src> {
                 _ => Err(EncodedInvalidChar),
             }
             .map_err(|kind| Error::at(len, kind))?;
-            if len == MAX_LEN {
+            if len >= MAX_LEN {
                 return Error::at(len, EncodingTooLong).into();
             }
-            len += 1;
+            len += 1; // safe since len < MAX_LEN < u16::MAX
         }
 
         debug_assert!(len as usize == src.len(), "must have consume all src");
@@ -75,7 +77,7 @@ impl<'src> EncodedSpan<'src> {
 pub struct Encoded<'src>(&'src str);
 impl<'src> Encoded<'src> {
     #[allow(missing_docs)]
-    pub fn to_str(&self) -> &'src str {
+    pub const fn to_str(&self) -> &'src str {
         self.0
     }
     /// Parses a string into an encoded digest value. The string must be a valid
@@ -88,6 +90,7 @@ impl<'src> Encoded<'src> {
     pub(crate) fn from_span(src: &'src str, span: EncodedSpan<'src>) -> Self {
         Self(span.span_of(src))
     }
+    #[allow(clippy::unwrap_used)]
     /// validates whether every ascii character is a lowercase hex digit
     fn is_lower_hex(&self) -> Result<(), Error> {
         self.to_str().bytes().enumerate().try_for_each(|(i, c)| {
@@ -104,11 +107,12 @@ impl<'src> Encoded<'src> {
         match algorithm.to_str() {
             "sha256" | "sha512" => {
                 self.is_lower_hex()?;
+                #[allow(clippy::cast_possible_truncation)]
                 match (algorithm.to_str(), self.len()) {
                     ("sha256", 64) => Ok(()),
                     ("sha512", 128) => Ok(()),
                     (_, _) => Error::at(
-                        self.len().try_into().unwrap(),
+                        self.len() as u16, // safe since self.len() is at most 1024
                         OciRegisteredAlgorithmWrongDigestLength,
                     )
                     .into(),
@@ -156,12 +160,17 @@ impl Lengthy<'_, u16, NonZeroU16> for Encoded<'_> {
         self.0.len()
     }
     #[inline]
+    #[allow(clippy::unwrap_used)]
     fn short_len(&self) -> NonZeroU16 {
-        NonZeroU16::new(self.len().try_into().unwrap()).unwrap()
+        nonzero!(
+            u16,
+            core::convert::TryInto::<u16>::try_into(self.len()).unwrap()
+        )
     }
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
     use super::*;
 

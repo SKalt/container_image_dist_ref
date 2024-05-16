@@ -18,7 +18,7 @@ pub(crate) enum Kind {
     Tag,
 }
 impl Kind {
-    fn update(self, other: Self) -> Result<Self, ()> {
+    const fn update(self, other: Self) -> Result<Self, ()> {
         match (self, other) {
             (Kind::Port, Kind::Port) | (Kind::Tag, Kind::Tag) => Ok(self),
             (Kind::Port, Kind::Tag) => Ok(Kind::Tag), // all ports are valid tags
@@ -83,10 +83,10 @@ impl State {
 
 impl<'src> PortOrTagSpan<'src> {
     #[inline]
-    pub(crate) fn span(&self) -> ShortLength<'src> {
+    pub(crate) const fn span(self) -> ShortLength<'src> {
         self.length
     }
-    pub(crate) fn narrow(&self, kind: Kind) -> Result<PortOrTagSpan<'src>, Error> {
+    pub(crate) fn narrow(self, kind: Kind) -> Result<PortOrTagSpan<'src>, Error> {
         let kind = self
             .kind
             .update(kind)
@@ -100,6 +100,7 @@ impl<'src> PortOrTagSpan<'src> {
     /// Parse a port or tag from the start of a string.
     /// Does NOT include the leading colon.
     /// Can match an empty span if the first character in src is a `/` or `@`
+    /// Max length = 128, enforced in [`State::advance`]
     pub(crate) fn new(src: &str, kind: Kind) -> Result<Self, Error> {
         let mut bytes = src.bytes();
 

@@ -63,3 +63,10 @@ link-check:
 
 rust-docs:
 	cargo doc --open
+
+.PHONY: wasm
+wasm:
+	cd build/package/wasm_lib/
+	cargo build --target wasm32-unknown-unknown --release
+	cd -
+	./scripts/trim_wasm.sh ./target/wasm32-unknown-unknown/release/container_image_dist_ref__wasm_lib.wasm ./testdata/trimmed.wasm

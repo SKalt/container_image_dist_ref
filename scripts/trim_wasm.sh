@@ -28,6 +28,7 @@ _snip_cmd="$_snip_cmd \"$2.temp.wasm\""
 eval "$_snip_cmd"
 rm "$2.temp.wasm"
 
+wc -c "$1"
 wc -c "$2"
 twiggy garbage "$2"
 

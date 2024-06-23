@@ -1,5 +1,5 @@
 [package]
-name = "container_image_dist_ref__wasm_lib"
+name = "container_image_dist_ref_wasm_lib"
 description = "A library for parsing and validating container image references."
 version = "0.3.0"
 edition = "2021"
@@ -12,12 +12,16 @@ crate-type = ["cdylib"]
 
 [dependencies]
 container_image_dist_ref = { workspace = true }
+wee_alloc = "0.4.5"
 
 [profile.release] # 824k
 opt-level = "z"   # 824k
 lto = true        # 824k
 codegen-units = 1 # 824k
 panic = "abort"   # 824k
+# ^ https://doc.rust-lang.org/rustc/codegen-options/index.html#panic
+# ^ https://doc.rust-lang.org/cargo/reference/profiles.html#panic
+
 # split-debuginfo = "unpacked"
 # ^ see https://doc.rust-lang.org/rustc/codegen-options/index.html#split-debuginfo
 # ^ fails to remove .debug_info, .debug_str, etc from output .wasm

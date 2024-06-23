@@ -1,13 +1,14 @@
 #![no_std]
+use wee_alloc::WeeAlloc;
 
-use container_image_dist_ref;
+pub use container_image_dist_ref::*;
 
+// FIXME: link external panic handler with well-known name from wasm runtime
 #[cfg(target_family = "wasm")]
 #[panic_handler]
 fn handle_panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
-// FIXME: link external panic handler with well-known name from wasm runtime
 
 #[no_mangle]
 pub fn yeet(s: &str) -> u32 {

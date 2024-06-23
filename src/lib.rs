@@ -28,8 +28,8 @@
 #![warn(clippy::try_err)]
 #![warn(clippy::todo)]
 #![warn(clippy::redundant_clone)]
-// #![warn(clippy::unreachable)]      // used too often to enable
 // #![warn(clippy::indexing_slicing)] // used too often to enable
+// #![warn(clippy::unreachable)]      // used too often to enable
 // #![warn(clippy::or_fun_call)]      // warns about ok_or(Error::at(...))
 pub(crate) mod ambiguous;
 pub mod digest;
@@ -75,19 +75,18 @@ impl<'src> RefSpan<'src> {
             DomainOrRefSpan::TaggedRef(_) => None,
         };
         let mut index: u16 = domain.map(|d| d.short_len().upcast()).unwrap_or(0); // current max: 256
-        let rest = &src[prefix.len()..];
-        let path = match rest.bytes().next() {
+        let path = match src.as_bytes().get(prefix.len()) {
             Some(b'/') => match prefix {
                 DomainOrRefSpan::TaggedRef((path_start, tag)) => match tag {
                     Some(_) => unreachable!(),
                     //         ^^^^^^^^^^^^ if a tag is present and is followed
                     //                      by a `/`, it's PortInvalidChar error
-                    None => path_start.extend(rest),
+                    None => path_start.extend(&src[prefix.len()..]),
                     // e.g. "cant_be_host/more_path" needs to entirely match as path
                 },
                 DomainOrRefSpan::Domain(_) => {
                     index = index.saturating_add(1); // consume the leading slash; ok since index <= 256
-                    let rest = &rest[1..];
+                    let rest = &src[prefix.len() + 1..];
                     PathSpan::new(rest)
                 }
             }
@@ -108,25 +107,29 @@ impl<'src> RefSpan<'src> {
         if index > name::MAX_LEN.into() {
             return Error::at(255, err::Kind::NameTooLong).into();
         }
-        let rest = &src[index as usize..];
+        // let rest = &src[index as usize..];
         let tag = match prefix {
             DomainOrRefSpan::TaggedRef((_, right)) => match right {
                 Some(tag) => Ok(Some(tag)),
-                None => match rest.bytes().next() {
-                    Some(b':') => TagSpan::new(&rest[1..]).map_err(|e| e.into()).map(Some),
+                None => match src.as_bytes().get(index as usize) {
+                    Some(b':') => TagSpan::new(&src[index as usize + 1..])
+                        .map_err(|e| e.into())
+                        .map(Some),
                     Some(b'@') | None => Ok(None),
                     Some(_) => Error::at(0, err::Kind::PathInvalidChar).into(),
                 },
             },
-            DomainOrRefSpan::Domain(_) => match rest.bytes().next() {
-                Some(b':') => TagSpan::new(&rest[1..]).map(Some).map_err(|e| {
-                    Error::at(
-                        index
+            DomainOrRefSpan::Domain(_) => match src.as_bytes().get(index as usize) {
+                Some(b':') => TagSpan::new(&src[index as usize + 1..])
+                    .map(Some)
+                    .map_err(|e| {
+                        Error::at(
+                            index
                         .saturating_add(1u16) // +1 to account for the leading ':'
                         .saturating_add(e.index().into()),
-                        e.kind(),
-                    )
-                }),
+                            e.kind(),
+                        )
+                    }),
                 Some(_) | None => Ok(None),
             },
         }?;
@@ -137,8 +140,7 @@ impl<'src> RefSpan<'src> {
                 .map(|t: u16| t.saturating_add(1)) // +1 for the leading ':'
                 .unwrap_or(0_u16),
         );
-        let rest = &src[index as usize..];
-        let digest = match rest.bytes().next() {
+        let digest = match src.as_bytes().get(index as usize) {
             Some(b'@') => {
                 index = index.saturating_add(1); // max 385
                 DigestSpan::new(&src[index as usize..])
@@ -179,10 +181,6 @@ impl<'src> RefSpan<'src> {
             + self.tag.map(|t| t.len()).unwrap_or(0)
             + self.digest.map(|_| 1) // 1 == consume the leading '@' if a digest is present
             .unwrap_or(0)
-    }
-
-    fn domain_range(&self) -> Range<usize> {
-        0..self.name.domain.map(|d| d.len()).unwrap_or(0)
     }
 
     fn port_range(&self) -> Option<Range<usize>> {
@@ -256,7 +254,7 @@ impl<'src> ImgRef<'src> {
     }
     /// The port part of the domain, if present. This does not include the leading `:`.
     pub fn port(&self) -> Option<&str> {
-        self.span.port_range().map(|r| &self.src[r])
+        self.span.port_range().and_then(|r| self.src.get(r))
     }
     fn path_str(&self) -> &str {
         let range = self.span.path_range();
@@ -268,14 +266,19 @@ impl<'src> ImgRef<'src> {
     }
     /// Accessor the tag part of the reference NOT including the leading `:`
     pub fn tag(&self) -> Option<&str> {
-        self.span.tag_range().map(|range| &self.src[range])
+        self.span.tag_range().and_then(|range| {
+            debug_assert!(self.src.get(range.clone()).is_some());
+            self.src.get(range)
+        })
     }
     /// Accessor for the optional digest part of the reference NOT including the leading `@`
     pub fn digest(&self) -> Option<Digest<'src>> {
-        self.span.digest_range().and_then(|range| {
-            self.span
-                .digest
-                .map(|span| Digest::from_span(&self.src[range], span))
+        self.span.digest.and_then(|digest_span| {
+            debug_assert!(self.src.get(self.span.digest_index()..).is_some());
+            Some(Digest::from_span(
+                self.src.get(self.span.digest_index()..)?,
+                digest_span,
+            ))
         })
     }
 }
@@ -337,7 +340,6 @@ impl<'src> CanonicalSpan<'src> {
         ))?;
         Ok(Self { span })
     }
-    mirror_inner_method!(domain_range, Range<usize>);
     mirror_inner_method!(path_range, Range<usize>);
     mirror_inner_method!(name_range, Range<usize>);
     mirror_inner_method!(tag_range, Option<Range<usize>>);
@@ -374,7 +376,15 @@ impl<'src> CanonicalImgRef<'src> {
         Ok(Self { src, span })
     }
     fn domain_str(&self) -> &str {
-        &self.src[self.span.domain_range()]
+        self.span
+            .span
+            .name
+            .domain
+            .and_then(|d| {
+                debug_assert!(self.src.get(0..d.len()).is_some());
+                self.src.get(0..d.len())
+            })
+            .unwrap_or("")
     }
     fn path_str(&self) -> &str {
         let path = &self.src[self.span.path_range()];
@@ -409,7 +419,10 @@ impl<'src> CanonicalImgRef<'src> {
     /// The tag component of the canonical image reference, if present.
     pub fn tag(&self) -> Option<&str> {
         // tags aren't required for canonical refs
-        self.span.tag_range().map(|range| &self.src[range])
+        self.span.tag_range().and_then(|range| {
+            debug_assert!(self.src.get(range.clone()).is_some());
+            self.src.get(range)
+        })
     }
     #[allow(clippy::unwrap_used)]
     /// The digest component of the canonical image reference.

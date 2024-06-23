@@ -95,28 +95,26 @@ pub(crate) struct DigestSpan<'src> {
 
 impl<'src> DigestSpan<'src> {
     pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
-        let (algorithm, compliance) = AlgorithmSpan::new(src)?;
-        let mut len = algorithm.short_len().widen(); // max 255
-        let rest = &src[len.as_usize()..];
-        len = match rest.bytes().next() {
+        let (algorithm_span, compliance) = AlgorithmSpan::new(src)?;
+        let mut len = algorithm_span.short_len().widen(); // max 255
+
+        len = match src.as_bytes().get(len.as_usize()) {
             Some(b':') => len.checked_add(1).ok_or(err::Kind::AlgorithmTooLong),
             None => Err(err::Kind::AlgorithmMissing),
             _ => Err(err::Kind::AlgorithmInvalidChar),
         }
         .map_err(|kind| Error::at(len.into(), kind))?;
-        let rest = &src[len.as_usize()..];
-        let (encoded, compliance) = EncodedSpan::new(rest, compliance)
+        let (encoded, compliance) = EncodedSpan::new(&src[len.as_usize()..], compliance)
             .map_err(|e| Error::at(e.index().saturating_add(len.into()), e.kind()))?; // safe since len can be at most 256 and e.index() can be at most 1024
 
         {
-            let rest = &src[len.as_usize()..];
-            let algorithm = Algorithm::from_span(src, algorithm);
-            let encoded = Encoded::from_span(rest, encoded);
+            let algorithm = Algorithm::from_span(src, algorithm_span);
+            let encoded = Encoded::from_span(&src[len.as_usize()..], encoded);
             encoded.validate_algorithm(&algorithm, compliance)?;
         }
 
         Ok(Self {
-            algorithm,
+            algorithm: algorithm_span,
             encoded,
             compliance,
         })

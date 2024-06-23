@@ -161,8 +161,8 @@ impl<'src> Ipv6Span<'src> {
                 .checked_add(1)
                 .ok_or(Error::at(u8::MAX, err::Kind::Ipv6TooLong))?;
         }
-        debug_assert!(src.as_bytes()[0] == b'[');
-        debug_assert!(src.as_bytes()[index.as_usize()] == b']');
+        debug_assert!(src.as_bytes().first() == Some(&b'['));
+        debug_assert!(src.as_bytes().get(index.as_usize()) == Some(&b']'));
         index = index
             .checked_add(1) // consume t he closing bracket
             .ok_or(Error::at(u8::MAX, err::Kind::Ipv6TooLong))?;
@@ -183,7 +183,7 @@ impl<'src> Ipv6Span<'src> {
 #[cfg(test)]
 mod test {
     use crate::span::Lengthy;
-
+    #[allow(clippy::indexing_slicing)]
     fn should_work(ip: &str) {
         match super::Ipv6Span::new(ip) {
             Ok(span) => assert_eq!(

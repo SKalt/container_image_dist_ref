@@ -88,13 +88,12 @@ fn to_large_err(e: err::Error<u8>) -> err::Error<u16> {
 impl<'src> DomainOrRefSpan<'src> {
     pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
         let left = HostOrPathSpan::new(src, HostOrPathKind::Any)?;
-        let right_src = &src[left.len()..]; // TODO: consolidate with rest
         let mut len = left.short_len().widen().upcast(); // current possible max: 255
-        let right = match right_src.bytes().next() {
+        let right = match src.as_bytes().get(len as usize) {
             Some(b'/') | Some(b'@') | None => None,
             Some(b':') => {
                 len = len.saturating_add(1); // +1 for the ':'
-                let right = PortOrTagSpan::new(&right_src[1..], Port).map_err(|e| {
+                let right = PortOrTagSpan::new(&src[len as usize..], Port).map_err(|e| {
                     Error::at(
                         len.saturating_add(e.index() as u16), // ok since len <= 256, so len + u8::MAX < u16::MAX
                         e.kind(),
@@ -111,8 +110,7 @@ impl<'src> DomainOrRefSpan<'src> {
         };
 
         len = len.saturating_add(right.map(|r| r.short_len().widen().upcast()).unwrap_or(0));
-        let rest = &src[len as usize..];
-        match rest.bytes().next() {
+        match src.as_bytes().get(len as usize) {
             Some(b'@') | None => {
                 // since the next section must be a digest, the right side must be a tag
                 let path = PathSpan::try_from(left).map_err(to_large_err)?;
@@ -143,7 +141,7 @@ impl<'src> DomainOrRefSpan<'src> {
                         Path => {
                             // need to extend the path
                             let path = PathSpan::try_from(left)?
-                                .extend(rest)
+                                .extend(&src[len as usize..])
                                 .map_err(to_large_err)?;
 
                             let tag = if let Some(t) = right {

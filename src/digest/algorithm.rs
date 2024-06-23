@@ -57,6 +57,7 @@ impl<'src> AlgorithmSpan<'src> {
             if u8::from(len) >= max_len {
                 break;
             } else {
+                // Note: using .get() seems to slow down performance here
                 match src.as_bytes()[u8::from(len) as usize] {
                     b':' => break,
                     b'+' | b'.' | b'_' | b'-' => {

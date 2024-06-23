@@ -87,7 +87,7 @@ impl<'src> DomainSpan<'src> {
     pub(crate) fn new(src: &'src str) -> Result<Self, Error> {
         let host = HostSpan::new(src)?;
         let len: u16 = host.short_len().widen().into(); // max 255 chars
-        let port = match &src[host.len()..].bytes().next() {
+        let port = match src.as_bytes().get(host.len()) {
             Some(b':') => PortSpan::new(&src[host.len() + 1..])
                 .map(Some)
                 .map_err(|e| Error::at(len.saturating_add(e.index().into()), e.kind())),
@@ -166,7 +166,15 @@ impl<'src> Domain<'src> {
     pub fn port(&self) -> Option<&str> {
         let port = self.span.port?;
         let start = self.span.host.len() + 1; // +1 for the leading ':'
-        Some(&self.src[start..start + port.len()])
+        let result = self.src.get(start..start + port.len());
+        debug_assert!(
+            result.is_some(),
+            "{src:?}[{start}..{end}] is None",
+            src = self.src,
+            start = start,
+            end = start + port.len()
+        );
+        result
     }
 }
 

@@ -59,15 +59,13 @@ impl<'src> PathSpan<'src> {
     pub(crate) fn parse_from_slash(src: &'src str) -> Result<Option<Self>, Error> {
         let mut index: u8 = 0;
         loop {
-            let next = src[index as usize..].bytes().next();
-            index = match next {
+            index = match src.as_bytes().get(index as usize) {
                 Some(b'/') => index.checked_add(1).ok_or(err::Kind::PathTooLong),
                 None | Some(b':') | Some(b'@') => break,
                 Some(_) => Err(err::Kind::PathInvalidChar),
             }
             .map_err(|kind| Error::at(index, kind))?;
-            let rest = &src[index as usize..];
-            let component = Self::parse_component(rest).map_err(|e| {
+            let component = Self::parse_component(&src[index as usize..]).map_err(|e| {
                 let kind = match e.kind() {
                     err::Kind::PathMissing => err::Kind::PathComponentInvalidEnd,
                     kind => kind,

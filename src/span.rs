@@ -119,7 +119,7 @@ where
     }
     #[inline]
     fn span_of(&self, src: &'src str) -> &'src str {
-        &src[..self.len()]
+        &src[..self.len()] // FIXME: use .get() to avoid panics
     }
 }
 

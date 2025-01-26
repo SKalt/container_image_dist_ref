@@ -29,3 +29,10 @@ harness = false
 [[example]]
 name = "parse_stdin"
 crate-type = ["bin"]
+
+[dependencies]
+no-panic = { version = "0.1.33", optional = true }
+
+[features]
+default = []
+check_no_panic = ["dep:no-panic"]

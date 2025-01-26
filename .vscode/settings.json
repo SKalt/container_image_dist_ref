@@ -3,6 +3,8 @@
   "nixEnvSelector.nixFile": "${workspaceRoot}/flake.nix",
   "nix.enableLanguageServer": true,
   "nix.serverPath": "nil",
-  "cSpell.words": ["ebnf", "opencontainers", "repr"],
-  "rust-analyzer.check.command": "clippy"
+  "cSpell.words": ["ebnf", "envrc", "opencontainers", "repr"],
+  "rust-analyzer.check.command": "clippy",
+  "rust-analyzer.check.features": "all",
+  "rust-analyzer.cargo.features": "all"
 }

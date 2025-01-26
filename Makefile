@@ -15,7 +15,7 @@ bench:
 
 .PHONY: test
 test:
-	cargo test
+	cargo test --features=check_no_panic
 
 ./grammars/digest.diff:      \
 	./grammars/reference.ebnf  \

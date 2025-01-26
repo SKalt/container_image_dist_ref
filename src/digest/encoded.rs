@@ -19,6 +19,8 @@
 // }}} skip=2
 
 use core::num::NonZeroU16;
+#[cfg(feature = "check_no_panic")]
+use no_panic::no_panic;
 
 use super::{algorithm::Algorithm, Compliance};
 use crate::err;
@@ -38,7 +40,7 @@ type Error = crate::err::Error<u16>;
 pub(crate) struct EncodedSpan<'src>(LongLength<'src>);
 impl_span_methods_on_tuple!(EncodedSpan, u16, NonZeroU16);
 impl<'src> EncodedSpan<'src> {
-    #[allow(clippy::arithmetic_side_effects)]
+    // #[cfg_attr(feature = "check_no_panic", no_panic)]
     pub(crate) fn new(src: &'src str, compliance: Compliance) -> Result<(Self, Compliance), Error> {
         use Compliance::*;
         let mut len = 0;
@@ -61,7 +63,7 @@ impl<'src> EncodedSpan<'src> {
             if len >= MAX_LEN {
                 return Error::at(len, EncodingTooLong).into();
             }
-            len += 1; // safe since len < MAX_LEN < u16::MAX
+            len = len.wrapping_add(1); // safe since len < MAX_LEN < u16::MAX
         }
 
         debug_assert!(len as usize == src.len(), "must have consume all src");
@@ -70,8 +72,20 @@ impl<'src> EncodedSpan<'src> {
             .ok_or(Error::at(0, err::Kind::EncodedMissing))
             .map(|length| (Self(length), compliance))
     }
+    // #[cfg_attr(feature = "check_no_panic", no_panic)]
+    // fn unsafe_add(&self, a: u8, b: u8) -> u8 {
+    //     a //.wrapping_add(b)
+    // }
 }
 
+#[cfg_attr(feature = "check_no_panic", no_panic)]
+fn unsafe_add_2(a: u8, b: u8) -> u8 {
+    0
+}
+#[cfg_attr(feature = "check_no_panic", no_panic)]
+fn unsafe_add_3(a: u8, b: u8) -> u8 {
+    0
+}
 /// The encoded portion of a digest string. This may not be a hex-encoded value,
 /// since the OCI spec allows for base64 encoding.
 pub struct Encoded<'src>(&'src str);
@@ -92,12 +106,17 @@ impl<'src> Encoded<'src> {
     }
     #[allow(clippy::unwrap_used)]
     /// validates whether every ascii character is a lowercase hex digit
-    fn is_lower_hex(&self) -> Result<(), Error> {
+    fn check_all_lower_hex(&self) -> Result<(), Error> {
         self.to_str().bytes().enumerate().try_for_each(|(i, c)| {
             if matches!(c, b'a'..=b'f' | b'0'..=b'9') {
                 Ok(())
             } else {
-                Error::at(i.try_into().unwrap(), OciRegisteredDigestInvalidChar).into()
+                #[allow(clippy::cast_possible_truncation)]
+                Error::at(
+                    i as u16, // this is safe since i <= MAX_LEN = 1024
+                    OciRegisteredDigestInvalidChar,
+                )
+                .into()
             }
         })
     }
@@ -106,7 +125,7 @@ impl<'src> Encoded<'src> {
     fn validate_registered_algorithms(&self, algorithm: &Algorithm<'src>) -> Result<(), Error> {
         match algorithm.to_str() {
             "sha256" | "sha512" => {
-                self.is_lower_hex()?;
+                self.check_all_lower_hex()?;
                 #[allow(clippy::cast_possible_truncation)]
                 match (algorithm.to_str(), self.len()) {
                     ("sha256", 64) => Ok(()),
@@ -178,6 +197,9 @@ mod tests {
     fn encoded_consumes_all() {
         fn consumes_all(src: &str) -> Result<(), Error> {
             let (span, _) = EncodedSpan::new(src, Compliance::Oci)?;
+            // span.unsafe_add(u8::MAX, 1);
+            unsafe_add_2(u8::MAX, 1);
+            unsafe_add_3(u8::MAX, 1);
             assert_eq!(span.len(), src.len());
             Ok(())
         }

@@ -290,7 +290,7 @@ fn rank(span: &RefSpan) -> u8 {
         | span.tag.map(|_| 1 << 1).unwrap_or(0)
         | span.digest.map(|_| 1 << 0).unwrap_or(0)
 }
-impl<'src> PartialOrd for RefSpan<'src> {
+impl PartialOrd for RefSpan<'_> {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         rank(other).partial_cmp(&rank(self))
         // note the order: if other has more information than self, then other
@@ -298,7 +298,7 @@ impl<'src> PartialOrd for RefSpan<'src> {
     }
 }
 
-impl<'src> PartialOrd for ImgRef<'src> {
+impl PartialOrd for ImgRef<'_> {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         self.span.partial_cmp(&other.span)
     }
@@ -701,7 +701,7 @@ mod tests {
             }
         }
     }
-    impl<'src> TestCase<'src> {
+    impl TestCase<'_> {
         fn diff(&self, other: &Self) -> Result<(), String> {
             if self == other {
                 Ok(())

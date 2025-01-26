@@ -52,7 +52,7 @@ impl Lengthy<'_, u8, NonZeroU8> for PortOrTagSpan<'_> {
 struct State {
     len: NonZeroU8,
     kind: Kind,
-    /// can be 0, but only relevant when kind is Kind::Tag
+    /// can be 0, but only relevant when kind is `Kind::Tag`
     first_tag_char: u8,
 }
 impl State {

@@ -47,7 +47,7 @@ impl<'src> TryFrom<PortOrTagSpan<'src>> for TagSpan<'src> {
     }
 }
 
-impl<'src> TagSpan<'src> {
+impl TagSpan<'_> {
     /// can match an empty span if the first character in `src` is a `/` or `@`
     pub(crate) fn new(src: &str) -> Result<Self, Error> {
         let span = PortOrTagSpan::new(src, TagKind::Tag).map_err(|e| {

@@ -47,7 +47,7 @@ pub(crate) enum Kind {
     /// a hostname component that's incompatible with being a path. This variant means
     /// the span contains uppercase letter(s).
     Host,
-    /// Not ambiguous: an IPv6 address wrapped in square brackets, e.g. "[2001:db8::1]"
+    /// Not ambiguous: an IPv6 address wrapped in square brackets, e.g. `"[2001:db8::1]"`
     IpV6,
     /// could be either a path or a hostname since it contains neither underscores
     /// nor uppercase letters

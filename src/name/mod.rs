@@ -59,7 +59,12 @@ impl<'src> Name<'src> {
     }
     /// Returns the path part of the name, which always exists.
     pub fn path(&self) -> path::Path<'_> {
-        let src = &self.src[self.span.domain.map(|d| d.len() + 1).unwrap_or(0)..];
+        let start = self
+            .span
+            .domain
+            .map(|d| d.len().saturating_add(1))
+            .unwrap_or(0);
+        let src = &self.src[start..];
         path::Path::from_span(self.span.path, src)
     }
     #[allow(missing_docs)]

@@ -164,7 +164,7 @@ impl<'src> Digest<'src> {
     /// The encoded digest value.
     pub fn encoded(&self) -> Encoded<'src> {
         Encoded::from_span(
-            &self.src[self.span.algorithm.len() + 1..],
+            &self.src[self.span.algorithm.len().saturating_add(1)..],
             self.span.encoded,
         )
     }

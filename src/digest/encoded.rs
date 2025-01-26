@@ -61,7 +61,7 @@ impl<'src> EncodedSpan<'src> {
             if len >= MAX_LEN {
                 return Error::at(len, EncodingTooLong).into();
             }
-            len += 1; // safe since len < MAX_LEN < u16::MAX
+            len = len.saturating_add(1); // safe since len < MAX_LEN < u16::MAX
         }
 
         debug_assert!(len as usize == src.len(), "must have consume all src");
@@ -90,14 +90,18 @@ impl<'src> Encoded<'src> {
     pub(crate) fn from_span(src: &'src str, span: EncodedSpan<'src>) -> Self {
         Self(span.span_of(src))
     }
-    #[allow(clippy::unwrap_used)]
     /// validates whether every ascii character is a lowercase hex digit
-    fn is_lower_hex(&self) -> Result<(), Error> {
+    fn validate_all_lower_hex(&self) -> Result<(), Error> {
         self.to_str().bytes().enumerate().try_for_each(|(i, c)| {
             if matches!(c, b'a'..=b'f' | b'0'..=b'9') {
                 Ok(())
             } else {
-                Error::at(i.try_into().unwrap(), OciRegisteredDigestInvalidChar).into()
+                #[allow(clippy::cast_possible_truncation)]
+                Error::at(
+                    i as u16, // safe since i is at most 1024
+                    OciRegisteredDigestInvalidChar,
+                )
+                .into()
             }
         })
     }
@@ -106,7 +110,7 @@ impl<'src> Encoded<'src> {
     fn validate_registered_algorithms(&self, algorithm: &Algorithm<'src>) -> Result<(), Error> {
         match algorithm.to_str() {
             "sha256" | "sha512" => {
-                self.is_lower_hex()?;
+                self.validate_all_lower_hex()?;
                 #[allow(clippy::cast_possible_truncation)]
                 match (algorithm.to_str(), self.len()) {
                     ("sha256", 64) => Ok(()),

@@ -86,7 +86,7 @@ impl<'src> RefSpan<'src> {
                 },
                 DomainOrRefSpan::Domain(_) => {
                     index = index.saturating_add(1); // consume the leading slash; ok since index <= 256
-                    let rest = &src[prefix.len() + 1..];
+                    let rest = &src[prefix.len().saturating_add(1)..];
                     PathSpan::new(rest)
                 }
             }
@@ -112,7 +112,7 @@ impl<'src> RefSpan<'src> {
             DomainOrRefSpan::TaggedRef((_, right)) => match right {
                 Some(tag) => Ok(Some(tag)),
                 None => match src.as_bytes().get(index as usize) {
-                    Some(b':') => TagSpan::new(&src[index as usize + 1..])
+                    Some(b':') => TagSpan::new(&src[(index as usize).saturating_add(1)..])
                         .map_err(|e| e.into())
                         .map(Some),
                     Some(b'@') | None => Ok(None),
@@ -120,7 +120,7 @@ impl<'src> RefSpan<'src> {
                 },
             },
             DomainOrRefSpan::Domain(_) => match src.as_bytes().get(index as usize) {
-                Some(b':') => TagSpan::new(&src[index as usize + 1..])
+                Some(b':') => TagSpan::new(&src[(index as usize).saturating_add(1)..])
                     .map(Some)
                     .map_err(|e| {
                         Error::at(
@@ -167,45 +167,49 @@ impl<'src> RefSpan<'src> {
 
     /// the offset at which the path starts.
     fn path_index(&self) -> usize {
-        self.name.domain.map(|d| d.len() + 1).unwrap_or(0)
+        self.name
+            .domain
+            .map(|d| d.len().saturating_add(1))
+            .unwrap_or(0)
     }
     /// the at which the tag starts. If a tag is present, `tag_index` is AFTER the leading ':'.
     fn tag_index(&self) -> usize {
         self.path_index()
-            + self.name.path.len()
-            + self.tag.map(|_| 1) // +1 for the leading ':'
-            .unwrap_or(0)
+            .saturating_add(self.name.path.len())
+            .saturating_add(self.tag.map(|_| 1).unwrap_or(0)) // +1 for the leading ':'
     }
     fn digest_index(&self) -> usize {
         self.tag_index() // tag_index() accounts for the leading ':'
-            + self.tag.map(|t| t.len()).unwrap_or(0)
-            + self.digest.map(|_| 1) // 1 == consume the leading '@' if a digest is present
-            .unwrap_or(0)
+            .saturating_add(self.tag.map(|t| t.len()).unwrap_or(0))
+            .saturating_add(self.digest.map(|_| 1).unwrap_or(0)) // 1 == consume the leading '@' if a digest is present
     }
 
     fn port_range(&self) -> Option<Range<usize>> {
         let domain = self.name.domain?;
         let port = domain.port?;
-        let start = domain.host.len() + 1; // +1 to consume the ':'
-        Some(start..start + port.len())
+        let start = domain.host.len().saturating_add(1); // +1 to consume the ':'
+        let end = start.saturating_add(port.len());
+        Some(start..end)
     }
     fn path_range(&self) -> Range<usize> {
         self.name
             .domain
             .map(|d| {
-                let start = d.len() + 1; // +1 to consume the leading '/'
-                start..(start + (self.name.path.len()))
+                let start = d.len().saturating_add(1); // +1 to consume the leading '/'
+                let end = start.saturating_add(self.name.path.len());
+                start..end
             })
             .unwrap_or(0..self.name.path.len())
     }
     fn name_range(&self) -> Range<usize> {
-        let end = self.path_index() + self.name.path.len();
+        let end = self.path_index().saturating_add(self.name.path.len());
         0..end
     }
     fn tag_range(&self) -> Option<Range<usize>> {
         let tag = self.tag?;
         let start = self.tag_index();
-        Some(start..(start + tag.len()))
+        let end = start.saturating_add(tag.len());
+        Some(start..end)
     }
     fn digest_range(&self) -> Option<RangeFrom<usize>> {
         self.digest.map(|_| self.digest_index()..)

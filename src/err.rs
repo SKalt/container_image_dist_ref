@@ -132,7 +132,11 @@ where
     type Output = Self;
     #[allow(clippy::arithmetic_side_effects)] // FIXME: check for overflow
     fn add(self, rhs: Int) -> Self {
-        Self(self.0 + rhs.into(), self.1)
+        #[cfg(debug_assertions)]
+        let len = self.0 + rhs.into();
+        #[cfg(not(debug_assertions))]
+        let len = self.0.saturating_add(rhs.into());
+        Self(len, self.1)
     }
 }
 

@@ -88,7 +88,7 @@ impl<'src> DomainSpan<'src> {
         let host = HostSpan::new(src)?;
         let len: u16 = host.short_len().widen().into(); // max 255 chars
         let port = match src.as_bytes().get(host.len()) {
-            Some(b':') => PortSpan::new(&src[host.len() + 1..])
+            Some(b':') => PortSpan::new(&src[host.len().saturating_add(1)..])
                 .map(Some)
                 .map_err(|e| Error::at(len.saturating_add(e.index().into()), e.kind())),
             Some(b'/' | b'@') | None => Ok(None),
@@ -165,8 +165,9 @@ impl<'src> Domain<'src> {
     /// Not including any leading `:`.
     pub fn port(&self) -> Option<&str> {
         let port = self.span.port?;
-        let start = self.span.host.len() + 1; // +1 for the leading ':'
-        let result = self.src.get(start..start + port.len());
+        let start = self.span.host.len().saturating_add(1); // +1 for the leading ':'
+        let end = start.saturating_add(port.len());
+        let result = self.src.get(start..end);
         debug_assert!(
             result.is_some(),
             "{src:?}[{start}..{end}] is None",

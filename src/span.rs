@@ -70,11 +70,11 @@ pub struct Length<'src, NonZeroLength: Clone + Copy>(
     // ensure this length doesn't outlive the string slice it's derived from
 );
 
-impl<'src, NonZero, Original> Length<'src, NonZero>
+impl<NonZero, Original> Length<'_, NonZero>
 where
     NonZero: OptionallyZero<Possible = Original> + Clone + Copy,
 {
-    /// new() is needed to create a span with `PhantomData` tied to a specific lifetime.
+    /// `new()` is needed to create a span with `PhantomData` tied to a specific lifetime.
     /// Returns None iff the input length is zero.
     pub(crate) fn new(len: Original) -> Option<Self> {
         NonZero::new(len).map(|len| Self::from_nonzero(len))
@@ -109,10 +109,6 @@ where
 {
     fn short_len(&self) -> NonZeroSize;
 
-    #[inline]
-    fn into_length(self) -> Option<Length<'src, NonZeroSize>> {
-        Length::new(self.short_len().upcast())
-    }
     #[inline]
     fn len(&self) -> usize {
         self.short_len().as_usize()

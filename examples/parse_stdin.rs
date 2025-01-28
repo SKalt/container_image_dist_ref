@@ -8,7 +8,7 @@ fn main() {
     // read stdin to completion
     let mut input = String::new();
     std::io::stdin().read_line(&mut input).unwrap();
-    let input = input.trim_end_matches(&['\r', '\n']);
+    let input = input.trim_end_matches(['\r', '\n']);
     let result = ImgRef::new(input);
     match result {
         Ok(ref_str) => {

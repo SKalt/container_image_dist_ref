@@ -35,7 +35,7 @@ type Error = crate::err::Error<u16>;
 
 /// max length of an encoded string = 1024
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) struct EncodedSpan<'src>(LongLength<'src>);
+pub(crate) struct EncodedSpan<'src>(LongLength<'src>, Option<u16>);
 impl_span_methods_on_tuple!(EncodedSpan, u16, NonZeroU16);
 impl<'src> EncodedSpan<'src> {
     #[allow(clippy::arithmetic_side_effects)]
@@ -43,6 +43,9 @@ impl<'src> EncodedSpan<'src> {
         use Compliance::*;
         let mut len = 0;
         let mut compliance = compliance;
+        // The index of the first character that is not a lowercase hex digit. Recorded
+        // here so registered algorithms don't need a second scan to validate it.
+        let mut first_non_lower_hex: Option<u16> = None;
         for c in src.as_bytes() {
             compliance = match c {
                 b'a'..=b'f' | b'0'..=b'9' | b'A'..=b'F' => Ok(compliance), // hex digits are universally accepted
@@ -58,6 +61,9 @@ impl<'src> EncodedSpan<'src> {
                 _ => Err(EncodedInvalidChar),
             }
             .map_err(|kind| Error::at(len, kind))?;
+            if first_non_lower_hex.is_none() && !matches!(c, b'a'..=b'f' | b'0'..=b'9') {
+                first_non_lower_hex = Some(len);
+            }
             if len >= MAX_LEN {
                 return Error::at(len, EncodingTooLong).into();
             }
@@ -68,17 +74,20 @@ impl<'src> EncodedSpan<'src> {
 
         LongLength::new(len)
             .ok_or(Error::at(0, err::Kind::EncodedMissing))
-            .map(|length| (Self(length), compliance))
+            .map(|length| (Self(length, first_non_lower_hex), compliance))
     }
 }
 
 /// The encoded portion of a digest string. This may not be a hex-encoded value,
 /// since the OCI spec allows for base64 encoding.
-pub struct Encoded<'src>(&'src str);
+pub struct Encoded<'src> {
+    src: &'src str,
+    first_non_lower_hex: Option<u16>,
+}
 impl<'src> Encoded<'src> {
     #[allow(missing_docs)]
     pub const fn to_str(&self) -> &'src str {
-        self.0
+        self.src
     }
     /// Parses a string into an encoded digest value. The string must be a valid
     /// with respect to the given standard (Oci, Distribution, or Universal).
@@ -88,22 +97,17 @@ impl<'src> Encoded<'src> {
         Ok(Self::from_span(src, span))
     }
     pub(crate) fn from_span(src: &'src str, span: EncodedSpan<'src>) -> Self {
-        Self(span.span_of(src))
+        Self {
+            src: span.span_of(src),
+            first_non_lower_hex: span.1,
+        }
     }
     /// validates whether every ascii character is a lowercase hex digit
     fn validate_all_lower_hex(&self) -> Result<(), Error> {
-        self.to_str().bytes().enumerate().try_for_each(|(i, c)| {
-            if matches!(c, b'a'..=b'f' | b'0'..=b'9') {
-                Ok(())
-            } else {
-                #[allow(clippy::cast_possible_truncation)]
-                Error::at(
-                    i as u16, // safe since i is at most 1024
-                    OciRegisteredDigestInvalidChar,
-                )
-                .into()
-            }
-        })
+        match self.first_non_lower_hex {
+            Some(index) => Error::at(index, OciRegisteredDigestInvalidChar).into(),
+            None => Ok(()),
+        }
     }
     /// check that the encoded string is an appropriate hex length for the registered
     /// algorithms `sha256` and `sha512`.
@@ -161,7 +165,7 @@ impl<'src> Encoded<'src> {
 impl Lengthy<'_, u16, NonZeroU16> for Encoded<'_> {
     #[inline]
     fn len(&self) -> usize {
-        self.0.len()
+        self.src.len()
     }
     #[inline]
     #[allow(clippy::unwrap_used)]

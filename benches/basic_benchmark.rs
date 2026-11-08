@@ -17,5 +17,23 @@ fn parse_test_corpus(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, parse_test_corpus);
+fn parse_long_paths(c: &mut Criterion) {
+    // A path at the maximum length, both as one component and split into many.
+    let single = "a".repeat(255);
+    let mut many = String::with_capacity(255);
+    for i in 0..128 {
+        if i > 0 {
+            many.push('/');
+        }
+        many.push('a');
+    }
+    c.bench_function("long_path_single_component", |b| {
+        b.iter(|| ImgRef::new(black_box(&single)))
+    });
+    c.bench_function("long_path_128_components", |b| {
+        b.iter(|| ImgRef::new(black_box(&many)))
+    });
+}
+
+criterion_group!(benches, parse_test_corpus, parse_long_paths);
 criterion_main!(benches);

@@ -57,29 +57,106 @@ impl<'src> PathSpan<'src> {
         Self::try_from(ambiguous)
     }
     pub(crate) fn parse_from_slash(src: &'src str) -> Result<Option<Self>, Error> {
-        let mut index: u8 = 0;
-        loop {
-            index = match src.as_bytes().get(index as usize) {
-                Some(b'/') => index.checked_add(1).ok_or(err::Kind::PathTooLong),
-                None | Some(b':') | Some(b'@') => break,
-                Some(_) => Err(err::Kind::PathInvalidChar),
-            }
-            .map_err(|kind| Error::at(index, kind))?;
-            let component = Self::parse_component(&src[index as usize..]).map_err(|e| {
-                let kind = match e.kind() {
-                    err::Kind::PathMissing => err::Kind::PathComponentInvalidEnd,
-                    kind => kind,
-                };
-                e.index()
-                    .checked_add(index)
-                    .map(|i| Error::at(i, kind))
-                    .unwrap_or(ERR_PATH_TOO_LONG)
-            })?;
-            index = index
-                .checked_add(component.short_len().into())
-                .ok_or(ERR_PATH_TOO_LONG)?;
+        let bytes = src.as_bytes();
+        match bytes.first().copied() {
+            None => return Ok(None),
+            // a path can be empty when the tag or digest marker comes first
+            Some(b':' | b'@') => return Ok(None),
+            Some(b'/') => {}
+            Some(_) => return Error::at(0, err::Kind::PathInvalidChar).into(),
         }
-        Ok(Length::new(index).map(Self))
+        // `index` is capped at u8::MAX below, so these conversions cannot truncate.
+        let at = |i: usize, kind: err::Kind| Error::at(u8::try_from(i).unwrap_or(u8::MAX), kind);
+
+        // Scan all `/`-separated components in a single pass instead of parsing
+        // each component separately. The state below mirrors the component
+        // grammar: `[a-z0-9]+ (separator [a-z0-9]+)*`.
+        let mut index: usize = 0;
+        // immediately after a '/', a component must start with [a-z0-9]
+        let mut component_start = false;
+        let mut underscore_count: u8 = 0;
+        let mut last_was_dot = false;
+        let mut last_was_dash = false;
+
+        while let Some(&c) = bytes.get(index) {
+            if matches!(c, b':' | b'@') {
+                break;
+            }
+            // The path (including the leading '/') is limited to u8::MAX bytes.
+            if index >= usize::from(u8::MAX) {
+                return Error::at(u8::MAX, err::Kind::PathTooLong).into();
+            }
+            match c {
+                b'/' => {
+                    if component_start {
+                        // empty component, e.g. "//" or "/path//"
+                        return at(index, err::Kind::PathComponentInvalidEnd).into();
+                    }
+                    if last_was_dot || last_was_dash || underscore_count > 0 {
+                        return at(
+                            index.saturating_sub(1),
+                            err::Kind::HostOrPathInvalidComponentEnd,
+                        )
+                        .into();
+                    }
+                    component_start = true;
+                    underscore_count = 0;
+                    last_was_dot = false;
+                    last_was_dash = false;
+                }
+                b'a'..=b'z' | b'0'..=b'9' => {
+                    component_start = false;
+                    underscore_count = 0;
+                    last_was_dot = false;
+                    last_was_dash = false;
+                }
+                _ if component_start => {
+                    // components cannot start with a separator, an uppercase letter,
+                    // or any other invalid character
+                    return at(index, err::Kind::PathInvalidChar).into();
+                }
+                b'_' => {
+                    if last_was_dot || last_was_dash {
+                        return at(index, err::Kind::HostOrPathInvalidComponentEnd).into();
+                    }
+                    let next = underscore_count.saturating_add(1);
+                    if next > 2 {
+                        return at(index, err::Kind::PathInvalidChar).into();
+                    }
+                    underscore_count = next;
+                }
+                b'.' => {
+                    if last_was_dot || last_was_dash || underscore_count > 0 {
+                        return at(index, err::Kind::HostOrPathInvalidComponentEnd).into();
+                    }
+                    last_was_dot = true;
+                }
+                b'-' => {
+                    if last_was_dot || underscore_count > 0 {
+                        return at(index, err::Kind::HostOrPathInvalidComponentEnd).into();
+                    }
+                    last_was_dash = true;
+                }
+                _ => return at(index, err::Kind::PathInvalidChar).into(),
+            }
+            index = index.saturating_add(1);
+        }
+
+        if component_start {
+            // a trailing '/' leaves an empty final component
+            return at(index, err::Kind::PathComponentInvalidEnd).into();
+        }
+        if last_was_dot || last_was_dash || underscore_count > 0 {
+            return at(
+                index.saturating_sub(1),
+                err::Kind::HostOrPathInvalidComponentEnd,
+            )
+            .into();
+        }
+        match u8::try_from(index) {
+            Ok(len) => Ok(Length::new(len).map(Self)),
+            Err(_) => Error::at(u8::MAX, err::Kind::PathTooLong).into(),
+        }
     }
     pub(crate) fn extend(self, rest: &'src str) -> Result<Self, Error> {
         let extension = Self::parse_from_slash(rest).map_err(|e| {
@@ -158,5 +235,66 @@ mod tests {
         assert_eq!(Path::new("repo:tag").unwrap().to_str(), "repo");
         assert_eq!(Path::new("repo@algo:encoded").unwrap().to_str(), "repo");
         assert_eq!(Path::new("repo").unwrap().to_str(), "repo");
+    }
+
+    #[test]
+    fn single_pass_matches_component_parser() {
+        // Reference implementation of the previous, component-at-a-time parser.
+        fn reference(src: &str) -> Result<Option<u8>, (err::Kind, u8)> {
+            let mut index = 0u8;
+            loop {
+                index = match src.as_bytes().get(index as usize) {
+                    Some(b'/') => index
+                        .checked_add(1)
+                        .ok_or((err::Kind::PathTooLong, u8::MAX))?,
+                    None | Some(b':' | b'@') => break,
+                    Some(_) => return Err((err::Kind::PathInvalidChar, index)),
+                };
+                let component = HostOrPathSpan::new(&src[index as usize..], PathKind::Path)
+                    .map_err(map_error)
+                    .map_err(|e| {
+                        let kind = match e.kind() {
+                            err::Kind::PathMissing => err::Kind::PathComponentInvalidEnd,
+                            kind => kind,
+                        };
+                        (kind, e.index().saturating_add(index))
+                    })?;
+                index = index
+                    .checked_add(u8::from(component.short_len()))
+                    .ok_or((err::Kind::PathTooLong, u8::MAX))?;
+            }
+            Ok(match index {
+                0 => None,
+                len => Some(len),
+            })
+        }
+
+        fn actual(src: &str) -> Result<Option<u8>, (err::Kind, u8)> {
+            PathSpan::parse_from_slash(src)
+                .map(|parsed| {
+                    parsed.map(|span| {
+                        #[allow(clippy::cast_possible_truncation)]
+                        let len = span.len() as u8;
+                        len
+                    })
+                })
+                .map_err(|e| (e.kind(), e.index()))
+        }
+
+        // Exhaustively compare short strings over every class of relevant character.
+        let alphabet = b"/a0_.-:@U$";
+        let mut buf = [0u8; 4];
+        for len in 0..=buf.len() {
+            let power = u32::try_from(len).unwrap();
+            let combinations = alphabet.len().pow(power);
+            for mut n in 0..combinations {
+                for slot in buf.iter_mut().take(len) {
+                    *slot = alphabet[n % alphabet.len()];
+                    n /= alphabet.len();
+                }
+                let src = core::str::from_utf8(&buf[..len]).unwrap();
+                assert_eq!(actual(src), reference(src), "path: {src:?}");
+            }
+        }
     }
 }

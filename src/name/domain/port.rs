@@ -8,8 +8,9 @@ use crate::{
 
 type Error = err::Error<u8>;
 
-/// a span representing a port number **WITH** the leading colon. Can be empty.
-/// Max length = 128ch, enforced in [`PortOrTagSpan::new`]
+/// A span representing a port number **WITHOUT** the leading colon.
+/// Max length = 255ch, enforced in [`PortOrTagSpan::new`]. When part of a
+/// `DomainSpan`, the combined host/port length is limited to 255 characters.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) struct PortSpan<'src>(ShortLength<'src>);
 impl_span_methods_on_tuple!(PortSpan, u8, NonZeroU8);
@@ -26,7 +27,11 @@ impl<'src> PortSpan<'src> {
     /// parse a port from the start of a string. Does NOT include the leading colon.
     pub(super) fn new(src: &'src str) -> Result<Self, Error> {
         let span = PortOrTagSpan::new(src, PortKind::Port).map_err(disambiguate_err)?;
-        Ok(Self(span.span())) // ^ OK since we pre-narrowed to PortKind::Port
+        // A string that started like a port but contains non-digits must be a tag,
+        // so it cannot be narrowed back to a port.
+        span.narrow(PortKind::Port)
+            .map(|span| Self(span.span()))
+            .map_err(disambiguate_err)
     }
 }
 

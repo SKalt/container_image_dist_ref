@@ -125,7 +125,7 @@ impl<'src> Path<'src> {
     /// reaches a `:`, `@`, or the end of the string.
     pub fn new(src: &'src str) -> Result<Self, Error> {
         let span = PathSpan::new(src)?;
-        Ok(Self::from_span(span, src))
+        Ok(Self::from_span(span, &src[..span.len()]))
     }
     #[allow(missing_docs)]
     pub fn to_str(&self) -> &'src str {
@@ -151,5 +151,12 @@ mod tests {
         let src = "test.com/path:tag";
         let span = PathSpan::new(src).unwrap();
         assert_eq!(span.span_of(src), "test.com/path");
+    }
+
+    #[test]
+    fn new_stops_at_tag_or_digest() {
+        assert_eq!(Path::new("repo:tag").unwrap().to_str(), "repo");
+        assert_eq!(Path::new("repo@algo:encoded").unwrap().to_str(), "repo");
+        assert_eq!(Path::new("repo").unwrap().to_str(), "repo");
     }
 }

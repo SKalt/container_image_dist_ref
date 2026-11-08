@@ -44,7 +44,9 @@ use crate::{
 };
 type Error = err::Error<u16>;
 
-/// a definite host and an optional port. Combined length MUST be under 255 chars.
+/// A definite host and an optional port. The combined length (including the
+/// `:` before the port) must be at most 255 characters, enforced by
+/// `DomainSpan::from_parts`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) struct DomainSpan<'src> {
     /// The length of the source string that represents the host
@@ -76,9 +78,13 @@ impl<'src> DomainSpan<'src> {
     /// without overflowing the 255 char limit
     fn from_parts(host: HostSpan<'src>, port: Option<PortSpan<'src>>) -> Result<Self, Error> {
         if let Some(port) = port {
-            host.short_len()
-                .checked_add(port.short_len().upcast())
-                .ok_or(Error::at(u8::MAX.into(), err::Kind::PortTooLong))?;
+            // The domain length includes the host, the leading ':', and the port.
+            let combined = u16::from(host.short_len().upcast())
+                .saturating_add(1) // +1 for the leading ':'
+                .saturating_add(port.short_len().upcast().into());
+            if combined > u16::from(u8::MAX) {
+                return Error::at(u8::MAX.into(), err::Kind::PortTooLong).into();
+            }
         }
         Ok(Self { host, port })
     }
@@ -90,7 +96,13 @@ impl<'src> DomainSpan<'src> {
         let port = match src.as_bytes().get(host.len()) {
             Some(b':') => PortSpan::new(&src[host.len().saturating_add(1)..])
                 .map(Some)
-                .map_err(|e| Error::at(len.saturating_add(e.index().into()), e.kind())),
+                .map_err(|e| {
+                    Error::at(
+                        len.saturating_add(1) // +1 for the leading ':'
+                            .saturating_add(e.index().into()),
+                        e.kind(),
+                    )
+                }),
             Some(b'/' | b'@') | None => Ok(None),
             _ => Error::at(len, err::Kind::HostInvalidChar).into(),
         }?; // FIXME: checked add
@@ -163,7 +175,7 @@ impl<'src> Domain<'src> {
         Host::from_span(&self.src[0..self.span.host.len()], self.span.host)
     }
     /// Not including any leading `:`.
-    pub fn port(&self) -> Option<&str> {
+    pub fn port(&self) -> Option<&'src str> {
         let port = self.span.port?;
         let start = self.span.host.len().saturating_add(1); // +1 for the leading ':'
         let end = start.saturating_add(port.len());
@@ -186,5 +198,18 @@ mod tests {
     #[test]
     fn temp() {
         Domain::new("localhost:5000").unwrap();
+    }
+
+    #[test]
+    fn non_numeric_port_is_rejected() {
+        // "test.com:x" is a tagged reference, not a domain with a port. When parsed
+        // as a domain, the tag must not be accepted as a port.
+        let e = match Domain::new("test.com:x") {
+            Ok(_) => panic!("expected a tag to be rejected as a port"),
+            Err(e) => e,
+        };
+        assert_eq!(e.kind(), ErrorKind::PortInvalidChar);
+        assert_eq!(e.index(), 9); // the 'x'
+        assert_eq!("test.com:x".as_bytes().get(e.index() as usize), Some(&b'x'));
     }
 }

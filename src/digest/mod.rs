@@ -107,11 +107,18 @@ impl<'src> DigestSpan<'src> {
         let (encoded, compliance) = EncodedSpan::new(&src[len.as_usize()..], compliance)
             .map_err(|e| Error::at(e.index().saturating_add(len.into()), e.kind()))?; // safe since len can be at most 256 and e.index() can be at most 1024
 
-        {
+        let compliance = {
             let algorithm = Algorithm::from_span(src, algorithm_span);
-            let encoded = Encoded::from_span(&src[len.as_usize()..], encoded);
-            encoded.validate_algorithm(&algorithm, compliance)?;
-        }
+            let encoded_view = Encoded::from_span(&src[len.as_usize()..], encoded);
+            encoded_view
+                .validate_algorithm(&algorithm, compliance)
+                .map_err(|e| {
+                    Error::at(
+                        e.index().saturating_add(len.into()), // offset by "algorithm:"
+                        e.kind(),
+                    )
+                })?
+        };
 
         Ok(Self {
             algorithm: algorithm_span,

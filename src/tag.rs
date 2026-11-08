@@ -51,13 +51,23 @@ impl TagSpan<'_> {
     /// can match an empty span if the first character in `src` is a `/` or `@`
     pub(crate) fn new(src: &str) -> Result<Self, Error> {
         let span = PortOrTagSpan::new(src, TagKind::Tag).map_err(|e| {
-            let kind = match e.kind() {
-                err::Kind::PortOrTagInvalidChar => err::Kind::TagInvalidChar,
-                err::Kind::PortOrTagMissing => err::Kind::TagMissing,
-                // err::Kind::PortOrTagTooLong => err::Kind::TagTooLong,
-                _ => e.kind(),
+            let (index, kind) = match e.kind() {
+                err::Kind::PortOrTagInvalidChar => (e.index(), err::Kind::TagInvalidChar),
+                err::Kind::PortOrTagMissing => (e.index(), err::Kind::TagMissing),
+                err::Kind::PortInvalidChar => {
+                    // Only a '/' can force a tag back to being a port; that's the
+                    // character that makes this string an invalid tag.
+                    let index = src
+                        .as_bytes()
+                        .iter()
+                        .position(|&b| b == b'/')
+                        .and_then(|i| u8::try_from(i).ok())
+                        .unwrap_or(e.index());
+                    (index, err::Kind::TagInvalidChar)
+                }
+                kind => (e.index(), kind),
             };
-            Error::at(e.index(), kind)
+            Error::at(index, kind)
         })?;
         Ok(Self(span.span())) // safe since we parsed in TagKind::Tag mode
     }
@@ -79,5 +89,42 @@ impl<'src> Tag<'src> {
     #[inline]
     pub const fn to_str(&self) -> &'src str {
         self.0
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    fn tag_error(src: &str) -> Error {
+        match Tag::new(src) {
+            Ok(tag) => panic!(
+                "expected {src:?} to be rejected, parsed as {:?}",
+                tag.to_str()
+            ),
+            Err(e) => e,
+        }
+    }
+
+    #[test]
+    fn tag_can_stop_at_digest() {
+        assert_eq!(Tag::new("tag@algo:encoded").unwrap().to_str(), "tag");
+    }
+
+    #[test]
+    fn invalid_tag_reports_tag_errors() {
+        let e = tag_error("tag/path");
+        assert_eq!(e.kind(), err::Kind::TagInvalidChar);
+        assert_eq!(e.index(), 3); // the '/'
+        assert_eq!("tag/path".as_bytes().get(e.index() as usize), Some(&b'/'));
+
+        let e = tag_error("ta g");
+        assert_eq!(e.kind(), err::Kind::TagInvalidChar);
+        assert_eq!(e.index(), 2); // the ' '
+
+        let e = tag_error("");
+        assert_eq!(e.kind(), err::Kind::TagMissing);
+        assert_eq!(e.index(), 0); // EOF
     }
 }

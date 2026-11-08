@@ -52,13 +52,13 @@ impl<'src> Name<'src> {
         Self { src, span }
     }
     /// Returns the domain part of the name, if it exists.
-    pub fn domain(&self) -> Option<Domain<'_>> {
+    pub fn domain(&self) -> Option<Domain<'src>> {
         self.span
             .domain
             .map(|span| Domain::from_span(span, span.span_of(self.src)))
     }
     /// Returns the path part of the name, which always exists.
-    pub fn path(&self) -> path::Path<'_> {
+    pub fn path(&self) -> path::Path<'src> {
         let start = self
             .span
             .domain
@@ -68,7 +68,7 @@ impl<'src> Name<'src> {
         path::Path::from_span(self.span.path, src)
     }
     #[allow(missing_docs)]
-    pub fn to_str(&self) -> &str {
+    pub fn to_str(&self) -> &'src str {
         self.span.span_of(self.src)
     }
 }

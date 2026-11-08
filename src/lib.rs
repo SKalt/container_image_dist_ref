@@ -77,25 +77,25 @@ impl<'src> RefSpan<'src> {
         let mut index: u16 = domain.map(|d| d.short_len().upcast()).unwrap_or(0); // current max: 256
         let path = match src.as_bytes().get(prefix.len()) {
             Some(b'/') => match prefix {
-                DomainOrRefSpan::TaggedRef((path_start, tag)) => match tag {
-                    Some(_) => unreachable!(),
-                    //         ^^^^^^^^^^^^ if a tag is present and is followed
-                    //                      by a `/`, it's PortInvalidChar error
-                    None => path_start.extend(&src[prefix.len()..]),
-                    // e.g. "cant_be_host/more_path" needs to entirely match as path
-                },
                 DomainOrRefSpan::Domain(_) => {
                     index = index.saturating_add(1); // consume the leading slash; ok since index <= 256
                     let rest = &src[prefix.len().saturating_add(1)..];
-                    PathSpan::new(rest)
+                    PathSpan::new(rest).map_err(|e: err::Error<u8>| {
+                        Error::at(
+                            prefix
+                                .short_len()
+                                .upcast()
+                                .saturating_add(1) // +1 for the leading '/'
+                                .saturating_add(e.index() as u16),
+                            e.kind(),
+                        )
+                    })
                 }
-            }
-            .map_err(|e: err::Error<u8>| {
-                Error::at(
-                    prefix.short_len().upcast().saturating_add(e.index() as u16),
-                    e.kind(),
-                )
-            }),
+                // A tagged ref always consumes the path up to ':', '@', or EOF.
+                DomainOrRefSpan::TaggedRef(_) => {
+                    unreachable!("tagged refs are never followed by '/'")
+                }
+            },
             Some(b'@') | Some(b':') | None => match prefix {
                 DomainOrRefSpan::TaggedRef((name, _)) => Ok(name),
                 DomainOrRefSpan::Domain(_) => unreachable!(),
@@ -113,10 +113,18 @@ impl<'src> RefSpan<'src> {
                 Some(tag) => Ok(Some(tag)),
                 None => match src.as_bytes().get(index as usize) {
                     Some(b':') => TagSpan::new(&src[(index as usize).saturating_add(1)..])
-                        .map_err(|e| e.into())
+                        .map_err(|e| {
+                            Error::at(
+                                index
+                                    .saturating_add(1) // +1 to account for the leading ':'
+                                    .saturating_add(e.index().into()),
+                                e.kind(),
+                            )
+                        })
                         .map(Some),
                     Some(b'@') | None => Ok(None),
-                    Some(_) => Error::at(0, err::Kind::PathInvalidChar).into(),
+                    // A tagged-ref path always stops at ':', '@', or EOF.
+                    Some(_) => unreachable!("tagged-ref paths stop at ':', '@', or EOF"),
                 },
             },
             DomainOrRefSpan::Domain(_) => match src.as_bytes().get(index as usize) {
@@ -242,34 +250,34 @@ impl<'src> ImgRef<'src> {
         Ok(Self { src, span })
     }
 
-    fn name_str(&self) -> &str {
+    fn name_str(&self) -> &'src str {
         self.span.name.span_of(self.src)
     }
     /// Accessor for the name part of the reference, including the domain and path.
-    pub fn name(&'src self) -> Name<'src> {
+    pub fn name(&self) -> Name<'src> {
         Name::from_span(self.span.name, self.name_str())
     }
     #[allow(missing_docs)]
-    pub fn domain(&'src self) -> Option<Domain<'src>> {
+    pub fn domain(&self) -> Option<Domain<'src>> {
         self.span
             .name
             .domain
             .map(|d| Domain::from_span(d, d.span_of(self.src))) // TODO: unwrap_unsafe
     }
     /// The port part of the domain, if present. This does not include the leading `:`.
-    pub fn port(&self) -> Option<&str> {
+    pub fn port(&self) -> Option<&'src str> {
         self.span.port_range().and_then(|r| self.src.get(r))
     }
-    fn path_str(&self) -> &str {
+    fn path_str(&self) -> &'src str {
         let range = self.span.path_range();
         &self.src[range]
     }
     /// the path portion of the reference, NOT including any leading `/` if a domain is present.
-    pub fn path(&'src self) -> Path<'src> {
+    pub fn path(&self) -> Path<'src> {
         Path::from_span(self.span.name.path, self.path_str())
     }
     /// Accessor the tag part of the reference NOT including the leading `:`
-    pub fn tag(&self) -> Option<&str> {
+    pub fn tag(&self) -> Option<&'src str> {
         self.span.tag_range().and_then(|range| {
             debug_assert!(self.src.get(range.clone()).is_some());
             self.src.get(range)
@@ -379,7 +387,7 @@ impl<'src> CanonicalImgRef<'src> {
         let span = CanonicalSpan::new(src)?;
         Ok(Self { src, span })
     }
-    fn domain_str(&self) -> &str {
+    fn domain_str(&self) -> &'src str {
         self.span
             .span
             .name
@@ -390,7 +398,7 @@ impl<'src> CanonicalImgRef<'src> {
             })
             .unwrap_or("")
     }
-    fn path_str(&self) -> &str {
+    fn path_str(&self) -> &'src str {
         let path = &self.src[self.span.path_range()];
         debug_assert!(
             !path.is_empty(),
@@ -398,7 +406,7 @@ impl<'src> CanonicalImgRef<'src> {
         );
         path
     }
-    fn name_str(&self) -> &str {
+    fn name_str(&self) -> &'src str {
         let result = &self.src[self.span.name_range()];
         debug_assert!(
             !result.is_empty(),
@@ -408,20 +416,20 @@ impl<'src> CanonicalImgRef<'src> {
     }
     /// The name component of the parse canonical image reference, including a
     /// required domain and path.
-    pub fn name(&'src self) -> Name<'src> {
+    pub fn name(&self) -> Name<'src> {
         Name::from_span(self.span.span.name, self.name_str())
     }
     /// The domain component of the canonical image reference.
     #[allow(clippy::unwrap_used)]
-    pub fn domain(&'src self) -> Domain<'src> {
+    pub fn domain(&self) -> Domain<'src> {
         Domain::from_span(self.span.span.name.domain.unwrap(), self.domain_str())
     }
     /// The path component of the canonical image reference.
-    pub fn path(&'src self) -> Path<'src> {
+    pub fn path(&self) -> Path<'src> {
         Path::from_span(self.span.span.name.path, self.path_str())
     }
     /// The tag component of the canonical image reference, if present.
-    pub fn tag(&self) -> Option<&str> {
+    pub fn tag(&self) -> Option<&'src str> {
         // tags aren't required for canonical refs
         self.span.tag_range().and_then(|range| {
             debug_assert!(self.src.get(range.clone()).is_some());
@@ -655,6 +663,73 @@ mod tests {
     }
 
     #[test]
+    fn test_error_indices_point_at_offending_byte() {
+        // Each error index should point at the byte that caused the error, or at
+        // EOF (index == src.len()) when the error is caused by the end of input.
+        fn check(src: &str, kind: err::Kind, offending: Option<u8>) {
+            let e = match ImgRef::new(src) {
+                Ok(parsed) => panic!(
+                    "expected {src:?} to fail with {kind:?}, but it parsed as {:#?}",
+                    as_test_case(&parsed)
+                ),
+                Err(e) => e,
+            };
+            let index = e.index() as usize;
+            assert_eq!(e.kind(), kind, "wrong kind when parsing {src:?}: {e:?}");
+            assert!(
+                index <= src.len(),
+                "error index {index} is past EOF (len {}) when parsing {src:?}",
+                src.len()
+            );
+            assert_eq!(
+                src.as_bytes().get(index).copied(),
+                offending,
+                "error {e:?} @ {index} should point at {:?} when parsing {src:?}",
+                offending.map(char::from)
+            );
+        }
+
+        // invalid characters in the path, including after a domain
+        check("test.com/UP", err::Kind::PathInvalidChar, Some(b'U'));
+        check("test.com/re$po", err::Kind::PathInvalidChar, Some(b'$'));
+        check("a_b/c/UP", err::Kind::PathInvalidChar, Some(b'U'));
+        // invalid tag characters (reported by the ambiguous port-or-tag parser)
+        check("name:ta g", err::Kind::PortOrTagInvalidChar, Some(b' '));
+        // tags parsed after an already-disambiguated path are offset too
+        check("a_b/c:ta g", err::Kind::TagInvalidChar, Some(b' '));
+        // tags are limited to 128 characters
+        {
+            let src = format!("{}:{}", "0".repeat(255), "0".repeat(255));
+            check(&src, err::Kind::TagTooLong, Some(b'0'));
+        }
+        // digest errors are offset by the "algorithm:" prefix
+        check("x@al!go:aaaa", err::Kind::AlgorithmInvalidChar, Some(b'!'));
+        check("x@ALGO:gggg", err::Kind::EncodedNonLowerHex, Some(b'g'));
+        check(
+            "x@sha256:AAAA",
+            err::Kind::OciRegisteredDigestInvalidChar,
+            Some(b'A'),
+        );
+        {
+            // a valid lowercase hex digest, but the wrong length for sha256
+            let src = format!("x@sha256:{}", "a".repeat(63));
+            check(
+                &src,
+                err::Kind::OciRegisteredAlgorithmWrongDigestLength,
+                None,
+            );
+        }
+        check("x@algo:", err::Kind::EncodedMissing, None);
+        // EOF and length errors
+        check("", err::Kind::RefMissing, None);
+        check("0_0/", err::Kind::PathComponentInvalidEnd, None);
+        {
+            let src = format!("{}/{}", "a".repeat(200), "b".repeat(200));
+            check(&src, err::Kind::NameTooLong, Some(b'b'));
+        }
+    }
+
+    #[test]
     fn test_canonical() {
         let canonical = CanonicalImgRef::new("[2001:db8::1]:5000/repo@algo:encoded").unwrap();
         assert_eq!(canonical.name_str(), "[2001:db8::1]:5000/repo");
@@ -662,6 +737,34 @@ mod tests {
         assert_eq!(canonical.path_str(), "repo");
         assert_eq!(canonical.tag(), None);
         assert_eq!(canonical.digest().to_str(), "algo:encoded");
+    }
+
+    #[test]
+    fn views_outlive_parsed_references() {
+        let (path, name, domain);
+        {
+            let parsed = ImgRef::new("test.com/repo:tag").unwrap();
+            path = parsed.path();
+            name = parsed.name();
+            domain = parsed.domain().unwrap();
+        }
+        assert_eq!(path.to_str(), "repo");
+        assert_eq!(name.to_str(), "test.com/repo");
+        assert_eq!(name.path().to_str(), "repo");
+        assert_eq!(name.domain().unwrap().to_str(), "test.com");
+        assert_eq!(domain.to_str(), "test.com");
+        assert_eq!(domain.port(), None);
+
+        let (canonical_path, canonical_name, canonical_domain);
+        {
+            let parsed = CanonicalImgRef::new("test.com/repo@algo:encoded").unwrap();
+            canonical_path = parsed.path();
+            canonical_name = parsed.name();
+            canonical_domain = parsed.domain();
+        }
+        assert_eq!(canonical_path.to_str(), "repo");
+        assert_eq!(canonical_name.to_str(), "test.com/repo");
+        assert_eq!(canonical_domain.to_str(), "test.com");
     }
 
     #[derive(Debug, PartialEq, Eq)]

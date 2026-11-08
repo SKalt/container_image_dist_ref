@@ -124,22 +124,6 @@ where
     }
 }
 
-impl<Int, Size> core::ops::Add<Int> for Error<Size>
-where
-    Size: core::ops::Add<Output = Size> + Into<usize>,
-    Int: Into<Size>,
-{
-    type Output = Self;
-    #[allow(clippy::arithmetic_side_effects)] // FIXME: check for overflow
-    fn add(self, rhs: Int) -> Self {
-        #[cfg(debug_assertions)]
-        let len = self.0 + rhs.into();
-        #[cfg(not(debug_assertions))]
-        let len = self.0.saturating_add(rhs.into());
-        Self(len, self.1)
-    }
-}
-
 impl<T, Size: Into<usize>> From<Error<Size>> for Result<T, Error<Size>> {
     #[inline(always)]
     fn from(value: Error<Size>) -> Self {

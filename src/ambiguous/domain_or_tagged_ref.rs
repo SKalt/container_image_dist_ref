@@ -143,22 +143,9 @@ impl<'src> DomainOrRefSpan<'src> {
                             let path = PathSpan::try_from(left)?
                                 .extend(&src[len as usize..])
                                 .map_err(to_large_err)?;
-
-                            let tag = if let Some(t) = right {
-                                Some(t.try_into().map_err(|e: err::Error<u8>| {
-                                    Error::at(
-                                        path.short_len()
-                                        .widen()
-                                        .upcast()
-                                        .saturating_add(1u16) // for the leading ':'
-                                        .saturating_add(e.index() as u16),
-                                        e.kind(),
-                                    )
-                                })?)
-                            } else {
-                                None
-                            };
-                            Ok(Self::TaggedRef((path, tag)))
+                            // `right` is None in this branch, so there is no tag yet.
+                            // A trailing `:tag` is parsed by the caller.
+                            Ok(Self::TaggedRef((path, None)))
                         }
                         Host | IpV6 | HostOrPath => {
                             DomainSpan::from_ambiguous(left, right).map(Self::Domain)

@@ -1,0 +1,19 @@
+[package]
+name = "container_image_dist_ref_py"
+description = "Python bindings for container_image_dist_ref"
+version = "0.3.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/skalt/container_image_dist_ref.git"
+publish = false
+
+[lib]
+name = "_native"
+crate-type = ["cdylib"]
+
+[dependencies]
+container_image_dist_ref = { path = "../.." }
+pyo3 = { version = "0.30.1", features = ["abi3-py39"] }
+
+[features]
+extension-module = ["pyo3/extension-module"]

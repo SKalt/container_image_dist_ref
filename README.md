@@ -61,6 +61,33 @@ I wanted to use `distribution/reference` in a rust project, but didn't want to d
 
 More about these goals and design choices in [`./ARCHITECTURE.md`](./ARCHITECTURE.md).
 
+## Python
+
+Python bindings live in [`bindings/python`](./bindings/python) and are built with
+[PyO3](https://pyo3.rs) and [maturin](https://www.maturin.rs). The extension uses
+the CPython stable ABI (abi3), so one wheel works on Python 3.9 and newer.
+
+```sh
+cd bindings/python
+python -m pip install maturin pytest
+maturin develop          # or: maturin build --release
+python -m pytest tests
+```
+
+```python
+import container_image_dist_ref as cidr
+
+ref = cidr.parse("docker.io/library/alpine:3.14@sha256:" + "a" * 64)
+ref.name          # "docker.io/library/alpine"
+str(ref.domain)   # "docker.io"
+str(ref.path)     # "library/alpine"
+str(ref.tag)      # "3.14"
+str(ref.digest)   # "sha256:aaa..."
+```
+
+Invalid input raises `cidr.ParseError`, a `ValueError` subclass with `kind` and
+`index` attributes pointing at the offending byte.
+
 ## Benchmarks
 
 Based on some naive benchmarking, this library achieves at least a 10x speedup compared to distribution/reference.

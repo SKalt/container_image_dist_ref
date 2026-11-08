@@ -17,6 +17,14 @@ bench:
 test:
 	cargo test
 
+.PHONY: python
+python:
+	cd bindings/python && maturin develop
+
+.PHONY: test-python
+test-python:
+	cd bindings/python && python -m pytest tests
+
 ./grammars/digest.diff:      \
 	./grammars/reference.ebnf  \
 	./grammars/oci_digest.ebnf \

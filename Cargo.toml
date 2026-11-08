@@ -11,6 +11,7 @@ readme = "README.md"
 exclude = [
   "go.*",
   "internal/*",
+  "bindings/*",
   "flake.*",
   "nix",
   ".shellcheckrc",

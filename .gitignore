@@ -8,3 +8,11 @@ result*
 # scratch files
 temp*
 .cache
+
+# python bindings
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+bindings/python/dist/
+bindings/python/*.egg-info/

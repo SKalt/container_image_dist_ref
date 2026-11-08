@@ -1,0 +1,36 @@
+[build-system]
+requires = ["maturin>=1.16,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "container-image-dist-ref"
+version = "0.3.0"
+description = "Parse and validate docker/OCI container image references."
+requires-python = ">=3.9"
+license = "Apache-2.0"
+keywords = ["docker", "oci", "container", "image", "reference"]
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Topic :: Software Development :: Libraries",
+]
+readme = { text = """
+Python bindings for [`container_image_dist_ref`](https://github.com/skalt/container_image_dist_ref),
+a fast, dependency-free docker/OCI image reference parser.
+
+```python
+import container_image_dist_ref as cidr
+
+ref = cidr.parse("docker.io/library/alpine:3.14@sha256:" + "a" * 64)
+print(ref.name)          # docker.io/library/alpine
+print(str(ref.domain))   # docker.io
+print(str(ref.path))     # library/alpine
+print(str(ref.tag))      # 3.14
+print(str(ref.digest))   # sha256:aaa...
+```
+""", content-type = "text/markdown" }
+
+[tool.maturin]
+module-name = "container_image_dist_ref._native"
+python-source = "python"
+features = ["extension-module"]

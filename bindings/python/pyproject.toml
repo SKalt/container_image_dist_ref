@@ -21,7 +21,14 @@ module-name = "container_image_dist_ref._native"
 python-source = "python"
 features = ["extension-module"]
 
+[tool.ruff]
+line-length = 88
+target-version = "py39"
+# Keep the hand-aligned comments in the Markdown examples out of the formatter.
+extend-exclude = ["*.md"]
+
 [dependency-groups]
 dev = [
     "pytest>=8.4.2",
+    "ruff>=0.17.5",
 ]

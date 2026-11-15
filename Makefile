@@ -25,6 +25,14 @@ python:
 test-python:
 	cd bindings/python && uv run --locked pytest tests
 
+.PHONY: fmt-python
+fmt-python:
+	cd bindings/python && uv run --locked ruff format .
+
+.PHONY: check-python
+check-python:
+	cd bindings/python && uv run --locked ruff format --check .
+
 ./grammars/digest.diff:      \
 	./grammars/reference.ebnf  \
 	./grammars/oci_digest.ebnf \

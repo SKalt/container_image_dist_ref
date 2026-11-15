@@ -30,6 +30,9 @@ jobs:
       - name: Install the package and dev dependencies
         run: uv sync --locked --group dev
         working-directory: bindings/python
+      - name: Check formatting
+        run: uv run --locked ruff format --check .
+        working-directory: bindings/python
       - name: Run tests
         run: uv run --locked pytest tests -q
         working-directory: bindings/python

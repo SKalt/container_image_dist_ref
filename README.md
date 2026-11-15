@@ -69,9 +69,9 @@ the CPython stable ABI (abi3), so one wheel works on Python 3.9 and newer.
 
 ```sh
 cd bindings/python
-python -m pip install maturin pytest
-maturin develop          # or: maturin build --release
-python -m pytest tests
+uv sync --group dev   # builds the extension into .venv
+uv run pytest tests
+uv build              # wheel and sdist
 ```
 
 ```python
@@ -87,6 +87,9 @@ str(ref.digest)   # "sha256:aaa..."
 
 Invalid input raises `cidr.ParseError`, a `ValueError` subclass with `kind` and
 `index` attributes pointing at the offending byte.
+
+Pushing a `v*` tag builds the sdist and platform wheels and publishes them to
+PyPI using trusted publishing (see `.github/workflows/release.yml`).
 
 ## Benchmarks
 

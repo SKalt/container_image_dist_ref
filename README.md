@@ -69,9 +69,10 @@ the CPython stable ABI (abi3), so one wheel works on Python 3.9 and newer.
 
 ```sh
 cd bindings/python
-uv sync --group dev   # builds the extension into .venv
+uv sync --group dev      # builds the extension into .venv
 uv run pytest tests
-uv build              # wheel and sdist
+uv run ruff format .
+uv build                 # wheel and sdist
 ```
 
 ```python

@@ -132,21 +132,28 @@ impl<'src> Algorithm<'src> {
     }
     /// Whether the algorithm is compliant with the OCI or distribution/reference specifications.
     pub fn compliance(&self) -> Compliance {
-        let mut bytes = self.to_str().bytes();
-        match bytes.next() {
-            Some(b'a'..=b'z') => {}
-            Some(b'0'..=b'9') => return Compliance::Oci,
-            Some(b'A'..=b'Z') => return Compliance::Distribution,
-            _ => unreachable!(), // by construction, an Algorithm may contain only [a-zA-Z0-9]
-        };
-        for c in bytes {
-            match c {
-                b'a'..=b'z' | b'0'..=b'9' => {}
-                b'A'..=b'Z' => return Compliance::Distribution,
-                _ => unreachable!(), // by construction, an Algorithm may contain only [a-zA-Z0-9]
+        let mut compliance = Compliance::Universal;
+        for component in self.parts() {
+            let mut bytes = component.bytes();
+            match bytes.next() {
+                // a numeric prefix is allowed by the OCI spec but not
+                // distribution/reference.
+                Some(b'0'..=b'9') => compliance = Compliance::Oci,
+                Some(b'a'..=b'z') => {}
+                // an uppercase letter is allowed by distribution/reference but not
+                // the OCI spec.
+                Some(b'A'..=b'Z') => compliance = Compliance::Distribution,
+                _ => unreachable!(), // by construction, components are non-empty
+            }
+            for c in bytes {
+                match c {
+                    b'a'..=b'z' | b'0'..=b'9' => {}
+                    b'A'..=b'Z' => compliance = Compliance::Distribution,
+                    _ => unreachable!(), // by construction, components are alphanumeric
+                }
             }
         }
-        Compliance::Universal
+        compliance
     }
 }
 
@@ -212,4 +219,26 @@ fn component(src: &str, compliance: Compliance) -> Result<Option<(NonZeroU8, Com
     }
 
     Ok(Some((len, compliance)))
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compliance_handles_separators() {
+        for (src, expected) in [
+            ("sha256", Compliance::Universal),
+            ("sha256+extra", Compliance::Universal),
+            ("sha256.more-extra_parts", Compliance::Universal),
+            ("sha256+Extra", Compliance::Distribution),
+            ("1sha+extra", Compliance::Oci),
+            ("sha256+1extra", Compliance::Oci),
+        ] {
+            let (algorithm, parsed) = Algorithm::from_exact_match(src).unwrap();
+            assert_eq!(parsed, expected, "{src}");
+            assert_eq!(algorithm.compliance(), expected, "{src}");
+        }
+    }
 }

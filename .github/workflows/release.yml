@@ -45,6 +45,13 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
+      # Where the `target` values come from:
+      # https://doc.rust-lang.org/nightly/rustc/platform-support.html
+      # (or run `rustc --print target-list`).
+      # maturin-action `target` and `manylinux` inputs:
+      # https://github.com/PyO3/maturin-action#inputs
+      # manylinux and musllinux tags:
+      # https://github.com/PyO3/maturin-action#manylinux-docker-container
       matrix:
         include:
           - name: linux-x86_64

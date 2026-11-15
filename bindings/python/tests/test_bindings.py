@@ -111,3 +111,236 @@ def test_unknown_standard_is_rejected():
 
 def test_version():
     assert cidr.__version__ == "0.3.0"
+
+
+@pytest.mark.parametrize(
+    "src",
+    [
+        "alpine",
+        "docker.io/library/alpine:3.14",
+        "localhost:5000/a/b",
+        "[2001:db8::1]:5000/repo:tag@" + DIGEST,
+    ],
+)
+def test_parse_is_equivalent_to_imgref_constructor(src):
+    assert cidr.parse(src) == cidr.ImgRef(src)
+
+
+def test_parse_component_helpers_match_constructors():
+    canonical_src = "host.com/repo:tag@" + DIGEST
+    pairs = [
+        (cidr.parse_canonical(canonical_src), cidr.CanonicalImgRef(canonical_src)),
+        (cidr.parse_digest(DIGEST), cidr.Digest(DIGEST)),
+        (cidr.parse_algorithm("sha256+extra"), cidr.Algorithm("sha256+extra")),
+        (cidr.parse_encoded("deadbeef"), cidr.Encoded("deadbeef")),
+        (cidr.parse_domain("localhost:5000"), cidr.Domain("localhost:5000")),
+        (cidr.parse_host("[::1]"), cidr.Host("[::1]")),
+        (cidr.parse_path("library/alpine"), cidr.Path("library/alpine")),
+        (cidr.parse_tag("v1.2.3"), cidr.Tag("v1.2.3")),
+    ]
+    for parsed, constructed in pairs:
+        assert parsed == constructed
+        assert str(parsed) == str(constructed)
+
+
+def test_component_parsers_stop_at_delimiters():
+    assert str(cidr.parse_path("repo:tag@" + DIGEST)) == "repo"
+    assert str(cidr.parse_path("repo@" + DIGEST)) == "repo"
+    assert str(cidr.parse_tag("tag@" + DIGEST)) == "tag"
+    assert str(cidr.Tag("tag@" + DIGEST)) == "tag"
+
+
+def test_canonical_with_tag_and_port():
+    src = "[2001:db8::1]:5000/repo:tag@" + DIGEST
+    canonical = cidr.parse_canonical(src)
+    assert canonical.domain.port == "5000"
+    assert canonical.port == "5000"
+    assert str(canonical.tag) == "tag"
+    assert str(canonical.digest) == DIGEST
+    assert str(canonical) == src
+
+
+def test_canonical_requires_domain_and_digest():
+    for src in ["host.com/repo:tag", "repo@" + DIGEST, "host.com/repo"]:
+        with pytest.raises(cidr.ParseError):
+            cidr.parse_canonical(src)
+
+    with pytest.raises(cidr.ParseError):
+        cidr.parse("repo:tag").to_canonical()
+
+
+@pytest.mark.parametrize(
+    ("src", "expected"),
+    [
+        ("host.com/repo@" + DIGEST, True),
+        ("host.com/repo:tag@" + DIGEST, True),
+        ("localhost:5000/repo@" + DIGEST, True),
+        ("host.com/repo:tag", False),
+        ("repo@" + DIGEST, False),
+        ("repo:tag", False),
+    ],
+)
+def test_is_canonical(src, expected):
+    assert cidr.parse(src).is_canonical() is expected
+
+
+def test_digest_compliance_variants():
+    universal = cidr.parse_digest(DIGEST)
+    assert universal.compliance == "universal"
+    assert universal.is_compliant_with("oci")
+    assert universal.is_compliant_with("distribution")
+    assert universal.algorithm.compliance == "universal"
+
+    oci_only = cidr.parse_digest("1sha:abcd")
+    assert oci_only.compliance == "oci"
+    assert oci_only.is_compliant_with("oci")
+    assert not oci_only.is_compliant_with("distribution")
+    assert oci_only.algorithm.compliance == "oci"
+
+    distribution_only = cidr.parse_digest("SHA256:" + "a" * 64)
+    assert distribution_only.compliance == "distribution"
+    assert not distribution_only.is_compliant_with("oci")
+    assert distribution_only.is_compliant_with("distribution")
+    assert distribution_only.algorithm.compliance == "distribution"
+
+
+def test_algorithm_parts_and_compliance_with_separators():
+    # Regression test: separators used to be treated as unreachable by
+    # Algorithm.compliance().
+    algorithm = cidr.parse_algorithm("sha256+extra.more-part_pieces")
+    assert algorithm.parts == ["sha256", "extra", "more", "part", "pieces"]
+    assert algorithm.compliance == "universal"
+    assert str(algorithm) == "sha256+extra.more-part_pieces"
+
+    assert cidr.Algorithm("sha256+1extra").compliance == "oci"
+    assert cidr.Algorithm("UPPER").compliance == "distribution"
+    assert cidr.Algorithm("1lower").compliance == "oci"
+
+
+def test_encoded_respects_standard_character_sets():
+    assert str(cidr.parse_encoded("abcXYZ")) == "abcXYZ"
+    assert str(cidr.parse_encoded("abcXYZ", "oci")) == "abcXYZ"
+
+    with pytest.raises(cidr.ParseError) as excinfo:
+        cidr.parse_encoded("abcXYZ", "distribution")
+    assert excinfo.value.kind == "EncodedNonLowerHex"
+    assert excinfo.value.index == 3
+
+    with pytest.raises(cidr.ParseError) as excinfo:
+        cidr.parse_encoded("")
+    assert excinfo.value.kind == "EncodedMissing"
+    assert excinfo.value.index == 0
+
+
+@pytest.mark.parametrize(
+    ("src", "kind"),
+    [
+        ("docker.io", "name"),
+        ("192.168.1.1", "name"),
+        ("localhost", "name"),
+        ("[::1]", "ipv6"),
+    ],
+)
+def test_host_kinds(src, kind):
+    host = cidr.parse_host(src)
+    assert str(host) == src
+    assert host.kind == kind
+
+
+@pytest.mark.parametrize(
+    ("parser", "src", "kind", "index"),
+    [
+        (cidr.parse_domain, "test.com:", "PortOrTagMissing", 9),
+        (cidr.parse_domain, "test.com:tag", "PortInvalidChar", 9),
+        (cidr.parse_domain, "test.com/path", "HostInvalidChar", 8),
+        (cidr.parse_domain, "", "HostMissing", 0),
+        (cidr.parse_host, "-bad.com", "HostInvalidChar", 0),
+        (cidr.parse_host, "a_b.com", "HostInvalidChar", 1),
+        (cidr.parse_host, "[fe80::1%eth0]", "Ipv6InvalidChar", 8),
+        (cidr.parse_path, "", "PathMissing", 0),
+        (cidr.parse_path, "a//b", "PathComponentInvalidEnd", 2),
+        (cidr.parse_path, "A/b", "PathInvalidChar", 0),
+        (cidr.parse_tag, "", "TagMissing", 0),
+        (cidr.parse_tag, "ta g", "TagInvalidChar", 2),
+        (cidr.parse_tag, "tag/path", "TagInvalidChar", 3),
+        (cidr.parse_algorithm, "", "AlgorithmMissing", 0),
+        (
+            cidr.parse_digest,
+            DIGEST[:-1],
+            "OciRegisteredAlgorithmWrongDigestLength",
+            70,
+        ),
+        (cidr.parse_digest, "sha256:" + "A" * 64, "OciRegisteredDigestInvalidChar", 7),
+    ],
+)
+def test_component_errors_have_kind_and_index(parser, src, kind, index):
+    with pytest.raises(cidr.ParseError) as excinfo:
+        parser(src)
+
+    assert excinfo.value.kind == kind
+    assert excinfo.value.index == index
+
+
+def test_error_index_for_non_ascii_input():
+    with pytest.raises(cidr.ParseError) as excinfo:
+        cidr.parse("répo")
+
+    assert excinfo.value.kind == "HostOrPathInvalidChar"
+    # 'é' occupies bytes 1-2; the parser reports the first invalid byte.
+    assert excinfo.value.index == 1
+
+
+def test_empty_reference_is_rejected():
+    with pytest.raises(cidr.ParseError) as excinfo:
+        cidr.parse("")
+    assert excinfo.value.kind == "RefMissing"
+    assert excinfo.value.index == 0
+
+
+@pytest.mark.parametrize(
+    ("obj", "attribute"),
+    [
+        (cidr.parse("a/b"), "name"),
+        (cidr.parse_canonical("host.com/a@" + DIGEST), "digest"),
+        (cidr.Digest(DIGEST), "algorithm"),
+        (cidr.Domain("host.com"), "host"),
+        (cidr.Path("a/b"), "parts"),
+    ],
+)
+def test_classes_are_immutable(obj, attribute):
+    with pytest.raises(AttributeError):
+        setattr(obj, attribute, None)
+
+
+def test_component_equality_and_hashing():
+    pairs = [
+        (cidr.Digest(DIGEST), cidr.Digest(DIGEST)),
+        (cidr.Algorithm("sha256"), cidr.Algorithm("sha256")),
+        (cidr.Encoded("deadbeef"), cidr.Encoded("deadbeef")),
+        (cidr.Domain("localhost:5000"), cidr.Domain("localhost:5000")),
+        (cidr.Host("[::1]"), cidr.Host("[::1]")),
+        (cidr.Path("a/b"), cidr.Path("a/b")),
+        (cidr.Tag("v1"), cidr.Tag("v1")),
+    ]
+    for left, right in pairs:
+        assert left == right
+        assert hash(left) == hash(right)
+
+
+def test_repr_matches_the_source_string():
+    cases = [
+        (cidr.parse("a/b"), 'ImgRef("a/b")'),
+        (
+            cidr.parse_canonical("host.com/a@" + DIGEST),
+            f'CanonicalImgRef("host.com/a@{DIGEST}")',
+        ),
+        (cidr.Digest(DIGEST), f'Digest("{DIGEST}")'),
+        (cidr.Algorithm("sha256+x"), 'Algorithm("sha256+x")'),
+        (cidr.Encoded("abcd"), 'Encoded("abcd")'),
+        (cidr.Domain("host.com:5000"), 'Domain("host.com:5000")'),
+        (cidr.Host("[::1]"), 'Host("[::1]")'),
+        (cidr.Path("a/b"), 'Path("a/b")'),
+        (cidr.Tag("v1"), 'Tag("v1")'),
+    ]
+    for obj, expected in cases:
+        assert repr(obj) == expected

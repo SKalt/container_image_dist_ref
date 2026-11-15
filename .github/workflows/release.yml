@@ -1,0 +1,143 @@
+name: Release Python
+
+# Pushing a tag like v0.3.0 builds the sdist and platform wheels and publishes
+# them to PyPI with trusted publishing. Manual runs build the artifacts without
+# publishing, which is useful for checking the release pipeline.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: python-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  sdist:
+    name: Build sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Verify package versions match the tag
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import tomllib
+
+          root = pathlib.Path(".")
+          pyproject = tomllib.loads((root / "bindings/python/pyproject.toml").read_text())
+          cargo = tomllib.loads((root / "Cargo.toml").read_text())
+          binding = tomllib.loads((root / "bindings/python/Cargo.toml").read_text())
+
+          versions = {
+              "bindings/python/pyproject.toml": pyproject["project"]["version"],
+              "Cargo.toml": cargo["package"]["version"],
+              "bindings/python/Cargo.toml": binding["package"]["version"],
+          }
+          ref = os.environ["GITHUB_REF_NAME"]
+          expected = ref[1:] if ref.startswith("v") else ref
+          mismatched = {
+              path: version for path, version in versions.items() if version != expected
+          }
+          if mismatched:
+              raise SystemExit(
+                  f"tag {ref!r} does not match package versions: {mismatched}"
+              )
+          print(f"all package versions match {ref}")
+          PY
+      - uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build sdist
+        run: uv build --sdist --out-dir dist
+        working-directory: bindings/python
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wheels-sdist
+          path: bindings/python/dist/*.tar.gz
+          if-no-files-found: error
+
+  wheels:
+    name: Build ${{ matrix.name }} wheel
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            manylinux: "2_17"
+          - name: linux-aarch64
+            os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            manylinux: "2_17"
+          - name: musllinux-x86_64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            manylinux: "musllinux_1_2"
+          - name: musllinux-aarch64
+            os: ubuntu-latest
+            target: aarch64-unknown-linux-musl
+            manylinux: "musllinux_1_2"
+          - name: macos-x86_64
+            os: macos-15-intel
+            target: x86_64-apple-darwin
+            manylinux: "auto"
+          - name: macos-arm64
+            os: macos-latest
+            target: aarch64-apple-darwin
+            manylinux: "auto"
+          - name: windows-x86_64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            manylinux: "auto"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.9"
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
+          args: --release --locked --compatibility pypi --out dist
+          working-directory: bindings/python
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wheels-${{ matrix.name }}
+          path: bindings/python/dist/*.whl
+          if-no-files-found: error
+
+  publish:
+    name: Publish to PyPI
+    needs: [sdist, wheels]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/container-image-dist-ref/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: wheels-*
+          merge-multiple: true
+          path: dist
+      - uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: false
+      - name: Publish to PyPI
+        run: uv publish --trusted-publishing always 'dist/*'

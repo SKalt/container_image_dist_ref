@@ -19,11 +19,11 @@ test:
 
 .PHONY: python
 python:
-	cd bindings/python && maturin develop
+	cd bindings/python && uv sync
 
 .PHONY: test-python
 test-python:
-	cd bindings/python && python -m pytest tests
+	cd bindings/python && uv run --locked pytest tests
 
 ./grammars/digest.diff:      \
 	./grammars/reference.ebnf  \

@@ -9,13 +9,16 @@ DIGEST = "sha256:" + "a" * 64
 def test_parse_full_reference():
     ref = cidr.parse(f"docker.io/library/alpine:3.14@{DIGEST}")
     assert ref.name == "docker.io/library/alpine"
+    assert ref.domain is not None
     assert str(ref.domain) == "docker.io"
     assert ref.domain.host.kind == "name"
     assert ref.domain.port is None
     assert ref.port is None
     assert str(ref.path) == "library/alpine"
     assert ref.path.parts == ["library", "alpine"]
+    assert ref.tag is not None
     assert str(ref.tag) == "3.14"
+    assert ref.digest is not None
     assert str(ref.digest) == DIGEST
     assert str(ref.digest.algorithm) == "sha256"
     assert ref.digest.algorithm.parts == ["sha256"]
@@ -42,6 +45,7 @@ def test_parse_minimal_and_optional_parts():
 
 def test_ipv6_and_port():
     ref = cidr.parse("[2001:db8::1]:5000/repo:tag")
+    assert ref.domain is not None
     assert str(ref.domain) == "[2001:db8::1]:5000"
     assert ref.domain.host.kind == "ipv6"
     assert ref.domain.port == "5000"

@@ -5,6 +5,8 @@ on:
     branches: ["main"]
   pull_request:
     branches: ["main"]
+  # Lets release.yml run these checks before publishing.
+  workflow_call:
 
 env:
   CARGO_TERM_COLOR: always
@@ -18,7 +20,7 @@ jobs:
     permissions:
       issues: write # required for peter-evans/create-issue-from-file
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
       - name: Build
         run: cargo build --verbose
       - name: Clippy
@@ -43,9 +45,10 @@ jobs:
 
       - name: Link Checker
         id: lychee
-        uses: lycheeverse/lychee-action@v2
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # 2.9.0
+        # see https://github.com/lycheeverse/lychee-action
         with:
-          args: --base . --verbose --no-progress --cache --max-cache-age 1d --exclude=./target/package .
+          args: --verbose --no-progress --cache --max-cache-age 1d --exclude=./target/package .
           fail: false
           format: markdown
           output: ./lychee/out.md

@@ -4,11 +4,11 @@ version = 4
 
 [[package]]
 name = "container_image_dist_ref"
-version = "0.3.0"
+version = "0.4.0"
 
 [[package]]
 name = "container_image_dist_ref_py"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "container_image_dist_ref",
  "pyo3",
